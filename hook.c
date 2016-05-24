@@ -3,12 +3,61 @@
 #include "run-command.h"
 #include "config.h"
 
+static int early_hooks_path_config(const char *var, const char *value, void *data)
+{
+	if (!strcmp(var, "core.hookspath"))
+		return git_config_pathname((const char **)data, var, value);
+
+	return 0;
+}
+
+/* Discover the hook before setup_git_directory() was called */
+static const char *hook_path_early(const char *name, struct strbuf *result)
+{
+	static struct strbuf hooks_dir = STRBUF_INIT;
+	static int initialized;
+
+	if (initialized < 0)
+		return NULL;
+
+	if (!initialized) {
+		struct strbuf gitdir = STRBUF_INIT, commondir = STRBUF_INIT;
+		const char *early_hooks_dir = NULL;
+
+		if (discover_git_directory(&commondir, &gitdir) < 0) {
+			initialized = -1;
+			return NULL;
+		}
+
+		read_early_config(early_hooks_path_config, &early_hooks_dir);
+		if (!early_hooks_dir)
+			strbuf_addf(&hooks_dir, "%s/hooks/", commondir.buf);
+		else {
+			strbuf_add_absolute_path(&hooks_dir, early_hooks_dir);
+			free((void *)early_hooks_dir);
+			strbuf_addch(&hooks_dir, '/');
+		}
+
+		strbuf_release(&gitdir);
+		strbuf_release(&commondir);
+
+		initialized = 1;
+	}
+
+	strbuf_addf(result, "%s%s", hooks_dir.buf, name);
+	return result->buf;
+}
+
 const char *find_hook(const char *name)
 {
 	static struct strbuf path = STRBUF_INIT;
 
 	strbuf_reset(&path);
-	strbuf_git_path(&path, "hooks/%s", name);
+	if (have_git_dir())
+		strbuf_git_path(&path, "hooks/%s", name);
+	else if (!hook_path_early(name, &path))
+		return NULL;
+
 	if (access(path.buf, X_OK) < 0) {
 		int err = errno;
 
