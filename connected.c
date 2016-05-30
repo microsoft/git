@@ -1,4 +1,5 @@
 #include "cache.h"
+#include "gvfs.h"
 #include "object-store.h"
 #include "run-command.h"
 #include "sigchain.h"
@@ -29,6 +30,24 @@ int check_connected(oid_iterate_fn fn, void *cb_data,
 	struct packed_git *new_pack = NULL;
 	struct transport *transport;
 	size_t base_len;
+
+	/*
+	 * Running a virtual file system there will be objects that are
+	 * missing locally and we don't want to download a bunch of
+	 * commits, trees, and blobs just to make sure everything is
+	 * reachable locally so this option will skip reachablility
+	 * checks below that use rev-list.  This will stop the check
+	 * before uploadpack runs to determine if there is anything to
+	 * fetch.  Returning zero for the first check will also prevent the
+	 * uploadpack from happening.  It will also skip the check after
+	 * the fetch is finished to make sure all the objects where
+	 * downloaded in the pack file.  This will allow the fetch to
+	 * run and get all the latest tip commit ids for all the branches
+	 * in the fetch but not pull down commits, trees, or blobs via
+	 * upload pack.
+	 */
+	if (gvfs_config_is_set(GVFS_FETCH_SKIP_REACHABILITY_AND_UPLOADPACK))
+		return 0;
 
 	if (!opt)
 		opt = &defaults;
