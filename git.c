@@ -782,6 +782,12 @@ int cmd_main(int argc, const char **argv)
 			cmd = slash + 1;
 	}
 
+	/*
+	 * wait_for_pager_atexit will close stdout/stderr so it needs to be
+	 * registered first so that it will execute last and not close the
+	 * handles until all other atexit handlers have finished
+	 */
+	atexit(wait_for_pager_atexit);
 	trace_command_performance(argv);
 
 	/*
