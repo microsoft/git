@@ -1318,6 +1318,21 @@ static int loose_object_info(struct repository *r,
 	return (status < 0) ? status : 0;
 }
 
+static int run_read_object_hook(const struct object_id *oid)
+{
+	struct argv_array args = ARGV_ARRAY_INIT;
+	int ret;
+	uint64_t start;
+
+	start = getnanotime();
+	argv_array_push(&args, oid_to_hex(oid));
+	ret = run_hook_argv(NULL, "read-object", args.argv);
+	argv_array_clear(&args);
+	trace_performance_since(start, "run_read_object_hook");
+
+	return ret;
+}
+
 int fetch_if_missing = 1;
 
 int oid_object_info_extended(struct repository *r, const struct object_id *oid,
@@ -1328,6 +1343,7 @@ int oid_object_info_extended(struct repository *r, const struct object_id *oid,
 	int rtype;
 	const struct object_id *real = oid;
 	int already_retried = 0;
+	int tried_hook = 0;
 
 	if (flags & OBJECT_INFO_LOOKUP_REPLACE)
 		real = lookup_replace_object(r, oid);
@@ -1338,6 +1354,7 @@ int oid_object_info_extended(struct repository *r, const struct object_id *oid,
 	if (!oi)
 		oi = &blank_oi;
 
+retry:
 	if (!(flags & OBJECT_INFO_SKIP_CACHED)) {
 		struct cached_object *co = find_cached_object(real);
 		if (co) {
@@ -1374,6 +1391,11 @@ int oid_object_info_extended(struct repository *r, const struct object_id *oid,
 			reprepare_packed_git(r);
 			if (find_pack_entry(r, real, &e))
 				break;
+			if (core_virtualize_objects && !tried_hook) {
+				tried_hook = 1;
+				if (!run_read_object_hook(oid))
+					goto retry;
+			}
 		}
 
 		/* Check if it is a missing object */
