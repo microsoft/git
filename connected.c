@@ -1,4 +1,5 @@
 #include "git-compat-util.h"
+#include "environment.h"
 #include "gettext.h"
 #include "hex.h"
 #include "gvfs.h"
@@ -49,6 +50,8 @@ int check_connected(oid_iterate_fn fn, void *cb_data,
 	 * upload pack.
 	 */
 	if (gvfs_config_is_set(GVFS_FETCH_SKIP_REACHABILITY_AND_UPLOADPACK))
+		return 0;
+	if (core_virtualize_objects)
 		return 0;
 
 	if (!opt)
