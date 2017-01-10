@@ -225,5 +225,6 @@ extern const char *comment_line_str;
 extern char *comment_line_str_to_free;
 extern int auto_comment_line_char;
 
+extern int core_virtualize_objects;
 # endif /* USE_THE_REPOSITORY_VARIABLE */
 #endif /* ENVIRONMENT_H */
