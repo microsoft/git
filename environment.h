@@ -12,6 +12,8 @@ struct repository;
 extern char comment_line_char;
 extern int auto_comment_line_char;
 
+extern int core_virtualize_objects;
+
 /*
  * Wrapper of getenv() that returns a strdup value. This value is kept
  * in argv to be freed later.
