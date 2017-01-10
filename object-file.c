@@ -44,6 +44,8 @@
 #include "submodule.h"
 #include "fsck.h"
 #include "wrapper.h"
+#include "trace.h"
+#include "hook.h"
 
 /* The maximum size for an object header. */
 #define MAX_HEADER_LEN 32
@@ -1553,6 +1555,20 @@ void disable_obj_read_lock(void)
 	pthread_mutex_destroy(&obj_read_mutex);
 }
 
+static int run_read_object_hook(const struct object_id *oid)
+{
+	struct run_hooks_opt opt = RUN_HOOKS_OPT_INIT;
+	int ret;
+	uint64_t start;
+
+	start = getnanotime();
+	strvec_push(&opt.args, oid_to_hex(oid));
+	ret = run_hooks_opt("read-object", &opt);
+	trace_performance_since(start, "run_read_object_hook");
+
+	return ret;
+}
+
 int fetch_if_missing = 1;
 
 static int do_oid_object_info_extended(struct repository *r,
@@ -1565,6 +1581,7 @@ static int do_oid_object_info_extended(struct repository *r,
 	int rtype;
 	const struct object_id *real = oid;
 	int already_retried = 0;
+	int tried_hook = 0;
 
 
 	if (flags & OBJECT_INFO_LOOKUP_REPLACE)
@@ -1576,6 +1593,7 @@ static int do_oid_object_info_extended(struct repository *r,
 	if (!oi)
 		oi = &blank_oi;
 
+retry:
 	co = find_cached_object(real);
 	if (co) {
 		if (oi->typep)
@@ -1607,6 +1625,11 @@ static int do_oid_object_info_extended(struct repository *r,
 			reprepare_packed_git(r);
 			if (find_pack_entry(r, real, &e))
 				break;
+			if (core_virtualize_objects && !tried_hook) {
+				tried_hook = 1;
+				if (!run_read_object_hook(oid))
+					goto retry;
+			}
 		}
 
 		/*
