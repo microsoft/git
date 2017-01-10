@@ -5,7 +5,9 @@
 #include "dir.h"
 #include "environment.h"
 #include "gettext.h"
+#include "gvfs.h"
 #include "hex.h"
+#include "hook.h"
 #include "khash.h"
 #include "lockfile.h"
 #include "loose.h"
@@ -27,6 +29,7 @@
 #include "submodule.h"
 #include "tmp-objdir.h"
 #include "trace2.h"
+#include "trace.h"
 #include "write-or-die.h"
 
 KHASH_INIT(odb_path_map, const char * /* key: odb_path */,
@@ -528,6 +531,20 @@ void disable_obj_read_lock(void)
 	pthread_mutex_destroy(&obj_read_mutex);
 }
 
+static int run_read_object_hook(struct repository *r, const struct object_id *oid)
+{
+	struct run_hooks_opt opt = RUN_HOOKS_OPT_INIT;
+	int ret;
+	uint64_t start;
+
+	start = getnanotime();
+	strvec_push(&opt.args, oid_to_hex(oid));
+	ret = run_hooks_opt(r, "read-object", &opt);
+	trace_performance_since(start, "run_read_object_hook");
+
+	return ret;
+}
+
 int fetch_if_missing = 1;
 
 static int register_all_submodule_sources(struct object_database *odb)
@@ -553,6 +570,7 @@ static int do_oid_object_info_extended(struct object_database *odb,
 {
 	const struct object_id *real = oid;
 	int already_retried = 0;
+	int tried_hook = 0;
 
 	if (flags & OBJECT_INFO_LOOKUP_REPLACE)
 		real = lookup_replace_object(odb->repo, oid);
@@ -560,6 +578,7 @@ static int do_oid_object_info_extended(struct object_database *odb,
 	if (is_null_oid(real))
 		return -1;
 
+retry:
 	if (!odb_source_read_object_info(odb->inmemory_objects, oid, oi, flags))
 		return 0;
 
@@ -582,6 +601,11 @@ static int do_oid_object_info_extended(struct object_database *odb,
 				if (!odb_source_read_object_info(source, real, oi,
 								 flags | OBJECT_INFO_SECOND_READ))
 					return 0;
+			if (gvfs_virtualize_objects(odb->repo) && !tried_hook) {
+				tried_hook = 1;
+				if (!run_read_object_hook(odb->repo, oid))
+					goto retry;
+			}
 		}
 
 		/*
