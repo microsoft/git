@@ -622,6 +622,9 @@ core.multiPackIndex::
 	single index. See link:technical/multi-pack-index.html[the
 	multi-pack-index design document].
 
+core.gvfs::
+	Enable the features needed for GVFS.
+
 core.sparseCheckout::
 	Enable "sparse checkout" feature. See linkgit:git-sparse-checkout[1]
 	for more information.
