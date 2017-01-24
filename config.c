@@ -9,6 +9,7 @@
 #include "git-compat-util.h"
 #include "abspath.h"
 #include "date.h"
+#include "gvfs.h"
 #include "branch.h"
 #include "config.h"
 #include "parse.h"
