@@ -1050,6 +1050,7 @@ enum fsync_method {
 
 extern enum fsync_method fsync_method;
 extern int core_preload_index;
+extern int core_gvfs;
 extern int precomposed_unicode;
 extern int protect_hfs;
 extern int protect_ntfs;
