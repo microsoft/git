@@ -1048,6 +1048,7 @@ LIB_OBJS += git-zlib.o
 LIB_OBJS += gpg-interface.o
 LIB_OBJS += graph.o
 LIB_OBJS += grep.o
+LIB_OBJS += gvfs.o
 LIB_OBJS += hash-lookup.o
 LIB_OBJS += hash.o
 LIB_OBJS += hashmap.o
