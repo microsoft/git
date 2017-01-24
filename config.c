@@ -13,6 +13,7 @@
 #include "abspath.h"
 #include "advice.h"
 #include "date.h"
+#include "gvfs.h"
 #include "branch.h"
 #include "config.h"
 #include "parse.h"
@@ -1618,6 +1619,11 @@ int git_default_core_config(const char *var, const char *value,
 			object_creation_mode = OBJECT_CREATION_USES_HARDLINKS;
 		else
 			die(_("invalid mode for object creation: %s"), value);
+		return 0;
+	}
+
+	if (!strcmp(var, "core.gvfs")) {
+		gvfs_load_config_value(value);
 		return 0;
 	}
 

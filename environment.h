@@ -170,6 +170,7 @@ extern unsigned long pack_size_limit_cfg;
 extern int max_allowed_tree_depth;
 
 extern int core_preload_index;
+extern int core_gvfs;
 extern int precomposed_unicode;
 extern int protect_hfs;
 extern int protect_ntfs;
