@@ -1536,7 +1536,7 @@ static int handle_change_delete(struct merge_options *opt,
 		 * path.  We could call update_file_flags() with update_cache=0
 		 * and update_wd=0, but that's a no-op.
 		 */
-		if (change_branch != opt->branch1 || alt_path)
+		if (change_branch != opt->branch1 || alt_path || !file_exists(update_path))
 			ret = update_file(opt, 0, changed, update_path);
 	}
 	free(alt_path);
