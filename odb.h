@@ -573,4 +573,6 @@ void parse_alternates(const char *string,
 		      const char *relative_base,
 		      struct strvec *out);
 
+int read_object_process(struct repository *r, const struct object_id *oid);
+
 #endif /* ODB_H */
