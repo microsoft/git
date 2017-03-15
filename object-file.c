@@ -34,6 +34,9 @@
 #include "promisor-remote.h"
 #include "submodule.h"
 #include "hook.h"
+#include "sigchain.h"
+#include "sub-process.h"
+#include "pkt-line.h"
 
 /* The maximum size for an object header. */
 #define MAX_HEADER_LEN 32
@@ -944,6 +947,115 @@ void prepare_alt_odb(struct repository *r)
 	r->objects->loaded_alternates = 1;
 }
 
+#define CAP_GET    (1u<<0)
+
+static int subprocess_map_initialized;
+static struct hashmap subprocess_map;
+
+struct read_object_process {
+	struct subprocess_entry subprocess;
+	unsigned int supported_capabilities;
+};
+
+static int start_read_object_fn(struct subprocess_entry *subprocess)
+{
+	struct read_object_process *entry = (struct read_object_process *)subprocess;
+	static int versions[] = {1, 0};
+	static struct subprocess_capability capabilities[] = {
+		{ "get", CAP_GET },
+		{ NULL, 0 }
+	};
+
+	return subprocess_handshake(subprocess, "git-read-object", versions,
+				    NULL, capabilities,
+				    &entry->supported_capabilities);
+}
+
+static int read_object_process(const struct object_id *oid)
+{
+	int err;
+	struct read_object_process *entry;
+	struct child_process *process;
+	struct strbuf status = STRBUF_INIT;
+	const char *cmd = find_hook("read-object");
+	uint64_t start;
+
+	start = getnanotime();
+
+	if (!subprocess_map_initialized) {
+		subprocess_map_initialized = 1;
+		hashmap_init(&subprocess_map, (hashmap_cmp_fn)cmd2process_cmp,
+			     NULL, 0);
+		entry = NULL;
+	} else {
+		entry = (struct read_object_process *) subprocess_find_entry(&subprocess_map, cmd);
+	}
+
+	if (!entry) {
+		entry = xmalloc(sizeof(*entry));
+		entry->supported_capabilities = 0;
+
+		if (subprocess_start(&subprocess_map, &entry->subprocess, cmd,
+				     start_read_object_fn)) {
+			free(entry);
+			return -1;
+		}
+	}
+	process = &entry->subprocess.process;
+
+	if (!(CAP_GET & entry->supported_capabilities))
+		return -1;
+
+	sigchain_push(SIGPIPE, SIG_IGN);
+
+	err = packet_write_fmt_gently(process->in, "command=get\n");
+	if (err)
+		goto done;
+
+	err = packet_write_fmt_gently(process->in, "sha1=%s\n", oid_to_hex(oid));
+	if (err)
+		goto done;
+
+	err = packet_flush_gently(process->in);
+	if (err)
+		goto done;
+
+	err = subprocess_read_status(process->out, &status);
+	err = err ? err : strcmp(status.buf, "success");
+
+done:
+	sigchain_pop(SIGPIPE);
+
+	if (err || errno == EPIPE) {
+		err = err ? err : errno;
+		if (!strcmp(status.buf, "error")) {
+			/* The process signaled a problem with the file. */
+		}
+		else if (!strcmp(status.buf, "abort")) {
+			/*
+			 * The process signaled a permanent problem. Don't try to read
+			 * objects with the same command for the lifetime of the current
+			 * Git process.
+			 */
+			entry->supported_capabilities &= ~CAP_GET;
+		}
+		else {
+			/*
+			 * Something went wrong with the read-object process.
+			 * Force shutdown and restart if needed.
+			 */
+			error("external process '%s' failed", cmd);
+			subprocess_stop(&subprocess_map,
+					(struct subprocess_entry *)entry);
+			free(entry);
+		}
+	}
+
+	trace_performance_since(start, "read_object_process");
+
+	return err;
+}
+
 /* Returns 1 if we have successfully freshened the file, 0 otherwise. */
 static int freshen_file(const char *fn)
 {
@@ -994,8 +1106,19 @@ static int check_and_freshen_nonlocal(const struct object_id *oid, int freshen)
 
 static int check_and_freshen(const struct object_id *oid, int freshen)
 {
-	return check_and_freshen_local(oid, freshen) ||
+	int ret;
+	int tried_hook = 0;
+
+retry:
+	ret = check_and_freshen_local(oid, freshen) ||
 	       check_and_freshen_nonlocal(oid, freshen);
+	if (!ret && core_virtualize_objects && !tried_hook) {
+		tried_hook = 1;
+		if (!read_object_process(oid))
+			goto retry;
+	}
+
+	return ret;
 }
 
 int has_loose_object_nonlocal(const struct object_id *oid)
@@ -1531,20 +1654,6 @@ void disable_obj_read_lock(void)
 	pthread_mutex_destroy(&obj_read_mutex);
 }
 
-static int run_read_object_hook(const struct object_id *oid)
-{
-	struct run_hooks_opt opt = RUN_HOOKS_OPT_INIT;
-	int ret;
-	uint64_t start;
-
-	start = getnanotime();
-	strvec_push(&opt.args, oid_to_hex(oid));
-	ret = run_hooks_opt("read-object", &opt);
-	trace_performance_since(start, "run_read_object_hook");
-
-	return ret;
-}
-
 int fetch_if_missing = 1;
 
 static int do_oid_object_info_extended(struct repository *r,
@@ -1606,7 +1715,7 @@ retry:
 				break;
 			if (core_virtualize_objects && !tried_hook) {
 				tried_hook = 1;
-				if (!run_read_object_hook(oid))
+				if (!read_object_process(oid))
 					goto retry;
 			}
 		}
