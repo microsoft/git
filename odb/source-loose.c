@@ -2,6 +2,7 @@
 #include "abspath.h"
 #include "chdir-notify.h"
 #include "gettext.h"
+#include "gvfs.h"
 #include "hex.h"
 #include "loose.h"
 #include "object-file.h"
@@ -578,8 +579,17 @@ static int odb_source_loose_freshen_object(struct odb_source *source,
 {
 	struct odb_source_loose *loose = odb_source_loose_downcast(source);
 	static struct strbuf path = STRBUF_INIT;
+	int ret, tried_hook = 0;
+
 	odb_loose_path(loose, &path, oid);
-	return !!check_and_freshen_file(path.buf, 1);
+retry:
+	ret = check_and_freshen_file(path.buf, 1);
+	if (!ret && gvfs_virtualize_objects(source->odb->repo) && !tried_hook) {
+		tried_hook = 1;
+		if (!read_object_process(source->odb->repo, oid))
+			goto retry;
+	}
+	return ret;
 }
 
 static int odb_source_loose_write_object(struct odb_source *source,
