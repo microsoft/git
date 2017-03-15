@@ -510,4 +510,6 @@ int odb_write_object_stream(struct object_database *odb,
 			    struct odb_write_stream *stream, size_t len,
 			    struct object_id *oid);
 
+int read_object_process(struct repository *r, const struct object_id *oid);
+
 #endif /* ODB_H */
