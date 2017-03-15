@@ -878,6 +878,24 @@ void prepare_alt_odb(struct repository *r)
 	r->objects->loaded_alternates = 1;
 }
 
+static int run_read_object_hook(const struct object_id *oid)
+{
+	struct child_process hook = CHILD_PROCESS_INIT;
+	const char *p;
+
+	p = find_hook("read-object");
+	if (!p)
+		return 1;
+
+	strvec_push(&hook.args, p);
+	strvec_push(&hook.args, oid_to_hex(oid));
+	hook.env = NULL;
+	hook.no_stdin = 1;
+	hook.stdout_to_stderr = 1;
+
+	return run_command(&hook);
+}
+
 /* Returns 1 if we have successfully freshened the file, 0 otherwise. */
 static int freshen_file(const char *fn)
 {
@@ -928,8 +946,19 @@ static int check_and_freshen_nonlocal(const struct object_id *oid, int freshen)
 
 static int check_and_freshen(const struct object_id *oid, int freshen)
 {
-	return check_and_freshen_local(oid, freshen) ||
+	int ret;
+	int tried_hook = 0;
+
+retry:
+	ret = check_and_freshen_local(oid, freshen) ||
 	       check_and_freshen_nonlocal(oid, freshen);
+	if (!ret && core_virtualize_objects && !tried_hook) {
+		tried_hook = 1;
+		if (!run_read_object_hook(oid))
+			goto retry;
+	}
+
+	return ret;
 }
 
 int has_loose_object_nonlocal(const struct object_id *oid)
@@ -1452,21 +1481,6 @@ void disable_obj_read_lock(void)
 
 	obj_read_use_lock = 0;
 	pthread_mutex_destroy(&obj_read_mutex);
-}
-
-static int run_read_object_hook(const struct object_id *oid)
-{
-	struct strvec args = STRVEC_INIT;
-	int ret;
-	uint64_t start;
-
-	start = getnanotime();
-	strvec_push(&args, oid_to_hex(oid));
-	ret = run_hook_strvec(NULL, "read-object", &args);
-	strvec_clear(&args);
-	trace_performance_since(start, "run_read_object_hook");
-
-	return ret;
 }
 
 int fetch_if_missing = 1;
