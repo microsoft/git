@@ -327,7 +327,7 @@ int cmd_reset(int argc, const char **argv, const char *prefix)
 
 	if (read_from_stdin) {
 		strbuf_getline_fn getline_fn = nul_term_line ?
-			strbuf_getline_nul : strbuf_getline_lf;
+			strbuf_getline_nul : strbuf_getline;
 		int flags = PATHSPEC_PREFER_FULL;
 		struct strbuf buf = STRBUF_INIT;
 		struct strbuf unquoted = STRBUF_INIT;
