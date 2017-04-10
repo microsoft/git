@@ -428,6 +428,7 @@ static int run_pre_command_hook(const char **argv)
 
 	/* call the hook proc */
 	strvec_pushv(&sargv, argv);
+	strvec_pushf(&sargv, "--git-pid=%"PRIuMAX, (uintmax_t)getpid());
 	ret = run_hook_strvec(NULL, "pre-command", &sargv);
 
 	if (!ret)
