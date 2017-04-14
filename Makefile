@@ -897,6 +897,7 @@ LIB_OBJS += gettext.o
 LIB_OBJS += gpg-interface.o
 LIB_OBJS += graph.o
 LIB_OBJS += grep.o
+LIB_OBJS += gvfs.o
 LIB_OBJS += hashmap.o
 LIB_OBJS += linear-assignment.o
 LIB_OBJS += help.o
