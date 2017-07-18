@@ -32,6 +32,9 @@
 #include "packfile.h"
 #include "object-store.h"
 #include "promisor-remote.h"
+#include "sigchain.h"
+#include "sub-process.h"
+#include "pkt-line.h"
 
 /* The maximum size for an object header. */
 #define MAX_HEADER_LEN 32
@@ -878,22 +881,113 @@ void prepare_alt_odb(struct repository *r)
 	r->objects->loaded_alternates = 1;
 }
 
-static int run_read_object_hook(const struct object_id *oid)
+#define CAP_GET    (1u<<0)
+
+static int subprocess_map_initialized;
+static struct hashmap subprocess_map;
+
+struct read_object_process {
+	struct subprocess_entry subprocess;
+	unsigned int supported_capabilities;
+};
+
+static int start_read_object_fn(struct subprocess_entry *subprocess)
 {
-	struct child_process hook = CHILD_PROCESS_INIT;
-	const char *p;
+	struct read_object_process *entry = (struct read_object_process *)subprocess;
+	static int versions[] = {1, 0};
+	static struct subprocess_capability capabilities[] = {
+		{ "get", CAP_GET },
+		{ NULL, 0 }
+	};
 
-	p = find_hook("read-object");
-	if (!p)
-		return 1;
+	return subprocess_handshake(subprocess, "git-read-object", versions,
+				    NULL, capabilities,
+				    &entry->supported_capabilities);
+}
 
-	strvec_push(&hook.args, p);
-	strvec_push(&hook.args, oid_to_hex(oid));
-	hook.env = NULL;
-	hook.no_stdin = 1;
-	hook.stdout_to_stderr = 1;
+static int read_object_process(const struct object_id *oid)
+{
+	int err;
+	struct read_object_process *entry;
+	struct child_process *process;
+	struct strbuf status = STRBUF_INIT;
+	const char *cmd = find_hook("read-object");
+	uint64_t start;
 
-	return run_command(&hook);
+	start = getnanotime();
+
+	if (!subprocess_map_initialized) {
+		subprocess_map_initialized = 1;
+		hashmap_init(&subprocess_map, (hashmap_cmp_fn)cmd2process_cmp,
+			     NULL, 0);
+		entry = NULL;
+	} else {
+		entry = (struct read_object_process *) subprocess_find_entry(&subprocess_map, cmd);
+	}
+
+	if (!entry) {
+		entry = xmalloc(sizeof(*entry));
+		entry->supported_capabilities = 0;
+
+		if (subprocess_start(&subprocess_map, &entry->subprocess, cmd,
+				     start_read_object_fn)) {
+			free(entry);
+			return -1;
+		}
+	}
+	process = &entry->subprocess.process;
+
+	if (!(CAP_GET & entry->supported_capabilities))
+		return -1;
+
+	sigchain_push(SIGPIPE, SIG_IGN);
+
+	err = packet_write_fmt_gently(process->in, "command=get\n");
+	if (err)
+		goto done;
+
+	err = packet_write_fmt_gently(process->in, "sha1=%s\n", oid_to_hex(oid));
+	if (err)
+		goto done;
+
+	err = packet_flush_gently(process->in);
+	if (err)
+		goto done;
+
+	err = subprocess_read_status(process->out, &status);
+	err = err ? err : strcmp(status.buf, "success");
+
+done:
+	sigchain_pop(SIGPIPE);
+
+	if (err || errno == EPIPE) {
+		err = err ? err : errno;
+		if (!strcmp(status.buf, "error")) {
+			/* The process signaled a problem with the file. */
+		}
+		else if (!strcmp(status.buf, "abort")) {
+			/*
+			 * The process signaled a permanent problem. Don't try to read
+			 * objects with the same command for the lifetime of the current
+			 * Git process.
+			 */
+			entry->supported_capabilities &= ~CAP_GET;
+		}
+		else {
+			/*
+			 * Something went wrong with the read-object process.
+			 * Force shutdown and restart if needed.
+			 */
+			error("external process '%s' failed", cmd);
+			subprocess_stop(&subprocess_map,
+					(struct subprocess_entry *)entry);
+			free(entry);
+		}
+	}
+
+	trace_performance_since(start, "read_object_process");
+
+	return err;
 }
 
 /* Returns 1 if we have successfully freshened the file, 0 otherwise. */
@@ -954,7 +1048,7 @@ retry:
 	       check_and_freshen_nonlocal(oid, freshen);
 	if (!ret && core_virtualize_objects && !tried_hook) {
 		tried_hook = 1;
-		if (!run_read_object_hook(oid))
+		if (!read_object_process(oid))
 			goto retry;
 	}
 
@@ -1544,7 +1638,7 @@ retry:
 				break;
 			if (core_virtualize_objects && !tried_hook) {
 				tried_hook = 1;
-				if (!run_read_object_hook(oid))
+				if (!read_object_process(oid))
 					goto retry;
 			}
 		}
