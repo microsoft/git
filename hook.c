@@ -53,9 +53,20 @@ const char *find_hook(const char *name)
 	static struct strbuf path = STRBUF_INIT;
 
 	strbuf_reset(&path);
-	if (have_git_dir())
+	if (have_git_dir()) {
+		static int forced_config;
+
+		if (!forced_config) {
+			if (!git_hooks_path) {
+				git_config_get_pathname("core.hookspath",
+							&git_hooks_path);
+				UNLEAK(git_hooks_path);
+			}
+			forced_config = 1;
+		}
+
 		strbuf_git_path(&path, "hooks/%s", name);
-	else if (!hook_path_early(name, &path))
+	} else if (!hook_path_early(name, &path))
 		return NULL;
 
 	if (access(path.buf, X_OK) < 0) {
