@@ -68,9 +68,18 @@ const char *find_hook(struct repository *r, const char *name)
 	int found_hook;
 
 	strbuf_reset(&path);
-	if (have_git_dir())
+	if (have_git_dir()) {
+		static int forced_config;
+
+		if (!forced_config) {
+			if (!git_hooks_path)
+				git_config_get_pathname("core.hookspath",
+							&git_hooks_path);
+			forced_config = 1;
+		}
+
 		strbuf_repo_git_path(&path, r, "hooks/%s", name);
-	else if (!hook_path_early(name, &path))
+	} else if (!hook_path_early(name, &path))
 		return NULL;
 
 	found_hook = access(path.buf, X_OK) >= 0;
