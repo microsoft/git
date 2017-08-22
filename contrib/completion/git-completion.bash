@@ -1610,7 +1610,7 @@ _git_clone ()
 	esac
 }
 
-__git_untracked_file_modes="all no normal"
+__git_untracked_file_modes="all no normal complete"
 
 _git_commit ()
 {
