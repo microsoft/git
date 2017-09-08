@@ -1105,7 +1105,8 @@ int odb_has_object(struct object_database *odb, const struct object_id *oid,
 }
 
 int odb_freshen_object(struct object_database *odb,
-		       const struct object_id *oid)
+		       const struct object_id *oid,
+		       int skip_virtualized_objects)
 {
 	struct odb_source *source;
 
@@ -1114,7 +1115,7 @@ int odb_freshen_object(struct object_database *odb,
 		if (packfile_store_freshen_object(source->packfiles, oid))
 			return 1;
 
-		if (odb_source_loose_freshen_object(source, oid))
+		if (odb_source_loose_freshen_object(source, oid, skip_virtualized_objects))
 			return 1;
 	}
 
