@@ -405,7 +405,8 @@ int odb_has_object(struct object_database *odb,
 		   unsigned flags);
 
 int odb_freshen_object(struct object_database *odb,
-		       const struct object_id *oid);
+		       const struct object_id *oid,
+		       int skip_virtualized_objects);
 
 void odb_assert_oid_type(struct object_database *odb,
 			 const struct object_id *oid, enum object_type expect);
