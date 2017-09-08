@@ -575,7 +575,8 @@ out:
 }
 
 static int odb_source_loose_freshen_object(struct odb_source *source,
-					   const struct object_id *oid)
+					   const struct object_id *oid,
+					   int skip_virtualized_objects)
 {
 	struct odb_source_loose *loose = odb_source_loose_downcast(source);
 	static struct strbuf path = STRBUF_INIT;
@@ -584,7 +585,8 @@ static int odb_source_loose_freshen_object(struct odb_source *source,
 	odb_loose_path(loose, &path, oid);
 retry:
 	ret = check_and_freshen_file(path.buf, 1);
-	if (!ret && gvfs_virtualize_objects(source->odb->repo) && !tried_hook) {
+	if (!ret && gvfs_virtualize_objects(source->odb->repo) &&
+	    !skip_virtualized_objects && !tried_hook) {
 		tried_hook = 1;
 		if (!read_object_process(source->odb->repo, oid))
 			goto retry;
@@ -625,7 +627,7 @@ static int odb_source_loose_write_object(struct odb_source *source,
 	 * it out into .git/objects/??/?{38} file.
 	 */
 	write_object_file_prepare(algo, buf, len, type, oid, hdr, &hdrlen);
-	if (odb_freshen_object(source->odb, oid))
+	if (odb_freshen_object(source->odb, oid, 1))
 		return 0;
 	if (write_loose_object(loose, oid, hdr, hdrlen, buf, len, 0, flags))
 		return -1;
