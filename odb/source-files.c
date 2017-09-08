@@ -195,11 +195,14 @@ out:
 
 static int odb_source_files_freshen_object(struct odb_source *source,
 					   const struct object_id *oid,
-					   const time_t *mtime)
+					   const time_t *mtime,
+					   int skip_virtualized_objects)
 {
 	struct odb_source_files *files = odb_source_files_downcast(source);
-	if (odb_source_freshen_object(&files->packed->base, oid, mtime) ||
-	    odb_source_freshen_object(&files->loose->base, oid, mtime))
+	if (odb_source_freshen_object(&files->packed->base, oid, mtime,
+				      skip_virtualized_objects) ||
+	    odb_source_freshen_object(&files->loose->base, oid, mtime,
+				      skip_virtualized_objects))
 		return 1;
 	return 0;
 }
