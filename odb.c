@@ -948,11 +948,13 @@ int odb_has_object(struct object_database *odb, const struct object_id *oid,
 }
 
 int odb_freshen_object(struct object_database *odb,
-		       const struct object_id *oid)
+		       const struct object_id *oid,
+		       int skip_virtualized_objects)
 {
 	struct odb_source *source;
 	for (source = odb->sources; source; source = source->next)
-		if (odb_source_freshen_object(source, oid, NULL))
+		if (odb_source_freshen_object(source, oid, NULL,
+					      skip_virtualized_objects))
 			return 1;
 	return 0;
 }
@@ -1121,7 +1123,7 @@ int odb_write_object_ext(struct object_database *odb,
 	 * We can skip the write in case we already have the object available.
 	 * In that case, we only freshen its mtime.
 	 */
-	if (odb_freshen_object(odb, oid))
+	if (odb_freshen_object(odb, oid, 1))
 		return 0;
 
 	if (compat) {
