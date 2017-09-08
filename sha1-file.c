@@ -930,7 +930,8 @@ static int check_and_freshen_nonlocal(const struct object_id *oid, int freshen)
 	return 0;
 }
 
-static int check_and_freshen(const struct object_id *oid, int freshen)
+static int check_and_freshen(const struct object_id *oid, int freshen,
+			     int skip_virtualized_objects)
 {
 	int ret;
 	int tried_hook = 0;
@@ -938,7 +939,8 @@ static int check_and_freshen(const struct object_id *oid, int freshen)
 retry:
 	ret = check_and_freshen_local(oid, freshen) ||
 	       check_and_freshen_nonlocal(oid, freshen);
-	if (!ret && core_virtualize_objects && !tried_hook) {
+	if (!ret && core_virtualize_objects && !skip_virtualized_objects &&
+	    !tried_hook) {
 		tried_hook = 1;
 		if (!read_object_process(oid))
 			goto retry;
@@ -954,7 +956,7 @@ int has_loose_object_nonlocal(const struct object_id *oid)
 
 static int has_loose_object(const struct object_id *oid)
 {
-	return check_and_freshen(oid, 0);
+	return check_and_freshen(oid, 0, 0);
 }
 
 static void mmap_limit_check(size_t length)
@@ -1885,9 +1887,10 @@ static int write_loose_object(const struct object_id *oid, char *hdr,
 	return finalize_object_file(tmp_file.buf, filename.buf);
 }
 
-static int freshen_loose_object(const struct object_id *oid)
+static int freshen_loose_object(const struct object_id *oid,
+				int skip_virtualized_objects)
 {
-	return check_and_freshen(oid, 1);
+	return check_and_freshen(oid, 1, skip_virtualized_objects);
 }
 
 static int freshen_packed_object(const struct object_id *oid)
@@ -1913,7 +1916,7 @@ int write_object_file(const void *buf, unsigned long len, const char *type,
 	 * it out into .git/objects/??/?{38} file.
 	 */
 	write_object_file_prepare(buf, len, type, oid, hdr, &hdrlen);
-	if (freshen_packed_object(oid) || freshen_loose_object(oid))
+	if (freshen_packed_object(oid) || freshen_loose_object(oid, 1))
 		return 0;
 	return write_loose_object(oid, hdr, hdrlen, buf, len, 0);
 }
@@ -1932,7 +1935,7 @@ int hash_object_file_literally(const void *buf, unsigned long len,
 
 	if (!(flags & HASH_WRITE_OBJECT))
 		goto cleanup;
-	if (freshen_packed_object(oid) || freshen_loose_object(oid))
+	if (freshen_packed_object(oid) || freshen_loose_object(oid, 1))
 		goto cleanup;
 	status = write_loose_object(oid, header, hdrlen, buf, len, 0);
 
