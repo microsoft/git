@@ -137,4 +137,30 @@ test_expect_success 'verify serialized status handles path scopes' '
 	test_i18ncmp expect output
 '
 
+test_expect_success 'verify no-ahead-behind and serialized status integration' '
+	test_when_finished "rm serialized_status.dat new_change.txt output" &&
+	cat >expect <<-\EOF &&
+	# branch.oid 68d4a437ea4c2de65800f48c053d4d543b55c410
+	# branch.head alt_branch
+	# branch.upstream master
+	# branch.ab +1 -0
+	? expect
+	? serialized_status.dat
+	? untracked/
+	? untracked_1.txt
+	EOF
+
+	git checkout -b alt_branch master --track >/dev/null &&
+	touch alt_branch_changes.txt &&
+	git add alt_branch_changes.txt &&
+	test_tick &&
+	git commit -m"New commit on alt branch"  &&
+
+	git status --untracked-files=complete --ignored=matching --serialize >serialized_status.dat &&
+	touch new_change.txt &&
+
+	git -c status.aheadBehind=false status --porcelain=v2 --branch --ahead-behind --deserialize=serialized_status.dat >output &&
+	test_i18ncmp expect output
+'
+
 test_done
