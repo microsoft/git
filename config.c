@@ -1381,7 +1381,11 @@ static int git_default_core_config(const char *var, const char *value, void *cb)
 	}
 
 	if (!strcmp(var, "core.sparsecheckout")) {
-		core_apply_sparse_checkout = git_config_bool(var, value);
+		/* virtual file system relies on the sparse checkout logic so force it on */
+		if (core_virtualfilesystem)
+			core_apply_sparse_checkout = 1;
+		else
+			core_apply_sparse_checkout = git_config_bool(var, value);
 		return 0;
 	}
 
@@ -2368,6 +2372,23 @@ int git_config_get_fsmonitor(void)
 
 	if (core_fsmonitor)
 		return 1;
+
+	return 0;
+}
+
+int git_config_get_virtualfilesystem(void)
+{
+	if (git_config_get_pathname("core.virtualfilesystem", &core_virtualfilesystem))
+		core_virtualfilesystem = getenv("GIT_VIRTUALFILESYSTEM_TEST");
+
+	if (core_virtualfilesystem && !*core_virtualfilesystem)
+		core_virtualfilesystem = NULL;
+
+	/* virtual file system relies on the sparse checkout logic so force it on */
+	if (core_virtualfilesystem) {
+		core_apply_sparse_checkout = 1;
+		return 1;
+	}
 
 	return 0;
 }
