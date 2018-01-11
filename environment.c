@@ -78,6 +78,7 @@ int grafts_keep_true_parents;
 int core_apply_sparse_checkout;
 int core_sparse_checkout_cone;
 int sparse_expect_files_outside_of_patterns;
+char *core_virtualfilesystem;
 int merge_log_config = -1;
 int precomposed_unicode = -1; /* see probe_utf8_pathname_composition() */
 unsigned long pack_size_limit_cfg;
@@ -545,7 +546,11 @@ int git_default_core_config(const char *var, const char *value,
 	}
 
 	if (!strcmp(var, "core.sparsecheckout")) {
-		core_apply_sparse_checkout = git_config_bool(var, value);
+		/* virtual file system relies on the sparse checkout logic so force it on */
+		if (core_virtualfilesystem)
+			core_apply_sparse_checkout = 1;
+		else
+			core_apply_sparse_checkout = git_config_bool(var, value);
 		return 0;
 	}
 
