@@ -146,6 +146,7 @@ int get_shared_repository(void);
 void reset_shared_repository(void);
 
 extern int core_preload_index;
+extern const char *core_virtualfilesystem;
 extern int core_gvfs;
 extern int precomposed_unicode;
 extern int protect_hfs;
