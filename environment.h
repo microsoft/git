@@ -159,6 +159,7 @@ extern int zlib_compression_level;
 extern int pack_compression_level;
 extern unsigned long pack_size_limit_cfg;
 
+extern char *core_virtualfilesystem;
 extern int precomposed_unicode;
 extern int protect_hfs;
 extern int protect_ntfs;
