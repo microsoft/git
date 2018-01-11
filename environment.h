@@ -171,6 +171,7 @@ extern char *apply_default_whitespace;
 extern char *apply_default_ignorewhitespace;
 extern unsigned long pack_size_limit_cfg;
 
+extern char *core_virtualfilesystem;
 extern int protect_hfs;
 extern int protect_ntfs;
 
