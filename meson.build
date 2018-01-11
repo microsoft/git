@@ -465,6 +465,7 @@ libgit_sources = [
   'utf8.c',
   'varint.c',
   'versioncmp.c',
+  'virtualfilesystem.c',
   'walker.c',
   'wildmatch.c',
   'worktree.c',
