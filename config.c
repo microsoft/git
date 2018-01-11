@@ -1750,7 +1750,11 @@ int git_default_core_config(const char *var, const char *value, void *cb)
 	}
 
 	if (!strcmp(var, "core.sparsecheckout")) {
-		core_apply_sparse_checkout = git_config_bool(var, value);
+		/* virtual file system relies on the sparse checkout logic so force it on */
+		if (core_virtualfilesystem)
+			core_apply_sparse_checkout = 1;
+		else
+			core_apply_sparse_checkout = git_config_bool(var, value);
 		return 0;
 	}
 
@@ -2798,6 +2802,30 @@ int git_config_get_max_percent_split_change(void)
 	}
 
 	return -1; /* default value */
+}
+
+int git_config_get_virtualfilesystem(void)
+{
+	/* Run only once. */
+	static int virtual_filesystem_result = -1;
+	if (virtual_filesystem_result >= 0)
+		return virtual_filesystem_result;
+
+	if (git_config_get_pathname("core.virtualfilesystem", &core_virtualfilesystem))
+		core_virtualfilesystem = getenv("GIT_VIRTUALFILESYSTEM_TEST");
+
+	if (core_virtualfilesystem && !*core_virtualfilesystem)
+		core_virtualfilesystem = NULL;
+
+	/* virtual file system relies on the sparse checkout logic so force it on */
+	if (core_virtualfilesystem) {
+		core_apply_sparse_checkout = 1;
+		virtual_filesystem_result = 1;
+		return 1;
+	}
+
+	virtual_filesystem_result = 0;
+	return 0;
 }
 
 int git_config_get_index_threads(int *dest)
