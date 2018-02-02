@@ -170,4 +170,27 @@ test_expect_success 'verify no-ahead-behind and serialized status integration' '
 	test_cmp expect output
 '
 
+test_expect_success 'verify new --serialize=path mode' '
+	#test_when_finished "rm serialized_status.dat expect new_change.txt output.1 output.2" &&
+	cat >expect <<-\EOF &&
+	? expect
+	? output.1
+	? untracked/
+	? untracked_1.txt
+	EOF
+
+	git checkout -b serialize_path_branch main --track >/dev/null &&
+	touch alt_branch_changes.txt &&
+	git add alt_branch_changes.txt &&
+	test_tick &&
+	git commit -m"New commit on serialize_path_branch"  &&
+
+	git status --porcelain=v2 --serialize=serialized_status.dat >output.1 &&
+	touch new_change.txt &&
+
+	git status --porcelain=v2 --deserialize=serialized_status.dat >output.2 &&
+	test_cmp expect output.1 &&
+	test_cmp expect output.2
+'
+
 test_done
