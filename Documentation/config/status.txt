@@ -15,8 +15,7 @@ status.branch::
 status.aheadBehind::
 	EXPERIMENTAL, Set to true to enable --ahead-behind and false to
 	enable --no-ahead-behind by default in linkgit:git-status[1] for
-	all status formats.  Defaults to true.  Changing this may
-	break backwards compatibility for existing scripts.
+	non-porcelain status formats.  Defaults to true.
 
 status.displayCommentPrefix::
 	If set to true, linkgit:git-status[1] will insert a comment
