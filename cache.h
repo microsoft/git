@@ -330,7 +330,8 @@ struct index_state {
 	unsigned name_hash_initialized : 1,
 		 initialized : 1,
 		 drop_cache_tree : 1,
-		 updated_workdir : 1;
+		 updated_workdir : 1,
+		 updated_skipworktree : 1;
 	struct hashmap name_hash;
 	struct hashmap dir_hash;
 	struct object_id oid;
