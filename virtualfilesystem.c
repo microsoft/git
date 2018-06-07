@@ -36,18 +36,14 @@ static int vfs_hashmap_cmp(const void *unused_cmp_data,
 static void get_virtual_filesystem_data(struct strbuf *vfs_data)
 {
 	struct child_process cp = CHILD_PROCESS_INIT;
-	char ver[64];
-	const char *argv[3];
 	int err;
 
 	strbuf_init(vfs_data, 0);
 
-	snprintf(ver, sizeof(ver), "%d", HOOK_INTERFACE_VERSION);
-	argv[0] = core_virtualfilesystem;
-	argv[1] = ver;
-	argv[2] = NULL;
-	cp.argv = argv;
+	strvec_push(&cp.args, core_virtualfilesystem);
+	strvec_pushf(&cp.args, "%d", HOOK_INTERFACE_VERSION);
 	cp.use_shell = 1;
+	cp.dir = get_git_work_tree();
 
 	err = capture_command(&cp, vfs_data, 1024);
 	if (err)
