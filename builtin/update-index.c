@@ -18,6 +18,7 @@
 #include "dir.h"
 #include "split-index.h"
 #include "fsmonitor.h"
+#include "gvfs.h"
 
 /*
  * Default to not allowing changes to the list of files. The
@@ -1133,7 +1134,13 @@ int cmd_update_index(int argc, const char **argv, const char *prefix)
 	argc = parse_options_end(&ctx);
 
 	getline_fn = nul_term_line ? strbuf_getline_nul : strbuf_getline_lf;
+	if (mark_skip_worktree_only && gvfs_config_is_set(GVFS_BLOCK_COMMANDS))
+		die(_("modifying the skip worktree bit is not supported on a GVFS repo"));
+	
 	if (preferred_index_format) {
+		if (preferred_index_format != 4 && gvfs_config_is_set(GVFS_BLOCK_COMMANDS))
+			die(_("changing the index version is not supported on a GVFS repo"));
+
 		if (preferred_index_format < INDEX_FORMAT_LB ||
 		    INDEX_FORMAT_UB < preferred_index_format)
 			die("index-version %d not in range: %d..%d",
@@ -1169,6 +1176,9 @@ int cmd_update_index(int argc, const char **argv, const char *prefix)
 	}
 
 	if (split_index > 0) {
+		if (gvfs_config_is_set(GVFS_BLOCK_COMMANDS))
+			die(_("split index is not supported on a GVFS repo"));
+
 		if (git_config_get_split_index() == 0)
 			warning(_("core.splitIndex is set to false; "
 				  "remove or change it, if you really want to "

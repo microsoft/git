@@ -720,3 +720,19 @@ NORETURN void help_unknown_ref(const char *ref, const char *cmd,
 	string_list_clear(&suggested_refs, 0);
 	exit(1);
 }
+
+int cmd_update(int argc, const char **argv, const char *prefix)
+{
+	const char * const usage[] = {
+		N_("git update-git-for-windows [<options>]\n"
+		   "\t(not supported in this build of Git for Windows)"),
+		NULL
+	};
+	struct option options[] = {
+		OPT_END()
+	};
+
+	argc = parse_options(argc, argv, prefix, options, usage, 0);
+
+	die(_("git %s is not supported in VFSforGit"), argv[0]);
+}

@@ -226,6 +226,7 @@ int cmd_tag(int argc, const char **argv, const char *prefix);
 int cmd_tar_tree(int argc, const char **argv, const char *prefix);
 int cmd_unpack_file(int argc, const char **argv, const char *prefix);
 int cmd_unpack_objects(int argc, const char **argv, const char *prefix);
+int cmd_update(int argc, const char **argv, const char *prefix);
 int cmd_update_index(int argc, const char **argv, const char *prefix);
 int cmd_update_ref(int argc, const char **argv, const char *prefix);
 int cmd_update_server_info(int argc, const char **argv, const char *prefix);
