@@ -19,6 +19,7 @@
 #include "dir.h"
 #include "environment.h"
 #include "hex.h"
+#include "gvfs.h"
 #include "config.h"
 #include "tempfile.h"
 #include "lockfile.h"
@@ -566,7 +567,7 @@ static int maintenance_task_odb(struct maintenance_run_opts *opts,
 int cmd_gc(int argc,
 	   const char **argv,
 	   const char *prefix,
-	   struct repository *repo UNUSED)
+	   struct repository *repo)
 {
 	int aggressive = 0;
 	int force = 0;
@@ -634,6 +635,14 @@ int cmd_gc(int argc,
 	}
 	if (cfg.prune_expire && parse_expiry_date(cfg.prune_expire, &dummy))
 		die(_("failed to parse prune expiry value %s"), cfg.prune_expire);
+
+	if (gvfs_config_is_set(repo, GVFS_BLOCK_COMMANDS)) {
+		int gc_auto_threshold = 6700;
+		if (!opts.auto_flag ||
+		    repo_config_get_int(repo, "gc.auto", &gc_auto_threshold) ||
+		    gc_auto_threshold > 0)
+			die(_("'git gc' is not supported on a GVFS repo"));
+	}
 
 	if (opts.auto_flag) {
 		struct odb_optimize_options optimize_opts = {
