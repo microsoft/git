@@ -58,6 +58,7 @@ char *check_roundtrip_encoding;
 #endif
 int grafts_keep_true_parents;
 unsigned long pack_size_limit_cfg;
+int core_virtualize_objects;
 
 #ifndef PROTECT_HFS_DEFAULT
 #define PROTECT_HFS_DEFAULT 0

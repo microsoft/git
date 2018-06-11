@@ -221,7 +221,8 @@ struct odb_source {
 	 */
 	int (*freshen_object)(struct odb_source *source,
 			      const struct object_id *oid,
-			      const time_t *mtime);
+			      const time_t *mtime,
+			      int skip_virtualized_objects);
 
 	/*
 	 * This callback is expected to persist the given object into the
@@ -495,9 +496,11 @@ static inline int odb_source_find_abbrev_len(struct odb_source *source,
  */
 static inline int odb_source_freshen_object(struct odb_source *source,
 					    const struct object_id *oid,
-					    const time_t *mtime)
+					    const time_t *mtime,
+					    int skip_virtualized_objects)
 {
-	return source->freshen_object(source, oid, mtime);
+	return source->freshen_object(source, oid, mtime,
+				      skip_virtualized_objects);
 }
 
 /*
