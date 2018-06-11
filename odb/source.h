@@ -185,7 +185,8 @@ struct odb_source {
 	 * has been freshened.
 	 */
 	int (*freshen_object)(struct odb_source *source,
-			      const struct object_id *oid);
+			      const struct object_id *oid,
+			      int skip_virtualized_objects);
 
 	/*
 	 * This callback is expected to persist the given object into the
@@ -396,9 +397,10 @@ static inline int odb_source_find_abbrev_len(struct odb_source *source,
  * not exist.
  */
 static inline int odb_source_freshen_object(struct odb_source *source,
-					    const struct object_id *oid)
+					    const struct object_id *oid,
+					    int skip_virtualized_objects)
 {
-	return source->freshen_object(source, oid);
+	return source->freshen_object(source, oid, skip_virtualized_objects);
 }
 
 /*

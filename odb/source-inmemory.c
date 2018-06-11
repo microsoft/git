@@ -295,7 +295,8 @@ out:
 }
 
 static int odb_source_inmemory_freshen_object(struct odb_source *source,
-					      const struct object_id *oid)
+					      const struct object_id *oid,
+					      int skip_virtualized_objects UNUSED)
 {
 	struct odb_source_inmemory *inmemory = odb_source_inmemory_downcast(source);
 	if (find_cached_object(inmemory, oid))
