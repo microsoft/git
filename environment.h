@@ -235,6 +235,8 @@ extern int minimum_abbrev, default_abbrev;
 extern int assume_unchanged;
 extern unsigned long pack_size_limit_cfg;
 
+extern char *core_virtualfilesystem;
+
 extern int grafts_keep_true_parents;
 
 const char *get_log_output_encoding(void);
