@@ -6,7 +6,9 @@
 #include "dir.h"
 #include "environment.h"
 #include "gettext.h"
+#include "gvfs.h"
 #include "hex.h"
+#include "hook.h"
 #include "khash.h"
 #include "lockfile.h"
 #include "loose.h"
@@ -16,16 +18,20 @@
 #include "odb.h"
 #include "packfile.h"
 #include "path.h"
+#include "pkt-line.h"
 #include "promisor-remote.h"
 #include "quote.h"
 #include "replace-object.h"
 #include "run-command.h"
 #include "setup.h"
+#include "sigchain.h"
 #include "strbuf.h"
 #include "strvec.h"
+#include "sub-process.h"
 #include "submodule.h"
 #include "tmp-objdir.h"
 #include "trace2.h"
+#include "trace.h"
 #include "write-or-die.h"
 
 KHASH_INIT(odb_path_map, const char * /* key: odb_path */,
@@ -635,6 +641,119 @@ int odb_has_alternates(struct object_database *odb)
 	return !!odb->sources->next;
 }
 
+#define CAP_GET    (1u<<0)
+
+static int subprocess_map_initialized;
+static struct hashmap subprocess_map;
+
+struct read_object_process {
+	struct subprocess_entry subprocess;
+	unsigned int supported_capabilities;
+};
+
+static int start_read_object_fn(struct subprocess_entry *subprocess)
+{
+	struct read_object_process *entry = (struct read_object_process *)subprocess;
+	static int versions[] = {1, 0};
+	static struct subprocess_capability capabilities[] = {
+		{ "get", CAP_GET },
+		{ NULL, 0 }
+	};
+
+	return subprocess_handshake(subprocess, "git-read-object", versions,
+				    NULL, capabilities,
+				    &entry->supported_capabilities);
+}
+
+int read_object_process(struct repository *r, const struct object_id *oid)
+{
+	int err;
+	struct read_object_process *entry;
+	struct child_process *process;
+	struct strbuf status = STRBUF_INIT;
+	const char *cmd = find_hook(r, "read-object");
+	uint64_t start;
+
+	if (!cmd)
+		die(_("could not find the `read-object` hook"));
+
+	start = getnanotime();
+
+	if (!subprocess_map_initialized) {
+		subprocess_map_initialized = 1;
+		hashmap_init(&subprocess_map, (hashmap_cmp_fn)cmd2process_cmp,
+			     NULL, 0);
+		entry = NULL;
+	} else {
+		entry = (struct read_object_process *) subprocess_find_entry(&subprocess_map, cmd);
+	}
+
+	if (!entry) {
+		entry = xmalloc(sizeof(*entry));
+		entry->supported_capabilities = 0;
+
+		if (subprocess_start(&subprocess_map, &entry->subprocess, cmd,
+				     start_read_object_fn)) {
+			free(entry);
+			return -1;
+		}
+	}
+	process = &entry->subprocess.process;
+
+	if (!(CAP_GET & entry->supported_capabilities))
+		return -1;
+
+	sigchain_push(SIGPIPE, SIG_IGN);
+
+	err = packet_write_fmt_gently(process->in, "command=get\n");
+	if (err)
+		goto done;
+
+	err = packet_write_fmt_gently(process->in, "sha1=%s\n", oid_to_hex(oid));
+	if (err)
+		goto done;
+
+	err = packet_flush_gently(process->in);
+	if (err)
+		goto done;
+
+	err = subprocess_read_status(process->out, &status);
+	err = err ? err : strcmp(status.buf, "success");
+
+done:
+	sigchain_pop(SIGPIPE);
+
+	if (err || errno == EPIPE) {
+		err = err ? err : errno;
+		if (!strcmp(status.buf, "error")) {
+			/* The process signaled a problem with the file. */
+		}
+		else if (!strcmp(status.buf, "abort")) {
+			/*
+			 * The process signaled a permanent problem. Don't try to read
+			 * objects with the same command for the lifetime of the current
+			 * Git process.
+			 */
+			entry->supported_capabilities &= ~CAP_GET;
+		}
+		else {
+			/*
+			 * Something went wrong with the read-object process.
+			 * Force shutdown and restart if needed.
+			 */
+			error("external process '%s' failed", cmd);
+			subprocess_stop(&subprocess_map,
+					(struct subprocess_entry *)entry);
+			free(entry);
+		}
+	}
+
+	trace_performance_since(start, "read_object_process");
+
+	strbuf_release(&status);
+	return err;
+}
+
 int obj_read_use_lock = 0;
 pthread_mutex_t obj_read_mutex;
 
@@ -682,6 +801,7 @@ static int do_oid_object_info_extended(struct object_database *odb,
 	const struct cached_object *co;
 	const struct object_id *real = oid;
 	int already_retried = 0;
+	int tried_hook = 0;
 
 	if (flags & OBJECT_INFO_LOOKUP_REPLACE)
 		real = lookup_replace_object(odb->repo, oid);
@@ -689,6 +809,7 @@ static int do_oid_object_info_extended(struct object_database *odb,
 	if (is_null_oid(real))
 		return -1;
 
+retry:
 	co = find_cached_object(odb, real);
 	if (co) {
 		if (oi) {
@@ -725,6 +846,11 @@ static int do_oid_object_info_extended(struct object_database *odb,
 			for (source = odb->sources; source; source = source->next)
 				if (!packfile_store_read_object_info(source->packfiles, real, oi, flags))
 					return 0;
+			if (gvfs_virtualize_objects(odb->repo) && !tried_hook) {
+				tried_hook = 1;
+				if (!read_object_process(odb->repo, oid))
+					goto retry;
+			}
 		}
 
 		/*
@@ -979,7 +1105,8 @@ int odb_has_object(struct object_database *odb, const struct object_id *oid,
 }
 
 int odb_freshen_object(struct object_database *odb,
-		       const struct object_id *oid)
+		       const struct object_id *oid,
+		       int skip_virtualized_objects)
 {
 	struct odb_source *source;
 
@@ -988,7 +1115,7 @@ int odb_freshen_object(struct object_database *odb,
 		if (packfile_store_freshen_object(source->packfiles, oid))
 			return 1;
 
-		if (odb_source_loose_freshen_object(source, oid))
+		if (odb_source_loose_freshen_object(source, oid, skip_virtualized_objects))
 			return 1;
 	}
 
