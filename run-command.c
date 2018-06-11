@@ -1342,7 +1342,8 @@ const char *find_hook(const char *name)
 	return path.buf;
 }
 
-int run_hook_ve(const char *const *env, const char *name, va_list args)
+int run_hook_argv(const char *const *env, const char *name,
+		  const char **argv)
 {
 	struct child_process hook = CHILD_PROCESS_INIT;
 	const char *p;
@@ -1352,14 +1353,27 @@ int run_hook_ve(const char *const *env, const char *name, va_list args)
 		return 0;
 
 	argv_array_push(&hook.args, p);
-	while ((p = va_arg(args, const char *)))
-		argv_array_push(&hook.args, p);
+	argv_array_pushv(&hook.args, argv);
 	hook.env = env;
 	hook.no_stdin = 1;
 	hook.stdout_to_stderr = 1;
 	hook.trace2_hook_name = name;
 
 	return run_command(&hook);
+}
+
+int run_hook_ve(const char *const *env, const char *name, va_list args)
+{
+	struct argv_array argv = ARGV_ARRAY_INIT;
+	const char *p;
+	int ret;
+
+	while ((p = va_arg(args, const char *)))
+		argv_array_push(&argv, p);
+
+	ret = run_hook_argv(env, name, argv.argv);
+	argv_array_clear(&argv);
+	return ret;
 }
 
 int run_hook_le(const char *const *env, const char *name, ...)
