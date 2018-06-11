@@ -9,6 +9,7 @@
 #include "abspath.h"
 #include "advice.h"
 #include "date.h"
+#include "gvfs.h"
 #include "branch.h"
 #include "config.h"
 #include "parse.h"
@@ -1628,6 +1629,11 @@ int git_default_core_config(const char *var, const char *value,
 		return 0;
 	}
 
+	if (!strcmp(var, "core.gvfs")) {
+		gvfs_load_config_value(value);
+		return 0;
+	}
+
 	if (!strcmp(var, "core.sparsecheckout")) {
 		core_apply_sparse_checkout = git_config_bool(var, value);
 		return 0;
@@ -1655,6 +1661,11 @@ int git_default_core_config(const char *var, const char *value,
 
 	if (!strcmp(var, "core.maxtreedepth")) {
 		max_allowed_tree_depth = git_config_int(var, value, ctx->kvi);
+		return 0;
+	}
+
+	if (!strcmp(var, "core.virtualizeobjects")) {
+		core_virtualize_objects = git_config_bool(var, value);
 		return 0;
 	}
 
