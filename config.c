@@ -1381,7 +1381,11 @@ static int git_default_core_config(const char *var, const char *value, void *cb)
 	}
 
 	if (!strcmp(var, "core.sparsecheckout")) {
-		core_apply_sparse_checkout = git_config_bool(var, value);
+		/* virtual file system relies on the sparse checkout logic so force it on */
+		if (core_virtualfilesystem)
+			core_apply_sparse_checkout = 1;
+		else
+			core_apply_sparse_checkout = git_config_bool(var, value);
 		return 0;
 	}
 
@@ -2368,6 +2372,37 @@ int git_config_get_fsmonitor(void)
 
 	if (core_fsmonitor)
 		return 1;
+
+	return 0;
+}
+
+int git_config_get_virtualfilesystem(void)
+{
+	if (git_config_get_pathname("core.virtualfilesystem", &core_virtualfilesystem))
+		core_virtualfilesystem = getenv("GIT_VIRTUALFILESYSTEM_TEST");
+
+	if (core_virtualfilesystem && !*core_virtualfilesystem)
+		core_virtualfilesystem = NULL;
+
+	if (core_virtualfilesystem) {
+		/*
+		 * Some git commands spawn helpers and redirect the index to a different
+		 * location.  These include "difftool -d" and the sequencer
+		 * (i.e. `git rebase -i`, `git cherry-pick` and `git revert`) and others.
+		 * In those instances we don't want to update their temporary index with
+		 * our virtualization data.
+		 */
+		char *default_index_file = xstrfmt("%s/%s", the_repository->gitdir, "index");
+		int should_run_hook = !strcmp(default_index_file, the_repository->index_file);
+
+		free(default_index_file);
+		if (should_run_hook) {
+			/* virtual file system relies on the sparse checkout logic so force it on */
+			core_apply_sparse_checkout = 1;
+			return 1;
+		} 
+		core_virtualfilesystem = NULL;
+	}
 
 	return 0;
 }
