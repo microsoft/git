@@ -408,7 +408,8 @@ int odb_has_object(struct object_database *odb,
 		   unsigned flags);
 
 int odb_freshen_object(struct object_database *odb,
-		       const struct object_id *oid);
+		       const struct object_id *oid,
+		       int skip_virtualized_objects);
 
 void odb_assert_oid_type(struct object_database *odb,
 			 const struct object_id *oid, enum object_type expect);
@@ -512,5 +513,7 @@ struct odb_write_stream {
 int odb_write_object_stream(struct object_database *odb,
 			    struct odb_write_stream *stream, size_t len,
 			    struct object_id *oid);
+
+int read_object_process(struct repository *r, const struct object_id *oid);
 
 #endif /* ODB_H */
