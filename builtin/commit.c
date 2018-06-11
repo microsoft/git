@@ -144,26 +144,34 @@ static int opt_parse_porcelain(const struct option *opt, const char *arg, int un
 }
 
 static int do_serialize = 0;
+static char *serialize_path = NULL;
+
 static int do_implicit_deserialize = 0;
 static int do_explicit_deserialize = 0;
 static char *deserialize_path = NULL;
 
 /*
- * --serialize | --serialize=1 | --serialize=v1
+ * --serialize | --serialize=<path>
  *
- * Request that we serialize our output rather than printing in
- * any of the established formats.  Optionally specify serialization
- * version.
+ * Request that we serialize status output rather than or in addition to
+ * printing in any of the established formats.
+ *
+ * Without a path, we write binary serialization data to stdout (and omit
+ * the normal status output).
+ *
+ * With a path, we write binary serialization data to the <path> and then
+ * write normal status output.
  */
 static int opt_parse_serialize(const struct option *opt, const char *arg, int unset)
 {
 	enum wt_status_format *value = (enum wt_status_format *)opt->value;
 	if (unset || !arg)
 		*value = STATUS_FORMAT_SERIALIZE_V1;
-	else if (!strcmp(arg, "v1") || !strcmp(arg, "1"))
-		*value = STATUS_FORMAT_SERIALIZE_V1;
-	else
-		die("unsupported serialize version '%s'", arg);
+
+	if (arg) {
+		free(serialize_path);
+		serialize_path = xstrdup(arg);
+	}
 
 	if (do_explicit_deserialize)
 		die("cannot mix --serialize and --deserialize");
@@ -1149,9 +1157,11 @@ static const char *read_commit_message(const char *name)
 static struct status_deferred_config {
 	enum wt_status_format status_format;
 	int show_branch;
+	enum ahead_behind_flags ahead_behind;
 } status_deferred_config = {
 	STATUS_FORMAT_UNSPECIFIED,
-	-1 /* unspecified */
+	-1, /* unspecified */
+	AHEAD_BEHIND_UNSPECIFIED,
 };
 
 static void finalize_deferred_config(struct wt_status *s)
@@ -1177,6 +1187,17 @@ static void finalize_deferred_config(struct wt_status *s)
 		s->show_branch = status_deferred_config.show_branch;
 	if (s->show_branch < 0)
 		s->show_branch = 0;
+
+	/*
+	 * If the user did not give a "--[no]-ahead-behind" command
+	 * line argument *AND* we will print in a human-readable format
+	 * (short, long etc.) then we inherit from the status.aheadbehind
+	 * config setting.  In all other cases (and porcelain V[12] formats
+	 * in particular), we inherit _FULL for backwards compatibility.
+	 */
+	if (use_deferred_config &&
+	    s->ahead_behind_flags == AHEAD_BEHIND_UNSPECIFIED)
+		s->ahead_behind_flags = status_deferred_config.ahead_behind;
 
 	if (s->ahead_behind_flags == AHEAD_BEHIND_UNSPECIFIED)
 		s->ahead_behind_flags = AHEAD_BEHIND_FULL;
@@ -1317,6 +1338,10 @@ static int git_status_config(const char *k, const char *v, void *cb)
 		status_deferred_config.show_branch = git_config_bool(k, v);
 		return 0;
 	}
+	if (!strcmp(k, "status.aheadbehind")) {
+		status_deferred_config.ahead_behind = git_config_bool(k, v);
+		return 0;
+	}
 	if (!strcmp(k, "status.showstash")) {
 		s->show_stash = git_config_bool(k, v);
 		return 0;
@@ -1414,7 +1439,7 @@ int cmd_status(int argc, const char **argv, const char *prefix)
 		  N_("version"), N_("machine-readable output"),
 		  PARSE_OPT_OPTARG, opt_parse_porcelain },
 		{ OPTION_CALLBACK, 0, "serialize", &status_format,
-		  N_("version"), N_("serialize raw status data to stdout"),
+		  N_("path"), N_("serialize raw status data to path or stdout"),
 		  PARSE_OPT_OPTARG | PARSE_OPT_NONEG, opt_parse_serialize },
 		{ OPTION_CALLBACK, 0, "deserialize", NULL,
 		  N_("path"), N_("deserialize raw status data from file"),
@@ -1555,6 +1580,16 @@ skip_init:
 
 	if (s.relative_paths)
 		s.prefix = prefix;
+
+	if (serialize_path) {
+		int fd_serialize = xopen(serialize_path,
+					 O_WRONLY | O_CREAT | O_TRUNC, 0666);
+		if (fd_serialize < 0)
+			die_errno(_("could not serialize to '%s'"),
+				  serialize_path);
+		wt_status_serialize_v1(fd_serialize, &s);
+		close(fd_serialize);
+	}
 
 	wt_status_print(&s);
 	wt_status_collect_free_buffers(&s);
