@@ -9,6 +9,7 @@
 #include "sub-process.h"
 #include "utf8.h"
 #include "ll-merge.h"
+#include "gvfs.h"
 
 /*
  * convert.c - convert a file when checking it out and checking it in.
@@ -559,6 +560,9 @@ static int crlf_to_git(const struct index_state *istate,
 	if (!buf)
 		return 1;
 
+	if (gvfs_config_is_set(GVFS_BLOCK_FILTERS_AND_EOL_CONVERSIONS))
+		die("CRLF conversions not supported when running under GVFS");
+
 	/* only grow if not in place */
 	if (strbuf_avail(buf) + buf->len < len)
 		strbuf_grow(buf, len - buf->len);
@@ -597,6 +601,9 @@ static int crlf_to_worktree(const char *src, size_t len,
 	gather_stats(src, len, &stats);
 	if (!will_convert_lf_to_crlf(&stats, crlf_action))
 		return 0;
+
+	if (gvfs_config_is_set(GVFS_BLOCK_FILTERS_AND_EOL_CONVERSIONS))
+		die("CRLF conversions not supported when running under GVFS");
 
 	/* are we "faking" in place editing ? */
 	if (src == buf->buf)
@@ -708,6 +715,9 @@ static int apply_single_file_filter(const char *path, const char *src, size_t le
 	struct strbuf nbuf = STRBUF_INIT;
 	struct async async;
 	struct filter_params params;
+
+	if (gvfs_config_is_set(GVFS_BLOCK_FILTERS_AND_EOL_CONVERSIONS))
+		die("Filter \"%s\" not supported when running under GVFS", cmd);
 
 	memset(&async, 0, sizeof(async));
 	async.proc = filter_buffer_or_fd;
@@ -1113,6 +1123,9 @@ static int ident_to_git(const char *src, size_t len,
 	if (!buf)
 		return 1;
 
+	if (gvfs_config_is_set(GVFS_BLOCK_FILTERS_AND_EOL_CONVERSIONS))
+		die("ident conversions not supported when running under GVFS");
+
 	/* only grow if not in place */
 	if (strbuf_avail(buf) + buf->len < len)
 		strbuf_grow(buf, len - buf->len);
@@ -1159,6 +1172,9 @@ static int ident_to_worktree(const char *src, size_t len,
 	cnt = count_ident(src, len);
 	if (!cnt)
 		return 0;
+
+	if (gvfs_config_is_set(GVFS_BLOCK_FILTERS_AND_EOL_CONVERSIONS))
+		die("ident conversions not supported when running under GVFS");
 
 	/* are we "faking" in place editing ? */
 	if (src == buf->buf)
@@ -1614,6 +1630,9 @@ static int lf_to_crlf_filter_fn(struct stream_filter *filter,
 	size_t count, o = 0;
 	struct lf_to_crlf_filter *lf_to_crlf = (struct lf_to_crlf_filter *)filter;
 
+	if (gvfs_config_is_set(GVFS_BLOCK_FILTERS_AND_EOL_CONVERSIONS))
+		die("CRLF conversions not supported when running under GVFS");
+
 	/*
 	 * We may be holding onto the CR to see if it is followed by a
 	 * LF, in which case we would need to go to the main loop.
@@ -1857,6 +1876,9 @@ static int ident_filter_fn(struct stream_filter *filter,
 {
 	struct ident_filter *ident = (struct ident_filter *)filter;
 	static const char head[] = "$Id";
+
+	if (gvfs_config_is_set(GVFS_BLOCK_FILTERS_AND_EOL_CONVERSIONS))
+		die("ident conversions not supported when running under GVFS");
 
 	if (!input) {
 		/* drain upon eof */

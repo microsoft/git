@@ -25,6 +25,7 @@
 #include "fsmonitor.h"
 #include "thread-utils.h"
 #include "progress.h"
+#include "gvfs.h"
 
 /* Mask for the name length in ce_flags in the on-disk index */
 
@@ -2468,7 +2469,9 @@ static int ce_write_flush(git_hash_ctx *context, int fd)
 {
 	unsigned int buffered = write_buffer_len;
 	if (buffered) {
-		the_hash_algo->update_fn(context, write_buffer, buffered);
+		if (!gvfs_config_is_set(GVFS_SKIP_SHA_ON_INDEX))
+			the_hash_algo->update_fn(context, write_buffer,
+						 buffered);
 		if (write_in_full(fd, write_buffer, buffered) < 0)
 			return -1;
 		write_buffer_len = 0;
@@ -2517,7 +2520,8 @@ static int ce_flush(git_hash_ctx *context, int fd, unsigned char *hash)
 
 	if (left) {
 		write_buffer_len = 0;
-		the_hash_algo->update_fn(context, write_buffer, left);
+		if (!gvfs_config_is_set(GVFS_SKIP_SHA_ON_INDEX))
+			the_hash_algo->update_fn(context, write_buffer, left);
 	}
 
 	/* Flush first if not enough space for hash signature */
@@ -2528,7 +2532,8 @@ static int ce_flush(git_hash_ctx *context, int fd, unsigned char *hash)
 	}
 
 	/* Append the hash signature at the end */
-	the_hash_algo->final_fn(write_buffer + left, context);
+	if (!gvfs_config_is_set(GVFS_SKIP_SHA_ON_INDEX))
+		the_hash_algo->final_fn(write_buffer + left, context);
 	hashcpy(hash, write_buffer + left);
 	left += the_hash_algo->rawsz;
 	return (write_in_full(fd, write_buffer, left) < 0) ? -1 : 0;
