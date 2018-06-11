@@ -261,10 +261,13 @@ void refresh_fsmonitor(struct index_state *istate)
 		if (istate->untracked)
 			istate->untracked->use_fsmonitor = 1;
 	} else {
-
-		/* We only want to run the post index changed hook if we've actually changed entries, so keep track
-		 * if we actually changed entries or not */
+		/*
+		 * We only want to run the post index changed hook if we've
+		 * actually changed entries, so keep track if we actually
+		 * changed entries or not
+		 */
 		int is_cache_changed = 0;
+
 		/* Mark all entries invalid */
 		for (i = 0; i < istate->cache_nr; i++) {
 			if (istate->cache[i]->ce_flags & CE_FSMONITOR_VALID) {
@@ -273,7 +276,7 @@ void refresh_fsmonitor(struct index_state *istate)
 			}
 		}
 
-		/* If we're going to check every file, ensure we save the results */
+		/* If we're going to check every file, ensure we save results */
 		if (is_cache_changed)
 			istate->cache_changed |= FSMONITOR_CHANGED;
 
