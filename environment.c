@@ -69,6 +69,7 @@ enum push_default_type push_default = PUSH_DEFAULT_UNSPECIFIED;
 #endif
 enum object_creation_mode object_creation_mode = OBJECT_CREATION_MODE;
 int grafts_keep_true_parents;
+char *core_virtualfilesystem;
 unsigned long pack_size_limit_cfg;
 int core_virtualize_objects;
 
@@ -519,7 +520,11 @@ int git_default_core_config(const char *var, const char *value,
 	}
 
 	if (!strcmp(var, "core.sparsecheckout")) {
-		cfg->apply_sparse_checkout = git_config_bool(var, value);
+		/* virtual file system relies on the sparse checkout logic so force it on */
+		if (core_virtualfilesystem)
+			cfg->apply_sparse_checkout = 1;
+		else
+			cfg->apply_sparse_checkout = git_config_bool(var, value);
 		return 0;
 	}
 
