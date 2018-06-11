@@ -82,7 +82,8 @@ static int process_commit(struct walker *walker, struct commit *commit)
 		return -1;
 
 	while (complete && complete->item->date >= commit->date) {
-		pop_most_recent_commit(&complete, COMPLETE);
+		pop_most_recent_commit(&complete, COMPLETE,
+				       GENERATION_NUMBER_ZERO);
 	}
 
 	if (commit->object.flags & COMPLETE)
