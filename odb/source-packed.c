@@ -636,7 +636,8 @@ static int odb_source_packed_find_abbrev_len(struct odb_source *source,
 
 static int odb_source_packed_freshen_object(struct odb_source *source,
 					    const struct object_id *oid,
-					    const time_t *mtime)
+					    const time_t *mtime,
+					    int skip_virtualized_objects UNUSED)
 {
 	struct odb_source_packed *packed = odb_source_packed_downcast(source);
 	struct utimbuf times, *timesp = NULL;

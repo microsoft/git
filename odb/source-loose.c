@@ -2,6 +2,7 @@
 #include "abspath.h"
 #include "chdir-notify.h"
 #include "gettext.h"
+#include "gvfs.h"
 #include "hex.h"
 #include "loose.h"
 #include "object-file.h"
@@ -587,12 +588,22 @@ out:
 
 static int odb_source_loose_freshen_object(struct odb_source *source,
 					   const struct object_id *oid,
-					   const time_t *mtime)
+					   const time_t *mtime,
+					   int skip_virtualized_objects)
 {
 	struct odb_source_loose *loose = odb_source_loose_downcast(source);
 	static struct strbuf path = STRBUF_INIT;
+	int ret, tried_hook = 0;
 	odb_loose_path(loose, &path, oid);
-	return !!check_and_freshen_file(path.buf, 1, mtime);
+retry:
+	ret = !!check_and_freshen_file(path.buf, 1, mtime);
+	if (!ret && gvfs_virtualize_objects(source->odb->repo) &&
+	    !skip_virtualized_objects && !tried_hook) {
+		tried_hook = 1;
+		if (!read_object_process(source->odb->repo, oid))
+			goto retry;
+	}
+	return ret;
 }
 
 /* Finalize a file on disk, and close it. */
@@ -946,7 +957,7 @@ static int odb_source_loose_write_object_stream(struct odb_source *source,
 		die(_("deflateEnd on stream object failed (%d)"), ret);
 	close_loose_object(loose, fd, tmp_file.buf);
 
-	if (odb_freshen_object(loose->base.odb, oid)) {
+	if (odb_freshen_object(loose->base.odb, oid, 1)) {
 		unlink_or_warn(tmp_file.buf);
 		goto cleanup;
 	}
