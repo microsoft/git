@@ -149,11 +149,12 @@ out:
 }
 
 static int odb_source_files_freshen_object(struct odb_source *source,
-					   const struct object_id *oid)
+					   const struct object_id *oid,
+					   int skip_virtualized_objects)
 {
 	struct odb_source_files *files = odb_source_files_downcast(source);
 	if (packfile_store_freshen_object(files->packed, oid) ||
-	    odb_source_freshen_object(&files->loose->base, oid))
+	    odb_source_freshen_object(&files->loose->base, oid, skip_virtualized_objects))
 		return 1;
 	return 0;
 }
