@@ -144,6 +144,18 @@ static void list_hooks_add_default(struct repository *r, const char *hookname,
 	const char *hook_path = find_hook(r, hookname);
 	struct hook *h;
 
+	/*
+	 * Backwards compatibility hack in VFS for Git: when originally
+	 * introduced (and used!), it was called `post-indexchanged`, but this
+	 * name was changed during the review on the Git mailing list.
+	 *
+	 * Therefore, when the `post-index-change` hook is not found, let's
+	 * look for a hook with the old name (which would be found in case of
+	 * already-existing checkouts).
+	 */
+	if (!hook_path && !strcmp(hookname, "post-index-change"))
+		hook_path = find_hook(r, "post-indexchanged");
+
 	if (!hook_path)
 		return;
 

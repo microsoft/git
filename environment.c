@@ -57,6 +57,7 @@ char *check_roundtrip_encoding;
 #define OBJECT_CREATION_MODE OBJECT_CREATION_USES_HARDLINKS
 #endif
 int grafts_keep_true_parents;
+char *core_virtualfilesystem;
 unsigned long pack_size_limit_cfg;
 int core_virtualize_objects;
 
@@ -548,7 +549,11 @@ int git_default_core_config(const char *var, const char *value,
 	}
 
 	if (!strcmp(var, "core.sparsecheckout")) {
-		cfg->apply_sparse_checkout = git_config_bool(var, value);
+		/* virtual file system relies on the sparse checkout logic so force it on */
+		if (core_virtualfilesystem)
+			cfg->apply_sparse_checkout = 1;
+		else
+			cfg->apply_sparse_checkout = git_config_bool(var, value);
 		return 0;
 	}
 
