@@ -257,11 +257,11 @@ void test_odb_inmemory__freshen_object(void)
 	const char *end;
 
 	cl_must_pass(parse_oid_hex_algop(RANDOM_OID, &oid, &end, repo.hash_algo));
-	cl_assert_equal_i(odb_source_freshen_object(&source->base, &oid, NULL), 0);
+	cl_assert_equal_i(odb_source_freshen_object(&source->base, &oid, NULL, 0), 0);
 
 	cl_assert_write_object(source, "foobar", OBJ_BLOB, &written_oid);
 	cl_assert_equal_i(odb_source_freshen_object(&source->base,
-						    &written_oid, NULL), 1);
+						    &written_oid, NULL, 0), 1);
 
 	odb_source_free(&source->base);
 }
