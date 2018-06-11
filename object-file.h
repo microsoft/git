@@ -62,7 +62,8 @@ int odb_source_loose_has_object(struct odb_source *source,
 				const struct object_id *oid);
 
 int odb_source_loose_freshen_object(struct odb_source *source,
-				    const struct object_id *oid);
+				    const struct object_id *oid,
+				    int skip_virtualized_objects);
 
 int odb_source_loose_write_object(struct odb_source *source,
 				  const void *buf, size_t len,
