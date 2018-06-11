@@ -2,6 +2,7 @@
 #include "config.h"
 #include "commit.h"
 #include "refs.h"
+#include "gvfs.h"
 #include "object-store.h"
 #include "pkt-line.h"
 #include "sideband.h"
@@ -51,7 +52,7 @@ static int send_pack_config(const char *var, const char *value, void *unused)
 
 static void feed_object(const struct object_id *oid, FILE *fh, int negative)
 {
-	if (negative &&
+	if (negative && !gvfs_config_is_set(GVFS_MISSING_OK) &&
 	    !has_object_file_with_flags(oid,
 					OBJECT_INFO_SKIP_FETCH_OBJECT |
 					OBJECT_INFO_QUICK))
