@@ -19,6 +19,7 @@
 #include "dir.h"
 #include "environment.h"
 #include "hex.h"
+#include "gvfs.h"
 #include "config.h"
 #include "tempfile.h"
 #include "lockfile.h"
@@ -839,7 +840,7 @@ static int gc_foreground_tasks(struct maintenance_run_opts *opts,
 int cmd_gc(int argc,
 	   const char **argv,
 	   const char *prefix,
-	   struct repository *repo UNUSED)
+	   struct repository *repo)
 {
 	int aggressive = 0;
 	int force = 0;
@@ -919,6 +920,10 @@ int cmd_gc(int argc,
 	}
 	if (opts.quiet)
 		strvec_push(&repack, "-q");
+
+	if ((!opts.auto_flag || (opts.auto_flag && cfg.gc_auto_threshold > 0)) &&
+	    gvfs_config_is_set(repo, GVFS_BLOCK_COMMANDS))
+		die(_("'git gc' is not supported on a GVFS repo"));
 
 	if (opts.auto_flag) {
 		if (cfg.detach_auto && opts.detach < 0)
