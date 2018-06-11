@@ -481,6 +481,7 @@ libgit_sources = [
   'varint.c',
   'version.c',
   'versioncmp.c',
+  'virtualfilesystem.c',
   'walker.c',
   'wildmatch.c',
   'worktree.c',
