@@ -170,6 +170,7 @@ extern unsigned long pack_size_limit_cfg;
 extern int max_allowed_tree_depth;
 
 extern int core_preload_index;
+extern int core_gvfs;
 extern int precomposed_unicode;
 extern int protect_hfs;
 extern int protect_ntfs;
@@ -224,5 +225,6 @@ extern const char *comment_line_str;
 extern char *comment_line_str_to_free;
 extern int auto_comment_line_char;
 
+extern int core_virtualize_objects;
 # endif /* USE_THE_REPOSITORY_VARIABLE */
 #endif /* ENVIRONMENT_H */
