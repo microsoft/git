@@ -411,7 +411,8 @@ int odb_has_object(struct object_database *odb,
 		   enum has_object_flags flags);
 
 int odb_freshen_object(struct object_database *odb,
-		       const struct object_id *oid);
+		       const struct object_id *oid,
+		       int skip_virtualized_objects);
 
 void odb_assert_oid_type(struct object_database *odb,
 			 const struct object_id *oid, enum object_type expect);
@@ -613,5 +614,7 @@ void parse_alternates(const char *string,
 		      int sep,
 		      const char *relative_base,
 		      struct strvec *out);
+
+int read_object_process(struct repository *r, const struct object_id *oid);
 
 #endif /* ODB_H */
