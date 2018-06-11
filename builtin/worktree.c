@@ -4,6 +4,7 @@
 #include "builtin.h"
 #include "abspath.h"
 #include "advice.h"
+#include "gvfs.h"
 #include "checkout.h"
 #include "config.h"
 #include "copy.h"
@@ -1428,6 +1429,13 @@ int cmd_worktree(int ac,
 	};
 
 	git_config(git_worktree_config, NULL);
+
+	/*
+	 * git-worktree is special-cased to work in Scalar repositories
+	 * even when they use the GVFS Protocol.
+	 */
+	if (core_gvfs & GVFS_USE_VIRTUAL_FILESYSTEM)
+		die("'git %s' is not supported on a GVFS repo", "worktree");
 
 	if (!prefix)
 		prefix = "";
