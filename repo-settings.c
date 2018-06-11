@@ -4,6 +4,7 @@
 #include "midx.h"
 #include "fsmonitor-ipc.h"
 #include "fsmonitor-settings.h"
+#include "gvfs.h"
 
 static void repo_cfg_bool(struct repository *r, const char *key, int *dest,
 			  int def)
@@ -88,6 +89,13 @@ void prepare_repo_settings(struct repository *r)
 	repo_cfg_bool(r, "index.sparse", &r->settings.sparse_index, 0);
 	repo_cfg_bool(r, "index.skiphash", &r->settings.index_skip_hash, r->settings.index_skip_hash);
 	repo_cfg_bool(r, "pack.readreverseindex", &r->settings.pack_read_reverse_index, 1);
+
+	/*
+	 * For historical compatibility reasons, enable index.skipHash based
+	 * on a bit in core.gvfs.
+	 */
+	if (gvfs_config_is_set(GVFS_SKIP_SHA_ON_INDEX))
+		r->settings.index_skip_hash = 1;
 
 	/*
 	 * The GIT_TEST_MULTI_PACK_INDEX variable is special in that
