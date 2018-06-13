@@ -596,7 +596,8 @@ void commit_list_sort_by_date(struct commit_list **list)
 }
 
 struct commit *pop_most_recent_commit(struct commit_list **list,
-				      unsigned int mark)
+				      unsigned int mark,
+				      uint32_t min_generation)
 {
 	struct commit *ret = pop_commit(list);
 	struct commit_list *parents = ret->parents;
@@ -605,7 +606,9 @@ struct commit *pop_most_recent_commit(struct commit_list **list,
 		struct commit *commit = parents->item;
 		if (!parse_commit(commit) && !(commit->object.flags & mark)) {
 			commit->object.flags |= mark;
-			commit_list_insert_by_date(commit, list);
+
+			if (commit->generation >= min_generation)
+				commit_list_insert_by_date(commit, list);
 		}
 		parents = parents->next;
 	}
