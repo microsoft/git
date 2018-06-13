@@ -1217,7 +1217,8 @@ static int get_oid_oneline(const char *prefix, struct object_id *oid,
 		struct commit *commit;
 		int matches;
 
-		commit = pop_most_recent_commit(&list, ONELINE_SEEN);
+		commit = pop_most_recent_commit(&list, ONELINE_SEEN,
+						GENERATION_NUMBER_ZERO);
 		if (!parse_object(the_repository, &commit->object.oid))
 			continue;
 		buf = get_commit_buffer(commit, NULL);
