@@ -3269,6 +3269,14 @@ showbranch.default::
 	The default set of branches for linkgit:git-show-branch[1].
 	See linkgit:git-show-branch[1].
 
+slog.path::
+	(EXPERIMENTAL) Enable structured logging to a file.  This must be
+	an absolute path.  (Git must be compiled with STRUCTURED_LOGGING=1.)
+
+slog.pretty::
+	(EXPERIMENTAL) Pretty-print structured log data when true.
+	(Git must be compiled with STRUCTURED_LOGGING=1.)
+
 splitIndex.maxPercentChange::
 	When the split index feature is used, this specifies the
 	percent of entries the split index can contain compared to the
