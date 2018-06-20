@@ -31,7 +31,55 @@ static char *my__command_name;
 static char *my__sub_command_name;
 
 static struct argv_array my__argv = ARGV_ARRAY_INIT;
+static struct strbuf my__session_id = STRBUF_INIT;
 static struct json_writer my__errors = JSON_WRITER_INIT;
+
+/*
+ * Compute a new session id for the current process.  Build string
+ * with the start time and PID of the current process and append
+ * the inherited session id from our parent process (if present).
+ * The parent session id may include its parent session id.
+ *
+ * sid := <start-time> '-' <pid> [ ':' <parent-sid> [ ... ] ]
+ */
+static void compute_our_sid(void)
+{
+	const char *parent_sid;
+
+	if (my__session_id.len)
+		return;
+
+	/*
+	 * A "session id" (SID) is a cheap, unique-enough string to
+	 * associate child process with the hierarchy of invoking git
+	 * processes.
+	 *
+	 * This is stronger than a simple parent-pid because we may
+	 * have an intermediate shell between a top-level Git command
+	 * and a child Git command.  It also isolates from issues
+	 * about how the OS recycles PIDs.
+	 *
+	 * This could be a UUID/GUID, but that is overkill for our
+	 * needs here and more expensive to compute.
+	 *
+	 * Consumers should consider this an unordered opaque string
+	 * in case we decide to switch to a real UUID in the future.
+	 */
+	strbuf_addf(&my__session_id, "%"PRIuMAX"-%"PRIdMAX,
+		    (uintmax_t)my__start_time, (intmax_t)my__pid);
+
+	parent_sid = getenv("GIT_SLOG_PARENT_SID");
+	if (parent_sid && *parent_sid) {
+		strbuf_addch(&my__session_id, ':');
+		strbuf_addstr(&my__session_id, parent_sid);
+	}
+
+	/*
+	 * Install our SID into the environment for our child processes
+	 * to inherit.
+	 */
+	setenv("GIT_SLOG_PARENT_SID", my__session_id.buf, 1);
+}
 
 /*
  * Write a single event to the structured log file.
@@ -75,6 +123,7 @@ static void emit_start_event(void)
 		jw_object_string(&jw, "event", "cmd_start");
 		jw_object_intmax(&jw, "clock_us", (intmax_t)my__start_time);
 		jw_object_intmax(&jw, "pid", (intmax_t)my__pid);
+		jw_object_string(&jw, "sid", my__session_id.buf);
 
 		if (my__command_name && *my__command_name)
 			jw_object_string(&jw, "command", my__command_name);
@@ -112,6 +161,7 @@ static void emit_exit_event(void)
 		jw_object_string(&jw, "event", "cmd_exit");
 		jw_object_intmax(&jw, "clock_us", (intmax_t)atexit_time);
 		jw_object_intmax(&jw, "pid", (intmax_t)my__pid);
+		jw_object_string(&jw, "sid", my__session_id.buf);
 
 		if (my__command_name && *my__command_name)
 			jw_object_string(&jw, "command", my__command_name);
@@ -250,6 +300,7 @@ static void do_final_steps(int in_signal)
 	free(my__sub_command_name);
 	argv_array_clear(&my__argv);
 	jw_release(&my__errors);
+	strbuf_release(&my__session_id);
 }
 
 static void slog_atexit(void)
@@ -289,6 +340,7 @@ static void initialize(int argc, const char **argv)
 {
 	my__start_time = getnanotime() / 1000;
 	my__pid = getpid();
+	compute_our_sid();
 
 	intern_argv(argc, argv);
 
