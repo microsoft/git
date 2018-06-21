@@ -5,6 +5,8 @@ struct json_writer;
 
 typedef int (*slog_fn_main_t)(int, const char **);
 
+#define SLOG_UNDEFINED_TIMER_ID (-1)
+
 #if !defined(STRUCTURED_LOGGING)
 /*
  * Structured logging is not available.
@@ -21,6 +23,8 @@ typedef int (*slog_fn_main_t)(int, const char **);
 #define slog_error_message(prefix, fmt, params) do { } while (0)
 #define slog_want_detail_event(category) (0)
 #define slog_emit_detail_event(category, label, data) do { } while (0)
+#define slog_start_timer(category, name) (SLOG_UNDEFINED_TIMER_ID)
+static inline void slog_stop_timer(int tid) { };
 
 #else
 
@@ -106,6 +110,21 @@ int slog_want_detail_event(const char *category);
 
 void slog_emit_detail_event(const char *category, const char *label,
 			    const struct json_writer *data);
+
+/*
+ * Define and start or restart a structured logging timer.  Stats for the
+ * timer will be added to the "cmd_exit" event. Use a timer when you are
+ * interested in the net time of an operation (such as part of a computation
+ * in a loop) but don't want a detail event for each iteration.
+ *
+ * Returns a timer id.
+ */
+int slog_start_timer(const char *category, const char *name);
+
+/*
+ * Stop the timer.
+ */
+void slog_stop_timer(int tid);
 
 #endif /* STRUCTURED_LOGGING */
 #endif /* STRUCTURED_LOGGING_H */

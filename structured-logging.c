@@ -15,6 +15,26 @@
 
 #define SLOG_VERSION 0
 
+struct timer_data {
+	char *category;
+	char *name;
+	uint64_t total_ns;
+	uint64_t min_ns;
+	uint64_t max_ns;
+	uint64_t start_ns;
+	int count;
+	int started;
+};
+
+struct timer_data_array {
+	struct timer_data **array;
+	size_t nr, alloc;
+};
+
+static struct timer_data_array my__timers;
+static void format_timers(struct json_writer *jw);
+static void free_timers(void);
+
 static uint64_t my__start_time;
 static uint64_t my__exit_time;
 static int my__is_config_loaded;
@@ -41,6 +61,7 @@ struct category_filter
 };
 
 static struct category_filter my__detail_categories;
+static struct category_filter my__timer_categories;
 
 static void set_want_categories(struct category_filter *cf, const char *value)
 {
@@ -228,6 +249,12 @@ static void emit_exit_event(void)
 			jw_object_intmax(&jw, "slog", SLOG_VERSION);
 		}
 		jw_end(&jw);
+
+		if (my__timers.nr) {
+			jw_object_inline_begin_object(&jw, "timers");
+			format_timers(&jw);
+			jw_end(&jw);
+		}
 	}
 	jw_end(&jw);
 
@@ -294,6 +321,12 @@ static int cfg_detail(const char *key, const char *value)
 	return 0;
 }
 
+static int cfg_timers(const char *key, const char *value)
+{
+	set_want_categories(&my__timer_categories, value);
+	return 0;
+}
+
 int slog_default_config(const char *key, const char *value)
 {
 	const char *sub;
@@ -314,6 +347,8 @@ int slog_default_config(const char *key, const char *value)
 			return cfg_pretty(key, value);
 		if (!strcmp(sub, "detail"))
 			return cfg_detail(key, value);
+		if (!strcmp(sub, "timers"))
+			return cfg_timers(key, value);
 	}
 
 	return 0;
@@ -371,6 +406,7 @@ static void do_final_steps(int in_signal)
 	argv_array_clear(&my__argv);
 	jw_release(&my__errors);
 	strbuf_release(&my__session_id);
+	free_timers();
 }
 
 static void slog_atexit(void)
@@ -517,6 +553,150 @@ void slog_emit_detail_event(const char *category, const char *label,
 		    category, label, data->json.buf);
 
 	emit_detail_event(category, label, data);
+}
+
+int slog_start_timer(const char *category, const char *name)
+{
+	int k;
+	struct timer_data *td;
+
+	if (!want_category(&my__timer_categories, category))
+		return SLOG_UNDEFINED_TIMER_ID;
+	if (!name || !*name)
+		return SLOG_UNDEFINED_TIMER_ID;
+
+	for (k = 0; k < my__timers.nr; k++) {
+		td = my__timers.array[k];
+		if (!strcmp(category, td->category) && !strcmp(name, td->name))
+			goto start_timer;
+	}
+
+	td = xcalloc(1, sizeof(struct timer_data));
+	td->category = xstrdup(category);
+	td->name = xstrdup(name);
+	td->min_ns = UINT64_MAX;
+
+	ALLOC_GROW(my__timers.array, my__timers.nr + 1, my__timers.alloc);
+	my__timers.array[my__timers.nr++] = td;
+
+start_timer:
+	if (td->started)
+		BUG("slog.timer '%s:%s' already started",
+		    td->category, td->name);
+
+	td->start_ns = getnanotime();
+	td->started = 1;
+
+	return k;
+}
+
+static void stop_timer(struct timer_data *td)
+{
+	uint64_t delta_ns = getnanotime() - td->start_ns;
+
+	td->count++;
+	td->total_ns += delta_ns;
+	if (delta_ns < td->min_ns)
+		td->min_ns = delta_ns;
+	if (delta_ns > td->max_ns)
+		td->max_ns = delta_ns;
+	td->started = 0;
+}
+
+void slog_stop_timer(int tid)
+{
+	struct timer_data *td;
+
+	if (tid == SLOG_UNDEFINED_TIMER_ID)
+		return;
+	if (tid >= my__timers.nr || tid < 0)
+		BUG("Invalid slog.timer id '%d'", tid);
+
+	td = my__timers.array[tid];
+	if (!td->started)
+		BUG("slog.timer '%s:%s' not started", td->category, td->name);
+
+	stop_timer(td);
+}
+
+static int sort_timers_cb(const void *a, const void *b)
+{
+	struct timer_data *td_a = *(struct timer_data **)a;
+	struct timer_data *td_b = *(struct timer_data **)b;
+	int r;
+
+	r = strcmp(td_a->category, td_b->category);
+	if (r)
+		return r;
+	return strcmp(td_a->name, td_b->name);
+}
+
+static void format_a_timer(struct json_writer *jw, struct timer_data *td,
+			   int force_stop)
+{
+	jw_object_inline_begin_object(jw, td->name);
+	{
+		jw_object_intmax(jw, "count", td->count);
+		jw_object_intmax(jw, "total_us", td->total_ns / 1000);
+		if (td->count > 1) {
+			uint64_t avg_ns = td->total_ns / td->count;
+
+			jw_object_intmax(jw, "min_us", td->min_ns / 1000);
+			jw_object_intmax(jw, "max_us", td->max_ns / 1000);
+			jw_object_intmax(jw, "avg_us", avg_ns / 1000);
+		}
+		if (force_stop)
+			jw_object_true(jw, "force_stop");
+	}
+	jw_end(jw);
+}
+
+static void format_timers(struct json_writer *jw)
+{
+	const char *open_category = NULL;
+	int k;
+
+	QSORT(my__timers.array, my__timers.nr, sort_timers_cb);
+
+	for (k = 0; k < my__timers.nr; k++) {
+		struct timer_data *td = my__timers.array[k];
+		int force_stop = td->started;
+
+		if (force_stop)
+			stop_timer(td);
+
+		if (!open_category) {
+			jw_object_inline_begin_object(jw, td->category);
+			open_category = td->category;
+		}
+		else if (strcmp(open_category, td->category)) {
+			jw_end(jw);
+			jw_object_inline_begin_object(jw, td->category);
+			open_category = td->category;
+		}
+
+		format_a_timer(jw, td, force_stop);
+	}
+
+	if (open_category)
+		jw_end(jw);
+}
+
+static void free_timers(void)
+{
+	int k;
+
+	for (k = 0; k < my__timers.nr; k++) {
+		struct timer_data *td = my__timers.array[k];
+
+		free(td->category);
+		free(td->name);
+		free(td);
+	}
+
+	FREE_AND_NULL(my__timers.array);
+	my__timers.nr = 0;
+	my__timers.alloc = 0;
 }
 
 #endif
