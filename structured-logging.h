@@ -25,6 +25,11 @@ typedef int (*slog_fn_main_t)(int, const char **);
 #define slog_emit_detail_event(category, label, data) do { } while (0)
 #define slog_start_timer(category, name) (SLOG_UNDEFINED_TIMER_ID)
 static inline void slog_stop_timer(int tid) { };
+#define slog_want_aux(c) (0)
+#define slog_aux_string(c, k, v) do { } while (0)
+#define slog_aux_intmax(c, k, v) do { } while (0)
+#define slog_aux_bool(c, k, v) do { } while (0)
+#define slog_aux_jw(c, k, v) do { } while (0)
 
 #else
 
@@ -125,6 +130,22 @@ int slog_start_timer(const char *category, const char *name);
  * Stop the timer.
  */
 void slog_stop_timer(int tid);
+
+/*
+ * Add arbitrary extra key/value data to the "cmd_exit" event.
+ * These fields will appear under the "aux" object.  This is
+ * intended for "interesting" config values or repo stats, such
+ * as the size of the index.
+ *
+ * These key/value pairs are written as an array-pair rather than
+ * an object/value because the keys may be repeated.
+ */
+int slog_want_aux(const char *category);
+void slog_aux_string(const char *category, const char *key, const char *value);
+void slog_aux_intmax(const char *category, const char *key, intmax_t value);
+void slog_aux_bool(const char *category, const char *key, int value);
+void slog_aux_jw(const char *category, const char *key,
+		 const struct json_writer *value);
 
 #endif /* STRUCTURED_LOGGING */
 #endif /* STRUCTURED_LOGGING_H */

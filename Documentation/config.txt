@@ -3296,6 +3296,12 @@ slog.timers::
 	enabled.  Defaults to off.  Data for enabled timers is added to
 	the `cmd_exit` event.
 
+slog.aux::
+	(EXPERIMENTAL) May be set to a boolean value or a list of
+	comma separated tokens.  Controls which categories of SLOG
+	"aux" data are enabled.  Defaults to off.  "Aux" data is added
+	to the `cmd_exit` event.
+
 splitIndex.maxPercentChange::
 	When the split index feature is used, this specifies the
 	percent of entries the split index can contain compared to the

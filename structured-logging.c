@@ -35,6 +35,19 @@ static struct timer_data_array my__timers;
 static void format_timers(struct json_writer *jw);
 static void free_timers(void);
 
+struct aux_data {
+	char *category;
+	struct json_writer jw;
+};
+
+struct aux_data_array {
+	struct aux_data **array;
+	size_t nr, alloc;
+};
+
+static struct aux_data_array my__aux_data;
+static void format_and_free_aux_data(struct json_writer *jw);
+
 static uint64_t my__start_time;
 static uint64_t my__exit_time;
 static int my__is_config_loaded;
@@ -62,6 +75,7 @@ struct category_filter
 
 static struct category_filter my__detail_categories;
 static struct category_filter my__timer_categories;
+static struct category_filter my__aux_categories;
 
 static void set_want_categories(struct category_filter *cf, const char *value)
 {
@@ -255,6 +269,12 @@ static void emit_exit_event(void)
 			format_timers(&jw);
 			jw_end(&jw);
 		}
+
+		if (my__aux_data.nr) {
+			jw_object_inline_begin_object(&jw, "aux");
+			format_and_free_aux_data(&jw);
+			jw_end(&jw);
+		}
 	}
 	jw_end(&jw);
 
@@ -327,6 +347,12 @@ static int cfg_timers(const char *key, const char *value)
 	return 0;
 }
 
+static int cfg_aux(const char *key, const char *value)
+{
+	set_want_categories(&my__aux_categories, value);
+	return 0;
+}
+
 int slog_default_config(const char *key, const char *value)
 {
 	const char *sub;
@@ -349,6 +375,8 @@ int slog_default_config(const char *key, const char *value)
 			return cfg_detail(key, value);
 		if (!strcmp(sub, "timers"))
 			return cfg_timers(key, value);
+		if (!strcmp(sub, "aux"))
+			return cfg_aux(key, value);
 	}
 
 	return 0;
@@ -697,6 +725,94 @@ static void free_timers(void)
 	FREE_AND_NULL(my__timers.array);
 	my__timers.nr = 0;
 	my__timers.alloc = 0;
+}
+
+int slog_want_aux(const char *category)
+{
+	return want_category(&my__aux_categories, category);
+}
+
+static struct aux_data *find_aux_data(const char *category)
+{
+	struct aux_data *ad;
+	int k;
+
+	if (!slog_want_aux(category))
+		return NULL;
+
+	for (k = 0; k < my__aux_data.nr; k++) {
+		ad = my__aux_data.array[k];
+		if (!strcmp(category, ad->category))
+			return ad;
+	}
+
+	ad = xcalloc(1, sizeof(struct aux_data));
+	ad->category = xstrdup(category);
+
+	jw_array_begin(&ad->jw, my__is_pretty);
+	/* leave per-category object unterminated for now */
+
+	ALLOC_GROW(my__aux_data.array, my__aux_data.nr + 1, my__aux_data.alloc);
+	my__aux_data.array[my__aux_data.nr++] = ad;
+
+	return ad;
+}
+
+#define add_to_aux(c, k, v, fn)						\
+	do {								\
+		struct aux_data *ad = find_aux_data((c));		\
+		if (ad) {						\
+			jw_array_inline_begin_array(&ad->jw);		\
+			{						\
+				jw_array_string(&ad->jw, (k));		\
+				(fn)(&ad->jw, (v));			\
+			}						\
+			jw_end(&ad->jw);				\
+		}							\
+	} while (0)
+
+void slog_aux_string(const char *category, const char *key, const char *value)
+{
+	add_to_aux(category, key, value, jw_array_string);
+}
+
+void slog_aux_intmax(const char *category, const char *key, intmax_t value)
+{
+	add_to_aux(category, key, value, jw_array_intmax);
+}
+
+void slog_aux_bool(const char *category, const char *key, int value)
+{
+	add_to_aux(category, key, value, jw_array_bool);
+}
+
+void slog_aux_jw(const char *category, const char *key,
+		 const struct json_writer *value)
+{
+	add_to_aux(category, key, value, jw_array_sub_jw);
+}
+
+static void format_and_free_aux_data(struct json_writer *jw)
+{
+	int k;
+
+	for (k = 0; k < my__aux_data.nr; k++) {
+		struct aux_data *ad = my__aux_data.array[k];
+
+		/* terminate per-category form */
+		jw_end(&ad->jw);
+
+		/* insert per-category form into containing "aux" form */
+		jw_object_sub_jw(jw, ad->category, &ad->jw);
+
+		jw_release(&ad->jw);
+		free(ad->category);
+		free(ad);
+	}
+
+	FREE_AND_NULL(my__aux_data.array);
+	my__aux_data.nr = 0;
+	my__aux_data.alloc = 0;
 }
 
 #endif
