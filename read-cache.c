@@ -2008,6 +2008,8 @@ int read_index_from(struct index_state *istate, const char *path,
 	slog_stop_timer(slog_tid);
 	trace_performance_since(start, "read cache %s", path);
 
+	slog_aux_intmax("index", "cache_nr", istate->cache_nr);
+
 	split_index = istate->split_index;
 	if (!split_index || is_null_oid(&split_index->base_oid)) {
 		post_read_index_from(istate);
@@ -2028,6 +2030,8 @@ int read_index_from(struct index_state *istate, const char *path,
 		die("broken index, expect %s in %s, got %s",
 		    base_oid_hex, base_path,
 		    oid_to_hex(&split_index->base->oid));
+
+	slog_aux_intmax("index", "split_index_cache_nr", split_index->base->cache_nr);
 
 	freshen_shared_index(base_path, 0);
 	merge_base_index(istate);
