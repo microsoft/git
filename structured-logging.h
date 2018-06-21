@@ -1,6 +1,8 @@
 #ifndef STRUCTURED_LOGGING_H
 #define STRUCTURED_LOGGING_H
 
+struct json_writer;
+
 typedef int (*slog_fn_main_t)(int, const char **);
 
 #if !defined(STRUCTURED_LOGGING)
@@ -17,6 +19,8 @@ typedef int (*slog_fn_main_t)(int, const char **);
 #define slog_is_pretty() (0)
 #define slog_exit_code(exit_code) (exit_code)
 #define slog_error_message(prefix, fmt, params) do { } while (0)
+#define slog_want_detail_event(category) (0)
+#define slog_emit_detail_event(category, label, data) do { } while (0)
 
 #else
 
@@ -90,6 +94,18 @@ int slog_exit_code(int exit_code);
  * Messages from this will appear in the final "cmd_exit" event.
  */
 void slog_error_message(const char *prefix, const char *fmt, va_list params);
+
+/*
+ * Is detail logging enabled for this category?
+ */
+int slog_want_detail_event(const char *category);
+
+/*
+ * Write a detail event.
+ */
+
+void slog_emit_detail_event(const char *category, const char *label,
+			    const struct json_writer *data);
 
 #endif /* STRUCTURED_LOGGING */
 #endif /* STRUCTURED_LOGGING_H */

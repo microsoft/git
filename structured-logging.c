@@ -34,6 +34,34 @@ static struct argv_array my__argv = ARGV_ARRAY_INIT;
 static struct strbuf my__session_id = STRBUF_INIT;
 static struct json_writer my__errors = JSON_WRITER_INIT;
 
+struct category_filter
+{
+	char *categories;
+	int want;
+};
+
+static struct category_filter my__detail_categories;
+
+static void set_want_categories(struct category_filter *cf, const char *value)
+{
+	FREE_AND_NULL(cf->categories);
+
+	cf->want = git_parse_maybe_bool(value);
+	if (cf->want == -1)
+		cf->categories = xstrdup(value);
+}
+
+static int want_category(const struct category_filter *cf, const char *category)
+{
+	if (cf->want == 0 || cf->want == 1)
+		return cf->want;
+
+	if (!category || !*category)
+		return 0;
+
+	return !!strstr(cf->categories, category);
+}
+
 /*
  * Compute a new session id for the current process.  Build string
  * with the start time and PID of the current process and append
@@ -207,6 +235,40 @@ static void emit_exit_event(void)
 	jw_release(&jw);
 }
 
+static void emit_detail_event(const char *category, const char *label,
+			      const struct json_writer *data)
+{
+	struct json_writer jw = JSON_WRITER_INIT;
+	uint64_t clock_us = getnanotime() / 1000;
+
+	/* build "detail" event */
+	jw_object_begin(&jw, my__is_pretty);
+	{
+		jw_object_string(&jw, "event", "detail");
+		jw_object_intmax(&jw, "clock_us", (intmax_t)clock_us);
+		jw_object_intmax(&jw, "pid", (intmax_t)my__pid);
+		jw_object_string(&jw, "sid", my__session_id.buf);
+
+		if (my__command_name && *my__command_name)
+			jw_object_string(&jw, "command", my__command_name);
+		if (my__sub_command_name && *my__sub_command_name)
+			jw_object_string(&jw, "sub_command", my__sub_command_name);
+
+		jw_object_inline_begin_object(&jw, "detail");
+		{
+			jw_object_string(&jw, "category", category);
+			jw_object_string(&jw, "label", label);
+			if (data)
+				jw_object_sub_jw(&jw, "data", data);
+		}
+		jw_end(&jw);
+	}
+	jw_end(&jw);
+
+	emit_event(&jw, "detail");
+	jw_release(&jw);
+}
+
 static int cfg_path(const char *key, const char *value)
 {
 	if (is_absolute_path(value)) {
@@ -223,6 +285,12 @@ static int cfg_path(const char *key, const char *value)
 static int cfg_pretty(const char *key, const char *value)
 {
 	my__is_pretty = git_config_bool(key, value);
+	return 0;
+}
+
+static int cfg_detail(const char *key, const char *value)
+{
+	set_want_categories(&my__detail_categories, value);
 	return 0;
 }
 
@@ -244,6 +312,8 @@ int slog_default_config(const char *key, const char *value)
 			return cfg_path(key, value);
 		if (!strcmp(sub, "pretty"))
 			return cfg_pretty(key, value);
+		if (!strcmp(sub, "detail"))
+			return cfg_detail(key, value);
 	}
 
 	return 0;
@@ -422,6 +492,31 @@ void slog_error_message(const char *prefix, const char *fmt, va_list params)
 	/* leave my__errors array unterminated for now */
 
 	strbuf_release(&em);
+}
+
+int slog_want_detail_event(const char *category)
+{
+	return want_category(&my__detail_categories, category);
+}
+
+void slog_emit_detail_event(const char *category, const char *label,
+			    const struct json_writer *data)
+{
+	if (!my__wrote_start_event)
+		emit_start_event();
+
+	if (!slog_want_detail_event(category))
+		return;
+
+	if (!category || !*category)
+		BUG("no category for slog.detail event");
+	if (!label || !*label)
+		BUG("no label for slog.detail event");
+	if (data && !jw_is_terminated(data))
+		BUG("unterminated slog.detail data: '%s' '%s' '%s'",
+		    category, label, data->json.buf);
+
+	emit_detail_event(category, label, data);
 }
 
 #endif
