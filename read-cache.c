@@ -2563,7 +2563,9 @@ static int commit_locked_index(struct lock_file *lk)
 static int do_write_locked_index(struct index_state *istate, struct lock_file *lock,
 				 unsigned flags)
 {
+	int slog_timer = slog_start_timer("index", "do_write_index");
 	int ret = do_write_index(istate, lock->tempfile, 0);
+	slog_stop_timer(slog_timer);
 	if (ret)
 		return ret;
 	if (flags & COMMIT_LOCK)
@@ -2644,11 +2646,14 @@ static int clean_shared_index_files(const char *current_hex)
 static int write_shared_index(struct index_state *istate,
 			      struct tempfile **temp)
 {
+	int slog_tid = SLOG_UNDEFINED_TIMER_ID;
 	struct split_index *si = istate->split_index;
 	int ret;
 
 	move_cache_to_base_index(istate);
+	slog_tid = slog_start_timer("index", "do_write_index");
 	ret = do_write_index(si->base, *temp, 1);
+	slog_stop_timer(slog_tid);
 	if (ret)
 		return ret;
 	ret = adjust_shared_perm(get_tempfile_path(*temp));
