@@ -116,8 +116,14 @@ void preload_index(struct index_state *index, const struct pathspec *pathspec)
 int read_index_preload(struct index_state *index,
 		       const struct pathspec *pathspec)
 {
+	int slog_tid;
 	int retval = read_index(index);
 
+	slog_tid = slog_start_timer("index", "preload");
+
 	preload_index(index, pathspec);
+
+	slog_stop_timer(slog_tid);
+
 	return retval;
 }
