@@ -140,4 +140,52 @@ test_expect_success PERLJSON 'parse JSON for checkout command' '
 	grep "row\[2\]\.sub_command path" <parsed_exit
 '
 
+test_expect_success PERLJSON 'turn on all timers, verify some are present' '
+	test_when_finished "rm \"$LOGFILE\" event_exit" &&
+	git config --local slog.timers 1 &&
+	rm -f "$LOGFILE" &&
+
+	git status >/dev/null &&
+
+	grep -f key_cmd_exit "$LOGFILE" >event_exit &&
+
+	perl "$TEST_DIRECTORY"/t0420/parse_json.perl <event_exit >parsed_exit &&
+
+	grep "row\[0\]\.version\.slog 0" <parsed_exit &&
+	grep "row\[0\]\.argv\[1\] status" <parsed_exit &&
+	grep "row\[0\]\.event cmd_exit" <parsed_exit &&
+	grep "row\[0\]\.result\.exit_code 0" <parsed_exit &&
+	grep "row\[0\]\.command status" <parsed_exit &&
+
+	grep "row\[0\]\.timers\.index\.do_read_index\.count" <parsed_exit &&
+	grep "row\[0\]\.timers\.index\.do_read_index\.total_us" <parsed_exit &&
+
+	grep "row\[0\]\.timers\.status\.untracked\.count" <parsed_exit &&
+	grep "row\[0\]\.timers\.status\.untracked\.total_us" <parsed_exit
+'
+
+test_expect_success PERLJSON 'turn on index timers only' '
+	test_when_finished "rm \"$LOGFILE\" event_exit" &&
+	git config --local slog.timers foo,index,bar &&
+	rm -f "$LOGFILE" &&
+
+	git status >/dev/null &&
+
+	grep -f key_cmd_exit "$LOGFILE" >event_exit &&
+
+	perl "$TEST_DIRECTORY"/t0420/parse_json.perl <event_exit >parsed_exit &&
+
+	grep "row\[0\]\.version\.slog 0" <parsed_exit &&
+	grep "row\[0\]\.argv\[1\] status" <parsed_exit &&
+	grep "row\[0\]\.event cmd_exit" <parsed_exit &&
+	grep "row\[0\]\.result\.exit_code 0" <parsed_exit &&
+	grep "row\[0\]\.command status" <parsed_exit &&
+
+	grep "row\[0\]\.timers\.index\.do_read_index\.count" <parsed_exit &&
+	grep "row\[0\]\.timers\.index\.do_read_index\.total_us" <parsed_exit &&
+
+	test_expect_code 1 grep "row\[0\]\.timers\.status\.untracked\.count" <parsed_exit &&
+	test_expect_code 1 grep "row\[0\]\.timers\.status\.untracked\.total_us" <parsed_exit
+'
+
 test_done
