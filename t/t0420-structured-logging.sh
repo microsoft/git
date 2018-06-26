@@ -188,4 +188,37 @@ test_expect_success PERLJSON 'turn on index timers only' '
 	test_expect_code 1 grep "row\[0\]\.timers\.status\.untracked\.total_us" <parsed_exit
 '
 
+test_expect_success PERLJSON 'turn on aux-data, verify a few fields' '
+	test_when_finished "rm \"$LOGFILE\" event_exit" &&
+	echo "hello.t" >.git/info/sparse-checkout &&
+	git config --local core.sparsecheckout true &&
+	git config --local slog.aux foo,index,bar &&
+	rm -f "$LOGFILE" &&
+
+	git checkout HEAD &&
+
+	grep -f key_cmd_exit "$LOGFILE" >event_exit &&
+
+	perl "$TEST_DIRECTORY"/t0420/parse_json.perl <event_exit >parsed_exit &&
+
+	grep "row\[0\]\.version\.slog 0" <parsed_exit &&
+	grep "row\[0\]\.argv\[1\] checkout" <parsed_exit &&
+	grep "row\[0\]\.event cmd_exit" <parsed_exit &&
+	grep "row\[0\]\.result\.exit_code 0" <parsed_exit &&
+	grep "row\[0\]\.command checkout" <parsed_exit &&
+	grep "row\[0\]\.sub_command switch_branch" <parsed_exit &&
+
+	# Expect:
+	#   row[0].aux.index[<k>][0] cache_nr
+	#   row[0].aux.index[<k>][1] 1
+	#   row[0].aux.index[<j>][0] sparse_checkout_count
+	#   row[0].aux.index[<j>][1] 1
+	#
+	# But do not assume values for <j> and <k> (in case the sorting changes
+	# or other "aux" fields are added later).
+
+	grep "row\[0\]\.aux\.index\[.*\]\[0\] cache_nr" <parsed_exit &&
+	grep "row\[0\]\.aux\.index\[.*\]\[0\] sparse_checkout_count" <parsed_exit
+'
+
 test_done
