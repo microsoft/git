@@ -4,6 +4,7 @@
 #include "json-writer.h"
 #include "sigchain.h"
 #include "argv-array.h"
+#include "run-command.h"
 
 #if !defined(STRUCTURED_LOGGING)
 /*
@@ -47,6 +48,23 @@ struct aux_data_array {
 
 static struct aux_data_array my__aux_data;
 static void format_and_free_aux_data(struct json_writer *jw);
+
+struct child_data {
+	uint64_t start_ns;
+	uint64_t end_ns;
+	struct json_writer jw_argv;
+	unsigned int is_running:1;
+	unsigned int is_git_cmd:1;
+	unsigned int use_shell:1;
+};
+
+struct child_data_array {
+	struct child_data **array;
+	size_t nr, alloc;
+};
+
+static struct child_data_array my__child_data;
+static void free_children(void);
 
 static uint64_t my__start_time;
 static uint64_t my__exit_time;
@@ -283,10 +301,11 @@ static void emit_exit_event(void)
 }
 
 static void emit_detail_event(const char *category, const char *label,
+			      uint64_t clock_ns,
 			      const struct json_writer *data)
 {
 	struct json_writer jw = JSON_WRITER_INIT;
-	uint64_t clock_us = getnanotime() / 1000;
+	uint64_t clock_us = clock_ns / 1000;
 
 	/* build "detail" event */
 	jw_object_begin(&jw, my__is_pretty);
@@ -435,6 +454,7 @@ static void do_final_steps(int in_signal)
 	jw_release(&my__errors);
 	strbuf_release(&my__session_id);
 	free_timers();
+	free_children();
 }
 
 static void slog_atexit(void)
@@ -580,7 +600,7 @@ void slog_emit_detail_event(const char *category, const char *label,
 		BUG("unterminated slog.detail data: '%s' '%s' '%s'",
 		    category, label, data->json.buf);
 
-	emit_detail_event(category, label, data);
+	emit_detail_event(category, label, getnanotime(), data);
 }
 
 int slog_start_timer(const char *category, const char *name)
@@ -813,6 +833,136 @@ static void format_and_free_aux_data(struct json_writer *jw)
 	FREE_AND_NULL(my__aux_data.array);
 	my__aux_data.nr = 0;
 	my__aux_data.alloc = 0;
+}
+
+static struct child_data *alloc_child_data(const struct child_process *cmd)
+{
+	struct child_data *cd = xcalloc(1, sizeof(struct child_data));
+
+	cd->start_ns = getnanotime();
+	cd->is_running = 1;
+	cd->is_git_cmd = cmd->git_cmd;
+	cd->use_shell = cmd->use_shell;
+
+	jw_init(&cd->jw_argv);
+
+	jw_array_begin(&cd->jw_argv, my__is_pretty);
+	{
+		jw_array_argv(&cd->jw_argv, cmd->argv);
+	}
+	jw_end(&cd->jw_argv);
+
+	return cd;
+}
+
+static int insert_child_data(struct child_data *cd)
+{
+	int child_id = my__child_data.nr;
+
+	ALLOC_GROW(my__child_data.array, my__child_data.nr + 1,
+		   my__child_data.alloc);
+	my__child_data.array[my__child_data.nr++] = cd;
+
+	return child_id;
+}
+
+int slog_child_starting(const struct child_process *cmd)
+{
+	struct child_data *cd;
+	int child_id;
+
+	if (!slog_is_enabled())
+		return SLOG_UNDEFINED_CHILD_ID;
+
+	/*
+	 * If we have not yet written a cmd_start event (and even if
+	 * we do not emit this child_start event), force the cmd_start
+	 * event now so that it appears in the log before any events
+	 * that the child process itself emits.
+	 */
+	if (!my__wrote_start_event)
+		emit_start_event();
+
+	cd = alloc_child_data(cmd);
+	child_id = insert_child_data(cd);
+
+	/* build data portion for a "detail" event */
+	if (slog_want_detail_event("child")) {
+		struct json_writer jw_data = JSON_WRITER_INIT;
+
+		jw_object_begin(&jw_data, my__is_pretty);
+		{
+			jw_object_intmax(&jw_data, "child_id", child_id);
+			jw_object_bool(&jw_data, "git_cmd", cd->is_git_cmd);
+			jw_object_bool(&jw_data, "use_shell", cd->use_shell);
+			jw_object_sub_jw(&jw_data, "child_argv", &cd->jw_argv);
+		}
+		jw_end(&jw_data);
+
+		emit_detail_event("child", "child_starting", cd->start_ns,
+				  &jw_data);
+		jw_release(&jw_data);
+	}
+
+	return child_id;
+}
+
+void slog_child_ended(int child_id, int child_pid, int child_exit_code)
+{
+	struct child_data *cd;
+
+	if (!slog_is_enabled())
+		return;
+	if (child_id == SLOG_UNDEFINED_CHILD_ID)
+		return;
+	if (child_id >= my__child_data.nr || child_id < 0)
+		BUG("Invalid slog.child id '%d'", child_id);
+
+	cd = my__child_data.array[child_id];
+	if (!cd->is_running)
+		BUG("slog.child '%d' already stopped", child_id);
+
+	cd->end_ns = getnanotime();
+	cd->is_running = 0;
+
+	/* build data portion for a "detail" event */
+	if (slog_want_detail_event("child")) {
+		struct json_writer jw_data = JSON_WRITER_INIT;
+
+		jw_object_begin(&jw_data, my__is_pretty);
+		{
+			jw_object_intmax(&jw_data, "child_id", child_id);
+			jw_object_bool(&jw_data, "git_cmd", cd->is_git_cmd);
+			jw_object_bool(&jw_data, "use_shell", cd->use_shell);
+			jw_object_sub_jw(&jw_data, "child_argv", &cd->jw_argv);
+
+			jw_object_intmax(&jw_data, "child_pid", child_pid);
+			jw_object_intmax(&jw_data, "child_exit_code",
+					 child_exit_code);
+			jw_object_intmax(&jw_data, "child_elapsed_us",
+					 (cd->end_ns - cd->start_ns) / 1000);
+		}
+		jw_end(&jw_data);
+
+		emit_detail_event("child", "child_ended", cd->end_ns, &jw_data);
+		jw_release(&jw_data);
+	}
+}
+
+static void free_children(void)
+{
+	int k;
+
+	for (k = 0; k < my__child_data.nr; k++) {
+		struct child_data *cd = my__child_data.array[k];
+
+		jw_release(&cd->jw_argv);
+		free(cd);
+	}
+
+	FREE_AND_NULL(my__child_data.array);
+	my__child_data.nr = 0;
+	my__child_data.alloc = 0;
 }
 
 #endif

@@ -2,10 +2,12 @@
 #define STRUCTURED_LOGGING_H
 
 struct json_writer;
+struct child_process;
 
 typedef int (*slog_fn_main_t)(int, const char **);
 
 #define SLOG_UNDEFINED_TIMER_ID (-1)
+#define SLOG_UNDEFINED_CHILD_ID (-1)
 
 #if !defined(STRUCTURED_LOGGING)
 /*
@@ -30,6 +32,8 @@ static inline void slog_stop_timer(int tid) { };
 #define slog_aux_intmax(c, k, v) do { } while (0)
 #define slog_aux_bool(c, k, v) do { } while (0)
 #define slog_aux_jw(c, k, v) do { } while (0)
+#define slog_child_starting(cmd) (SLOG_UNDEFINED_CHILD_ID)
+#define slog_child_ended(i, p, ec) do { } while (0)
 
 #else
 
@@ -146,6 +150,17 @@ void slog_aux_intmax(const char *category, const char *key, intmax_t value);
 void slog_aux_bool(const char *category, const char *key, int value);
 void slog_aux_jw(const char *category, const char *key,
 		 const struct json_writer *value);
+
+/*
+ * Emit a detail event of category "child" and label "child_starting"
+ * or "child_ending" with information about the child process.  Note
+ * that this is in addition to any events that the child process itself
+ * generates.
+ *
+ * Set "slog.detail" to true or contain "child" to get these events.
+ */
+int slog_child_starting(const struct child_process *cmd);
+void slog_child_ended(int child_id, int child_pid, int child_exit_code);
 
 #endif /* STRUCTURED_LOGGING */
 #endif /* STRUCTURED_LOGGING_H */
