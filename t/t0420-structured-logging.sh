@@ -26,6 +26,9 @@ test_expect_success 'setup' '
 	cat >key_exit_code_129 <<-\EOF &&
 	"exit_code":129
 	EOF
+	cat >key_detail <<-\EOF &&
+	"event":"detail"
+	EOF
 	git config --local slog.pretty false &&
 	git config --local slog.path "$LOGFILE"
 '
@@ -219,6 +222,42 @@ test_expect_success PERLJSON 'turn on aux-data, verify a few fields' '
 
 	grep "row\[0\]\.aux\.index\[.*\]\[0\] cache_nr" <parsed_exit &&
 	grep "row\[0\]\.aux\.index\[.*\]\[0\] sparse_checkout_count" <parsed_exit
+'
+
+test_expect_success PERLJSON 'verify child start/end events during clone' '
+	test_when_finished "rm \"$LOGFILE\" event_exit" &&
+	git config --local slog.aux false &&
+	git config --local slog.detail false &&
+	git config --local slog.timers false &&
+	rm -f "$LOGFILE" &&
+
+	# Clone seems to read the config after it switches to the target repo
+	# rather than the source repo, so we have to explicitly set the config
+	# settings on the command line.
+	git -c slog.path="$LOGFILE" -c slog.detail=true clone . ./clone1 &&
+
+	grep -f key_cmd_exit "$LOGFILE" >event_exit &&
+	grep -f key_detail "$LOGFILE" >event_detail &&
+
+	perl "$TEST_DIRECTORY"/t0420/parse_json.perl <event_exit >parsed_exit &&
+	perl "$TEST_DIRECTORY"/t0420/parse_json.perl <event_detail >parsed_detail &&
+
+	grep "row\[0\]\.event cmd_exit" <parsed_exit &&
+	grep "row\[0\]\.result\.exit_code 0" <parsed_exit &&
+	grep "row\[0\]\.command upload-pack" <parsed_exit &&
+
+	grep "row\[1\]\.event cmd_exit" <parsed_exit &&
+	grep "row\[1\]\.result\.exit_code 0" <parsed_exit &&
+	grep "row\[1\]\.command clone" <parsed_exit &&
+
+	grep "row\[0\]\.detail\.label child_starting" <parsed_detail &&
+	grep "row\[0\]\.detail\.data\.child_id 0" <parsed_detail &&
+	grep "row\[0\]\.detail\.data\.child_argv\[0\] git-upload-pack" <parsed_detail &&
+
+	grep "row\[1\]\.detail\.label child_ended" <parsed_detail &&
+	grep "row\[1\]\.detail\.data\.child_id 0" <parsed_detail &&
+	grep "row\[1\]\.detail\.data\.child_argv\[0\] git-upload-pack" <parsed_detail &&
+	grep "row\[1\]\.detail\.data\.child_exit_code 0" <parsed_detail
 '
 
 test_done
