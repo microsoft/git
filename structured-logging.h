@@ -34,6 +34,8 @@ static inline void slog_stop_timer(int tid) { };
 #define slog_aux_jw(c, k, v) do { } while (0)
 #define slog_child_starting(cmd) (SLOG_UNDEFINED_CHILD_ID)
 #define slog_child_ended(i, p, ec) do { } while (0)
+#define slog_set_config_data_string(k, v) do { } while (0)
+#define slog_set_config_data_intmax(k, v) do { } while (0)
 
 #else
 
@@ -161,6 +163,17 @@ void slog_aux_jw(const char *category, const char *key,
  */
 int slog_child_starting(const struct child_process *cmd);
 void slog_child_ended(int child_id, int child_pid, int child_exit_code);
+
+/*
+ * Add an important config key/value pair to the "cmd_event".  Keys
+ * are assumed to be of the form <group>.<name>, such as "slog.path".
+ * The pair will appear under the "config" object in the resulting JSON
+ * as "config.<group>.<name>:<value>".
+ *
+ * This should only be used for important config settings.
+ */
+void slog_set_config_data_string(const char *key, const char *value);
+void slog_set_config_data_intmax(const char *key, intmax_t value);
 
 #endif /* STRUCTURED_LOGGING */
 #endif /* STRUCTURED_LOGGING_H */

@@ -83,6 +83,20 @@ struct child_data_array {
 static struct child_data_array my__child_data;
 static void free_children(void);
 
+struct config_data {
+	char *group;
+	struct json_writer jw;
+};
+
+struct config_data_array {
+	struct config_data **array;
+	size_t nr, alloc;
+};
+
+static struct config_data_array my__config_data;
+static void format_config_data(struct json_writer *jw);
+static void free_config_data(void);
+
 static uint64_t my__start_time;
 static uint64_t my__exit_time;
 static int my__is_config_loaded;
@@ -130,6 +144,15 @@ static int want_category(const struct category_filter *cf, const char *category)
 		return 0;
 
 	return !!strstr(cf->categories, category);
+}
+
+static void set_config_data_from_category(const struct category_filter *cf,
+					  const char *key)
+{
+	if (cf->want == 0 || cf->want == 1)
+		slog_set_config_data_intmax(key, cf->want);
+	else
+		slog_set_config_data_string(key, cf->categories);
 }
 
 /*
@@ -249,6 +272,18 @@ static void emit_exit_event(void)
 	struct json_writer jw = JSON_WRITER_INIT;
 	uint64_t atexit_time = getnanotime() / 1000;
 
+	/*
+	 * Copy important (and non-obvious) config settings into the
+	 * "config" section of the "cmd_exit" event.  The values of
+	 * "slog.detail", "slog.timers", and "slog.aux" are used in
+	 * category want filtering, so post-processors should know the
+	 * filter settings so that they can tell if an event is missing
+	 * because of filtering or an error.
+	 */
+	set_config_data_from_category(&my__detail_categories, "slog.detail");
+	set_config_data_from_category(&my__timer_categories, "slog.timers");
+	set_config_data_from_category(&my__aux_categories, "slog.aux");
+
 	/* close unterminated forms */
 	if (my__errors.json.len)
 		jw_end(&my__errors);
@@ -298,6 +333,12 @@ static void emit_exit_event(void)
 			jw_object_intmax(&jw, "slog", SLOG_VERSION);
 		}
 		jw_end(&jw);
+
+		if (my__config_data.nr) {
+			jw_object_inline_begin_object(&jw, "config");
+			format_config_data(&jw);
+			jw_end(&jw);
+		}
 
 		if (my__timers.nr) {
 			jw_object_inline_begin_object(&jw, "timers");
@@ -479,6 +520,7 @@ static void do_final_steps(int in_signal)
 	free_child_summary_data();
 	free_timers();
 	free_children();
+	free_config_data();
 }
 
 static void slog_atexit(void)
@@ -1082,6 +1124,96 @@ static void free_children(void)
 	FREE_AND_NULL(my__child_data.array);
 	my__child_data.nr = 0;
 	my__child_data.alloc = 0;
+}
+
+/*
+ * Split <key> into <group>.<sub_key> (for example "slog.path" into "slog" and "path")
+ * Find or insert <group> in config_data_array[].
+ *
+ * Return config_data_arary[<group>].
+ */
+static struct config_data *find_config_data(const char *key, const char **sub_key)
+{
+	struct config_data *cd;
+	char *dot;
+	size_t group_len;
+	int k;
+
+	dot = strchr(key, '.');
+	if (!dot)
+		return NULL;
+
+	*sub_key = dot + 1;
+
+	group_len = dot - key;
+
+	for (k = 0; k < my__config_data.nr; k++) {
+		cd = my__config_data.array[k];
+		if (!strncmp(key, cd->group, group_len))
+			return cd;
+	}
+
+	cd = xcalloc(1, sizeof(struct config_data));
+	cd->group = xstrndup(key, group_len);
+
+	jw_object_begin(&cd->jw, my__is_pretty);
+	/* leave per-group object unterminated for now */
+
+	ALLOC_GROW(my__config_data.array, my__config_data.nr + 1,
+		   my__config_data.alloc);
+	my__config_data.array[my__config_data.nr++] = cd;
+
+	return cd;
+}
+
+void slog_set_config_data_string(const char *key, const char *value)
+{
+	const char *sub_key;
+	struct config_data *cd = find_config_data(key, &sub_key);
+
+	if (cd)
+		jw_object_string(&cd->jw, sub_key, value);
+}
+
+void slog_set_config_data_intmax(const char *key, intmax_t value)
+{
+	const char *sub_key;
+	struct config_data *cd = find_config_data(key, &sub_key);
+
+	if (cd)
+		jw_object_intmax(&cd->jw, sub_key, value);
+}
+
+static void format_config_data(struct json_writer *jw)
+{
+	int k;
+
+	for (k = 0; k < my__config_data.nr; k++) {
+		struct config_data *cd = my__config_data.array[k];
+
+		/* termminate per-group form */
+		jw_end(&cd->jw);
+
+		/* insert per-category form into containing "config" form */
+		jw_object_sub_jw(jw, cd->group, &cd->jw);
+	}
+}
+
+static void free_config_data(void)
+{
+	int k;
+
+	for (k = 0; k < my__config_data.nr; k++) {
+		struct config_data *cd = my__config_data.array[k];
+
+		jw_release(&cd->jw);
+		free(cd->group);
+		free(cd);
+	}
+
+	FREE_AND_NULL(my__config_data.array);
+	my__config_data.nr = 0;
+	my__config_data.alloc = 0;
 }
 
 #endif
