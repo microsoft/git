@@ -49,13 +49,30 @@ struct aux_data_array {
 static struct aux_data_array my__aux_data;
 static void format_and_free_aux_data(struct json_writer *jw);
 
+struct child_summary_data {
+	char *child_class;
+	uint64_t total_ns;
+	int count;
+};
+
+struct child_summary_data_array {
+	struct child_summary_data **array;
+	size_t nr, alloc;
+};
+
+static struct child_summary_data_array my__child_summary_data;
+static void format_child_summary_data(struct json_writer *jw);
+static void free_child_summary_data(void);
+
 struct child_data {
 	uint64_t start_ns;
 	uint64_t end_ns;
 	struct json_writer jw_argv;
+	char *child_class;
 	unsigned int is_running:1;
 	unsigned int is_git_cmd:1;
 	unsigned int use_shell:1;
+	unsigned int is_interactive:1;
 };
 
 struct child_data_array {
@@ -293,6 +310,12 @@ static void emit_exit_event(void)
 			format_and_free_aux_data(&jw);
 			jw_end(&jw);
 		}
+
+		if (my__child_summary_data.nr) {
+			jw_object_inline_begin_object(&jw, "child_summary");
+			format_child_summary_data(&jw);
+			jw_end(&jw);
+		}
 	}
 	jw_end(&jw);
 
@@ -453,6 +476,7 @@ static void do_final_steps(int in_signal)
 	argv_array_clear(&my__argv);
 	jw_release(&my__errors);
 	strbuf_release(&my__session_id);
+	free_child_summary_data();
 	free_timers();
 	free_children();
 }
@@ -835,6 +859,85 @@ static void format_and_free_aux_data(struct json_writer *jw)
 	my__aux_data.alloc = 0;
 }
 
+static struct child_summary_data *find_child_summary_data(
+	const struct child_data *cd)
+{
+	struct child_summary_data *csd;
+	char *child_class;
+	int k;
+
+	child_class = cd->child_class;
+	if (!child_class || !*child_class) {
+		if (cd->use_shell)
+			child_class = "shell";
+		child_class = "other";
+	}
+
+	for (k = 0; k < my__child_summary_data.nr; k++) {
+		csd = my__child_summary_data.array[k];
+		if (!strcmp(child_class, csd->child_class))
+			return csd;
+	}
+
+	csd = xcalloc(1, sizeof(struct child_summary_data));
+	csd->child_class = xstrdup(child_class);
+
+	ALLOC_GROW(my__child_summary_data.array, my__child_summary_data.nr + 1,
+		   my__child_summary_data.alloc);
+	my__child_summary_data.array[my__child_summary_data.nr++] = csd;
+
+	return csd;
+}
+
+static void add_child_to_summary_data(const struct child_data *cd)
+{
+	struct child_summary_data *csd = find_child_summary_data(cd);
+
+	csd->total_ns += cd->end_ns - cd->start_ns;
+	csd->count++;
+}
+
+static void format_child_summary_data(struct json_writer *jw)
+{
+	int k;
+
+	for (k = 0; k < my__child_summary_data.nr; k++) {
+		struct child_summary_data *csd = my__child_summary_data.array[k];
+
+		jw_object_inline_begin_object(jw, csd->child_class);
+		{
+			jw_object_intmax(jw, "total_us", csd->total_ns / 1000);
+			jw_object_intmax(jw, "count", csd->count);
+		}
+		jw_end(jw);
+	}
+}
+
+static void free_child_summary_data(void)
+{
+	int k;
+
+	for (k = 0; k < my__child_summary_data.nr; k++) {
+		struct child_summary_data *csd = my__child_summary_data.array[k];
+
+		free(csd->child_class);
+		free(csd);
+	}
+
+	free(my__child_summary_data.array);
+}
+
+static unsigned int is_interactive(const char *child_class)
+{
+	if (child_class && *child_class) {
+		if (!strcmp(child_class, "editor"))
+			return 1;
+		if (!strcmp(child_class, "pager"))
+			return 1;
+	}
+	return 0;
+}
+
 static struct child_data *alloc_child_data(const struct child_process *cmd)
 {
 	struct child_data *cd = xcalloc(1, sizeof(struct child_data));
@@ -843,6 +946,9 @@ static struct child_data *alloc_child_data(const struct child_process *cmd)
 	cd->is_running = 1;
 	cd->is_git_cmd = cmd->git_cmd;
 	cd->use_shell = cmd->use_shell;
+	cd->is_interactive = is_interactive(cmd->slog_child_class);
+	if (cmd->slog_child_class && *cmd->slog_child_class)
+		cd->child_class = xstrdup(cmd->slog_child_class);
 
 	jw_init(&cd->jw_argv);
 
@@ -895,6 +1001,11 @@ int slog_child_starting(const struct child_process *cmd)
 			jw_object_intmax(&jw_data, "child_id", child_id);
 			jw_object_bool(&jw_data, "git_cmd", cd->is_git_cmd);
 			jw_object_bool(&jw_data, "use_shell", cd->use_shell);
+			jw_object_bool(&jw_data, "is_interactive",
+				       cd->is_interactive);
+			if (cd->child_class)
+				jw_object_string(&jw_data, "child_class",
+						 cd->child_class);
 			jw_object_sub_jw(&jw_data, "child_argv", &cd->jw_argv);
 		}
 		jw_end(&jw_data);
@@ -925,6 +1036,8 @@ void slog_child_ended(int child_id, int child_pid, int child_exit_code)
 	cd->end_ns = getnanotime();
 	cd->is_running = 0;
 
+	add_child_to_summary_data(cd);
+
 	/* build data portion for a "detail" event */
 	if (slog_want_detail_event("child")) {
 		struct json_writer jw_data = JSON_WRITER_INIT;
@@ -934,6 +1047,11 @@ void slog_child_ended(int child_id, int child_pid, int child_exit_code)
 			jw_object_intmax(&jw_data, "child_id", child_id);
 			jw_object_bool(&jw_data, "git_cmd", cd->is_git_cmd);
 			jw_object_bool(&jw_data, "use_shell", cd->use_shell);
+			jw_object_bool(&jw_data, "is_interactive",
+				       cd->is_interactive);
+			if (cd->child_class)
+				jw_object_string(&jw_data, "child_class",
+						 cd->child_class);
 			jw_object_sub_jw(&jw_data, "child_argv", &cd->jw_argv);
 
 			jw_object_intmax(&jw_data, "child_pid", child_pid);
@@ -957,6 +1075,7 @@ static void free_children(void)
 		struct child_data *cd = my__child_data.array[k];
 
 		jw_release(&cd->jw_argv);
+		free(cd->child_class);
 		free(cd);
 	}
 
