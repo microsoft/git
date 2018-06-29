@@ -260,4 +260,34 @@ test_expect_success PERLJSON 'verify child start/end events during clone' '
 	grep "row\[1\]\.detail\.data\.child_exit_code 0" <parsed_detail
 '
 
+. "$TEST_DIRECTORY"/lib-pager.sh
+. "$TEST_DIRECTORY"/lib-terminal.sh
+
+test_expect_success 'setup fake pager to test interactive' '
+	test_when_finished "rm \"$LOGFILE\" " &&
+	sane_unset GIT_PAGER GIT_PAGER_IN_USE &&
+	test_unconfig core.pager &&
+
+	PAGER="cat >paginated.out" &&
+	export PAGER &&
+
+	test_commit initial
+'
+
+test_expect_success TTY 'verify fake pager detected and process marked interactive' '
+	test_when_finished "rm \"$LOGFILE\" event_exit" &&
+	rm -f paginated.out &&
+	rm -f "$LOGFILE" &&
+
+	test_terminal git log &&
+	test -e paginated.out &&
+
+	grep -f key_cmd_exit "$LOGFILE" >event_exit &&
+
+	perl "$TEST_DIRECTORY"/t0420/parse_json.perl <event_exit >parsed_exit &&
+
+	grep "row\[0\]\.child_summary\.pager\.count 1" <parsed_exit
+'
+
+
 test_done
