@@ -392,7 +392,7 @@ test_expect_success 'commit --amend -s places the sign-off at the right place' '
 	test_cmp expect actual
 '
 
-test_must_fail 'cherry-pick preserves sparse-checkout' '
+test_expect_success 'cherry-pick preserves sparse-checkout' '
 	pristine_detach initial &&
 	git config core.sparseCheckout true &&
 	echo /unrelated >.git/info/sparse-checkout &&
