@@ -281,4 +281,16 @@ EOF
 
 '
 
+test_expect_success 'renames' '
+	git init -b main rename_test &&
+	echo OLDNAME >rename_test/OLDNAME &&
+	git -C rename_test add OLDNAME &&
+	git -C rename_test commit -m OLDNAME &&
+	git -C rename_test mv OLDNAME NEWNAME &&
+	git -C rename_test status --serialize=renamed.dat >output.1 &&
+	echo DIRT >rename_test/DIRT &&
+	git -C rename_test status --deserialize=renamed.dat >output.2 &&
+	test_cmp output.1 output.2
+'
+
 test_done
