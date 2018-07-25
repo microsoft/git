@@ -174,6 +174,9 @@ static int do_implicit_deserialize = 0;
 static int do_explicit_deserialize = 0;
 static char *deserialize_path = NULL;
 
+static enum wt_status_deserialize_wait implicit_deserialize_wait = DESERIALIZE_WAIT__UNSET;
+static enum wt_status_deserialize_wait explicit_deserialize_wait = DESERIALIZE_WAIT__UNSET;
+
 /*
  * --serialize | --serialize=<path>
  *
@@ -235,6 +238,40 @@ static int opt_parse_deserialize(const struct option *opt, const char *arg, int 
 
 		do_explicit_deserialize = 1;
 	}
+
+	return 0;
+}
+
+static enum wt_status_deserialize_wait parse_dw(const char *arg)
+{
+	int tenths;
+
+	if (!strcmp(arg, "fail"))
+		return DESERIALIZE_WAIT__FAIL;
+	else if (!strcmp(arg, "block"))
+		return DESERIALIZE_WAIT__BLOCK;
+	else if (!strcmp(arg, "no"))
+		return DESERIALIZE_WAIT__NO;
+
+	/*
+	 * Otherwise, assume it is a timeout in tenths of a second.
+	 * If it contains a bogus value, atol() will return zero
+	 * which is OK.
+	 */
+	tenths = atol(arg);
+	if (tenths < 0)
+		tenths = DESERIALIZE_WAIT__NO;
+	return tenths;
+}
+
+static int opt_parse_deserialize_wait(const struct option *opt,
+				      const char *arg,
+				      int unset)
+{
+	if (unset)
+		explicit_deserialize_wait = DESERIALIZE_WAIT__UNSET;
+	else
+		explicit_deserialize_wait = parse_dw(arg);
 
 	return 0;
 }
@@ -1535,6 +1572,13 @@ static int git_status_config(const char *k, const char *v, void *cb)
 		}
 		return 0;
 	}
+	if (!strcmp(k, "status.deserializewait")) {
+		if (!v || !*v)
+			implicit_deserialize_wait = DESERIALIZE_WAIT__UNSET;
+		else
+			implicit_deserialize_wait = parse_dw(v);
+		return 0;
+	}
 	if (!strcmp(k, "status.showuntrackedfiles")) {
 		if (!v)
 			return config_error_nonbool(k);
@@ -1597,6 +1641,9 @@ int cmd_status(int argc, const char **argv, const char *prefix)
 		{ OPTION_CALLBACK, 0, "deserialize", NULL,
 		  N_("path"), N_("deserialize raw status data from file"),
 		  PARSE_OPT_OPTARG, opt_parse_deserialize },
+		{ OPTION_CALLBACK, 0, "deserialize-wait", NULL,
+		  N_("fail|block|no"), N_("how to wait if status cache file is invalid"),
+		  PARSE_OPT_OPTARG, opt_parse_deserialize_wait },
 		OPT_SET_INT(0, "long", &status_format,
 			    N_("show status in long format (default)"),
 			    STATUS_FORMAT_LONG),
@@ -1693,11 +1740,21 @@ skip_init:
 	}
 
 	if (try_deserialize) {
+		int result;
+		enum wt_status_deserialize_wait dw = implicit_deserialize_wait;
+		if (explicit_deserialize_wait != DESERIALIZE_WAIT__UNSET)
+			dw = explicit_deserialize_wait;
+		if (dw == DESERIALIZE_WAIT__UNSET)
+			dw = DESERIALIZE_WAIT__NO;
+
 		if (s.relative_paths)
 			s.prefix = prefix;
 
-		if (wt_status_deserialize(&s, deserialize_path) == DESERIALIZE_OK)
+		result = wt_status_deserialize(&s, deserialize_path, dw);
+		if (result == DESERIALIZE_OK)
 			return 0;
+		if (dw == DESERIALIZE_WAIT__FAIL)
+			die(_("Rejected status serialization cache"));
 
 		/* deserialize failed, so force the initialization we skipped above. */
 		enable_fscache(1);
