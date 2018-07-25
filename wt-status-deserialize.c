@@ -536,6 +536,7 @@ static int wt_deserialize_fd(const struct wt_status *cmd_s, struct wt_status *de
 	/* show_branch */
 	/* show_stash */
 	/* hints */
+	/* ahead_behind_flags */
 	if (cmd_s->detect_rename != des_s->detect_rename) {
 		trace_printf_key(&trace_deserialize, "reject: detect_rename");
 		return DESERIALIZE_ERR;
