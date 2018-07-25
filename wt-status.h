@@ -194,6 +194,7 @@ struct wt_status_serialize_data_fixed
 	uint32_t worktree_status;
 	uint32_t index_status;
 	uint32_t stagemask;
+	uint32_t rename_status;
 	uint32_t rename_score;
 	uint32_t mode_head;
 	uint32_t mode_index;
