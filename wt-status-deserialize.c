@@ -200,6 +200,7 @@ static int wt_deserialize_v1_changed_items(const struct wt_status *cmd_s,
 		d->worktree_status = ntohl(sd->fixed.worktree_status);
 		d->index_status = ntohl(sd->fixed.index_status);
 		d->stagemask = ntohl(sd->fixed.stagemask);
+		d->rename_status = ntohl(sd->fixed.rename_status);
 		d->rename_score = ntohl(sd->fixed.rename_score);
 		d->mode_head = ntohl(sd->fixed.mode_head);
 		d->mode_index = ntohl(sd->fixed.mode_index);
@@ -218,10 +219,11 @@ static int wt_deserialize_v1_changed_items(const struct wt_status *cmd_s,
 		
 		trace_printf_key(
 			&trace_deserialize,
-			"change: %d %d %d %d %o %o %o %d %d %s %s '%s' '%s'",
+			"change: %d %d %d %d %d %o %o %o %d %d %s %s '%s' '%s'",
 			d->worktree_status,
 			d->index_status,
 			d->stagemask,
+			d->rename_status,
 			d->rename_score,
 			d->mode_head,
 			d->mode_index,
@@ -534,6 +536,7 @@ static int wt_deserialize_fd(const struct wt_status *cmd_s, struct wt_status *de
 	/* show_branch */
 	/* show_stash */
 	/* hints */
+	/* ahead_behind_flags */
 	if (cmd_s->detect_rename != des_s->detect_rename) {
 		trace_printf_key(&trace_deserialize, "reject: detect_rename");
 		return DESERIALIZE_ERR;

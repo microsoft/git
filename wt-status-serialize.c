@@ -48,6 +48,7 @@ static void wt_serialize_v1_header(struct wt_status *s, int fd)
 	/* show_branch */
 	/* show_stash */
 	packet_write_fmt(fd, "hints %d\n", s->hints);
+	/* ahead_behind_flags */
 	packet_write_fmt(fd, "detect_rename %d\n", s->detect_rename);
 	packet_write_fmt(fd, "rename_score %d\n", s->rename_score);
 	packet_write_fmt(fd, "rename_limit %d\n", s->rename_limit);
@@ -78,10 +79,11 @@ static inline void wt_serialize_v1_changed(struct wt_status *s, int fd,
 	int len_path, len_rename_source;
 
 	trace_printf_key(&trace_serialize,
-		"change: %d %d %d %d %o %o %o %d %d %s %s '%s' '%s'",
+		"change: %d %d %d %d %d %o %o %o %d %d %s %s '%s' '%s'",
 		d->worktree_status,
 		d->index_status,
 		d->stagemask,
+		d->rename_status,
 		d->rename_score,
 		d->mode_head,
 		d->mode_index,
@@ -96,6 +98,7 @@ static inline void wt_serialize_v1_changed(struct wt_status *s, int fd,
 	sd.fixed.worktree_status       = htonl(d->worktree_status);
 	sd.fixed.index_status          = htonl(d->index_status);
 	sd.fixed.stagemask             = htonl(d->stagemask);
+	sd.fixed.rename_status         = htonl(d->rename_status);
 	sd.fixed.rename_score          = htonl(d->rename_score);
 	sd.fixed.mode_head             = htonl(d->mode_head);
 	sd.fixed.mode_index            = htonl(d->mode_index);
