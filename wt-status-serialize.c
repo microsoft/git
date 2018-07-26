@@ -5,6 +5,92 @@
 static struct trace_key trace_serialize = TRACE_KEY_INIT(SERIALIZE);
 
 /*
+ * Compute header record for exclude file using format:
+ *      <key> SP <status_char> SP <variant> LF
+ */
+void wt_serialize_compute_exclude_header(struct strbuf *sb,
+					 const char *key,
+					 const char *path)
+{
+	struct stat st;
+	struct stat_data sd;
+
+	memset(&sd, 0, sizeof(sd));
+
+	strbuf_setlen(sb, 0);
+
+	if (!path || !*path) {
+		strbuf_addf(sb, "%s U (unset)", key);
+	}
+	else if (lstat(path, &st) == -1) {
+		if (is_missing_file_error(errno))
+			strbuf_addf(sb, "%s E (not-found) %s", key, path);
+		else
+			strbuf_addf(sb, "%s E (other) %s", key, path);
+	}
+	else {
+		fill_stat_data(&sd, &st);
+		strbuf_addf(sb, "%s F %d %d %s",
+			    key, sd.sd_mtime.sec, sd.sd_mtime.nsec, path);
+	}
+}
+
+static void append_exclude_info(int fd, const char *path, const char *key)
+{
+	struct strbuf sb = STRBUF_INIT;
+
+	wt_serialize_compute_exclude_header(&sb, key, path);
+
+	packet_write_fmt(fd, "%s\n", sb.buf);
+
+	strbuf_release(&sb);
+}
+
+static void append_core_excludes_file_info(int fd)
+{
+	/*
+	 * Write pathname and mtime of the core/global excludes file to
+	 * the header since a change in the excludes will change the
+	 * results reported by status.
+	 *
+	 * The "core.excludefile" setting defaults to $XDG_HOME/git/ignore
+	 * and uses a global variable which should have been set during
+	 * wt_status_collect_untracked().
+	 *
+	 * See dir.c:setup_standard_excludes()
+	 */
+	append_exclude_info(fd, excludes_file, "core_excludes");
+}
+
+static void append_repo_excludes_file_info(int fd)
+{
+	/*
+	 * Likewise, there is a per-repo excludes file in .git/info/excludes
+	 * that will change the results reported by status.
+	 *
+	 * See dir.c:setup_standard_excludes() and git_path_info_excludes().
+	 * We replicate the pathname construction here because of the static
+	 * variables/functions used in dir.c.
+	 */
+	char *path = git_pathdup("info/exclude");
+
+	append_exclude_info(fd, path, "repo_excludes");
+
+	free(path);
+}
+
+/*
+ * WARNING: there are also per-directory .gitignore files that can change
+ * the results reported by status.  If you run a serialize with untracked
+ * .gitignore files and then change a per-directory .gitignore file or
+ * change a tracked but unstaged .gitignore file, and then run deserialize,
+ * you MAY get incorrect results.
+ *
+ * TODO We may want to also include the mtime of the .gitignore file in
+ * the root of the workdir to guard against the common cases.
+ */
+
+/*
  * Write V1 header fields.
  */
 static void wt_serialize_v1_header(struct wt_status *s, int fd)
@@ -16,6 +102,8 @@ static void wt_serialize_v1_header(struct wt_status *s, int fd)
 	packet_write_fmt(fd, "index_mtime %d %d\n",
 			 the_index.timestamp.sec,
 			 the_index.timestamp.nsec);
+	append_core_excludes_file_info(fd);
+	append_repo_excludes_file_info(fd);
 
 	/*
 	 * Write data from wt_status to qualify this status report.
