@@ -742,6 +742,7 @@ static int read_object_process(const struct object_id *oid)
 	struct strbuf status = STRBUF_INIT;
 	const char *cmd = find_hook("read-object");
 	uint64_t start;
+	int slog_tid;
 
 	start = getnanotime();
 
@@ -768,6 +769,8 @@ static int read_object_process(const struct object_id *oid)
 
 	if (!(CAP_GET & entry->supported_capabilities))
 		return -1;
+
+	slog_tid = slog_start_timer("object", "read_object_process");
 
 	sigchain_push(SIGPIPE, SIG_IGN);
 
@@ -813,6 +816,8 @@ done:
 			free(entry);
 		}
 	}
+
+	slog_stop_timer(slog_tid);
 
 	trace_performance_since(start, "read_object_process");
 
