@@ -1237,6 +1237,7 @@ static int add_index_entry_with_check(struct index_state *istate, struct cache_e
 	int ok_to_add = option & ADD_CACHE_OK_TO_ADD;
 	int ok_to_replace = option & ADD_CACHE_OK_TO_REPLACE;
 	int skip_df_check = option & ADD_CACHE_SKIP_DFCHECK;
+	int skip_verify_path = option & ADD_CACHE_SKIP_VERIFY_PATH;
 	int new_only = option & ADD_CACHE_NEW_ONLY;
 
 	if (!(option & ADD_CACHE_KEEP_CACHE_TREE))
@@ -1277,7 +1278,7 @@ static int add_index_entry_with_check(struct index_state *istate, struct cache_e
 
 	if (!ok_to_add)
 		return -1;
-	if (!verify_path(ce->name, ce->ce_mode))
+	if (!skip_verify_path && !verify_path(ce->name, ce->ce_mode))
 		return error("Invalid path '%s'", ce->name);
 
 	if (!skip_df_check &&

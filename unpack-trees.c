@@ -202,6 +202,7 @@ static int do_add_entry(struct unpack_trees_options *o, struct cache_entry *ce,
 
 	ce->ce_flags = (ce->ce_flags & ~clear) | set;
 	return add_index_entry(&o->result, ce,
+			       o->extra_add_index_flags |
 			       ADD_CACHE_OK_TO_ADD | ADD_CACHE_OK_TO_REPLACE);
 }
 
@@ -705,6 +706,24 @@ static int traverse_by_cache_tree(int pos, int nr_entries, int nr_names,
 		BUG("We need cache-tree to do this optimization");
 
 	/*
+	 * Try to keep add_index_entry() as fast as possible since
+	 * we're going to do a lot of them.
+	 *
+	 * Skipping verify_path() should totally be safe because these
+	 * paths are from the source index, which must have been
+	 * verified.
+	 *
+	 * Skipping D/F and cache-tree validation checks is trickier
+	 * because it assumes what n-merge code would do when all
+	 * trees and the index are the same. We probably could just
+	 * optimize those code instead (e.g. we don't invalidate that
+	 * many cache-tree, but the searching for them is very
+	 * expensive).
+	 */
+	o->extra_add_index_flags = ADD_CACHE_SKIP_DFCHECK;
+	o->extra_add_index_flags |= ADD_CACHE_SKIP_VERIFY_PATH;
+
+	/*
 	 * Do what unpack_callback() and unpack_nondirectories() normally
 	 * do. But we walk all paths recursively in just one loop instead.
 	 *
@@ -745,6 +764,7 @@ static int traverse_by_cache_tree(int pos, int nr_entries, int nr_names,
 
 		mark_ce_used(src[0], o);
 	}
+	o->extra_add_index_flags = 0;
 	free(tree_ce);
 	if (o->debug_unpack)
 		printf("Unpacked %d entries from %s to %s using cache-tree\n",
@@ -1583,6 +1603,13 @@ int unpack_trees(unsigned len, struct tree_desc *t, struct unpack_trees_options 
 		if (!ret) {
 			if (!o->result.cache_tree)
 				o->result.cache_tree = cache_tree();
+			/*
+			 * TODO: Walk o.src_index->cache_tree, quickly check
+			 * if o->result.cache has the exact same content for
+			 * any valid cache-tree in o.src_index, then we can
+			 * just copy the cache-tree over instead of hashing a
+			 * new tree object.
+			 */
 			if (!cache_tree_fully_valid(o->result.cache_tree))
 				cache_tree_update(&o->result,
 						  WRITE_TREE_SILENT |
