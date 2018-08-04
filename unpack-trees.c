@@ -342,6 +342,7 @@ static int check_updates(struct unpack_trees_options *o)
 	struct progress *progress = NULL;
 	struct index_state *index = &o->result;
 	struct checkout state = CHECKOUT_INIT;
+	uint64_t start = getnanotime();
 	int i;
 
 	state.force = 1;
@@ -413,6 +414,7 @@ static int check_updates(struct unpack_trees_options *o)
 	errs |= finish_delayed_checkout(&state);
 	if (o->update)
 		git_attr_set_direction(GIT_ATTR_CHECKIN, NULL);
+	trace_performance_since(start, "update worktree after a merge");
 	return errs != 0;
 }
 
@@ -1282,6 +1284,7 @@ int unpack_trees(unsigned len, struct tree_desc *t, struct unpack_trees_options 
 	int i, ret;
 	static struct cache_entry *dfc;
 	struct exclude_list el;
+	uint64_t start = getnanotime();
 
 	if (len > MAX_UNPACK_TREES)
 		die("unpack_trees takes at most %d trees", MAX_UNPACK_TREES);
@@ -1423,6 +1426,7 @@ int unpack_trees(unsigned len, struct tree_desc *t, struct unpack_trees_options 
 			goto done;
 		}
 	}
+	trace_performance_since(start, "unpack trees");
 
 	o->src_index = NULL;
 	ret = check_updates(o) ? (-2) : 0;
