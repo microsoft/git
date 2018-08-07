@@ -80,6 +80,7 @@ struct unpack_trees_options {
 	struct index_state result;
 
 	struct exclude_list *el; /* for internal use */
+	unsigned int extra_add_index_flags;
 };
 
 extern int unpack_trees(unsigned n, struct tree_desc *t,
