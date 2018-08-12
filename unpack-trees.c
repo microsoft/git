@@ -1568,9 +1568,9 @@ int unpack_trees(unsigned len, struct tree_desc *t, struct unpack_trees_options 
 		}
 	}
 
-	o->src_index = NULL;
 	ret = check_updates(o) ? (-2) : 0;
 	if (o->dst_index) {
+		move_index_extensions(&o->result, o->src_index);
 		if (!ret) {
 			if (!o->result.cache_tree)
 				o->result.cache_tree = cache_tree();
@@ -1579,12 +1579,12 @@ int unpack_trees(unsigned len, struct tree_desc *t, struct unpack_trees_options 
 						  WRITE_TREE_SILENT |
 						  WRITE_TREE_REPAIR);
 		}
-		move_index_extensions(&o->result, o->dst_index);
 		discard_index(o->dst_index);
 		*o->dst_index = o->result;
 	} else {
 		discard_index(&o->result);
 	}
+	o->src_index = NULL;
 
 done:
 	trace_performance_leave("unpack_trees");
