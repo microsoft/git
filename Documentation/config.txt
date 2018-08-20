@@ -896,6 +896,14 @@ relatively high IO latencies.  When enabled, Git will do the
 index comparison to the filesystem data in parallel, allowing
 overlapping IO's.  Defaults to true.
 
+core.fastIndex::
+       Enable parallel index loading
++
+This can speed up operations like 'git diff' and 'git status' especially
+when the index is very large.  When enabled, Git will do the index
+loading from the on disk format to the in-memory format in parallel.
+Defaults to false.
+
 core.fscache::
 	Enable additional caching of file system data for some operations.
 +

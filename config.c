@@ -1299,6 +1299,11 @@ static int git_default_core_config(const char *var, const char *value, void *cb)
 		return 0;
 	}
 
+	if (!strcmp(var, "core.fastindex")) {
+		core_fast_index = git_config_bool(var, value);
+		return 0;
+	}
+
 	if (!strcmp(var, "core.createobject")) {
 		if (!strcmp(value, "rename"))
 			object_creation_mode = OBJECT_CREATION_USES_RENAMES;
@@ -2306,6 +2311,19 @@ int git_config_get_fsmonitor(void)
 		return 1;
 
 	return 0;
+}
+
+int git_config_get_fast_index(void)
+{
+	int val;
+
+	if (!git_config_get_maybe_bool("core.fastindex", &val))
+		return val;
+
+	if (getenv("GIT_FASTINDEX_TEST"))
+		return 1;
+
+	return -1; /* default value */
 }
 
 int git_config_get_virtualfilesystem(void)
