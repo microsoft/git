@@ -23,6 +23,10 @@
 #include "virtualfilesystem.h"
 #include "gvfs.h"
 
+#ifndef min
+#define min(a,b) (((a) < (b)) ? (a) : (b))
+#endif
+
 /* Mask for the name length in ce_flags in the on-disk index */
 
 #define CE_NAMEMASK  (0x0fff)
@@ -1881,16 +1885,203 @@ static size_t estimate_cache_size(size_t ondisk_size, unsigned int entries)
 	return ondisk_size + entries * per_entry;
 }
 
+static unsigned long load_cache_entry_block(struct index_state *istate, struct mem_pool *ce_mem_pool, int offset, int nr, void *mmap, unsigned long start_offset, struct strbuf *previous_name)
+{
+	int i;
+	unsigned long src_offset = start_offset;
+
+	for (i = offset; i < offset + nr; i++) {
+		struct ondisk_cache_entry *disk_ce;
+		struct cache_entry *ce;
+		unsigned long consumed;
+
+		disk_ce = (struct ondisk_cache_entry *)((char *)mmap + src_offset);
+		ce = create_from_disk(ce_mem_pool, disk_ce, &consumed, previous_name);
+		set_index_entry(istate, i, ce);
+
+		src_offset += consumed;
+	}
+	return src_offset - start_offset;
+}
+
+static unsigned long load_all_cache_entries(struct index_state *istate, void *mmap, size_t mmap_size, unsigned long src_offset)
+{
+	struct strbuf previous_name_buf = STRBUF_INIT, *previous_name;
+	unsigned long consumed;
+
+	if (istate->version == 4) {
+		previous_name = &previous_name_buf;
+		mem_pool_init(&istate->ce_mem_pool, 0, istate->cache_nr * (sizeof(struct cache_entry) + CACHE_ENTRY_PATH_LENGTH));
+	}
+	else {
+		previous_name = NULL;
+		mem_pool_init(&istate->ce_mem_pool, 0, estimate_cache_size(mmap_size, istate->cache_nr));
+	}
+
+	consumed = load_cache_entry_block(istate, istate->ce_mem_pool, 0, istate->cache_nr, mmap, src_offset, previous_name);
+	strbuf_release(&previous_name_buf);
+	return consumed;
+}
+
+#ifdef NO_PTHREADS
+
+#define load_cache_entries load_all_cache_entries
+
+#else
+
+#include "thread-utils.h"
+
+/*
+* Mostly randomly chosen cache entries per thread (it works on my machine):
+* we want to have at least 7500 cache entries per thread for it to
+* be worth starting a thread.
+*/
+#define THREAD_COST		(7500)
+
+struct load_cache_entries_thread_data
+{
+	pthread_t pthread;
+	struct index_state *istate;
+	struct mem_pool *ce_mem_pool;
+	int offset, nr;
+	void *mmap;
+	unsigned long start_offset;
+	struct strbuf previous_name_buf;
+	struct strbuf *previous_name;
+	unsigned long consumed;	/* return # of bytes in index file processed */
+};
+
+/*
+* A thread proc to run the load_cache_entries() computation
+* across multiple background threads.
+*/
+static void *load_cache_entries_thread(void *_data)
+{
+	struct load_cache_entries_thread_data *p = _data;
+
+	p->consumed += load_cache_entry_block(p->istate, p->ce_mem_pool, p->offset, p->nr, p->mmap, p->start_offset, p->previous_name);
+	return NULL;
+}
+
+static unsigned long load_cache_entries(struct index_state *istate, void *mmap, size_t mmap_size, unsigned long src_offset)
+{
+	struct strbuf previous_name_buf = STRBUF_INIT, *previous_name;
+	struct load_cache_entries_thread_data *data;
+	int threads, cpus, thread_nr;
+	unsigned long consumed;
+	int i, thread;
+
+	cpus = online_cpus();
+	threads = istate->cache_nr / THREAD_COST;
+	if (threads > cpus)
+		threads = cpus;
+
+	/* enable testing with fewer than default minimum of entries */
+	if (threads < 2 && getenv("GIT_FASTINDEX_TEST"))
+		threads = 2;
+
+	if (threads < 2)
+		return load_all_cache_entries(istate, mmap, mmap_size, src_offset);
+
+	if (istate->version == 4) {
+		previous_name = &previous_name_buf;
+		mem_pool_init(&istate->ce_mem_pool, 0, 0);
+	}
+	else {
+		previous_name = NULL;
+		mem_pool_init(&istate->ce_mem_pool, 0, 0);
+	}
+
+	thread_nr = (istate->cache_nr + threads - 1) / threads;
+	if (!thread_nr)
+		return 0;
+	data = xcalloc(threads, sizeof(struct load_cache_entries_thread_data));
+
+	/* loop through index entries starting a thread for every istate->cache_nr/threads entries */
+	consumed = thread = 0;
+	for (i = 0; ; i++) {
+		struct ondisk_cache_entry *ondisk;
+		const char *name;
+		unsigned int flags;
+
+		/* we've reached the begining of a block of cache entries, kick off a thread to process them */
+		if (0 == i % thread_nr) {
+			struct load_cache_entries_thread_data *p = &data[thread];
+
+			p->istate = istate;
+			p->offset = i;
+			p->nr = min(thread_nr, istate->cache_nr - i);
+
+			/* create a mem_pool for each thread */
+			if (istate->version == 4)
+				mem_pool_init(&p->ce_mem_pool, 0, p->nr * (sizeof(struct cache_entry) + CACHE_ENTRY_PATH_LENGTH));
+			else
+				mem_pool_init(&p->ce_mem_pool, 0, estimate_cache_size(mmap_size, p->nr));
+
+			p->mmap = mmap;
+			p->start_offset = src_offset;
+			if (previous_name) {
+				strbuf_addbuf(&p->previous_name_buf, previous_name);
+				p->previous_name = &p->previous_name_buf;
+			}
+
+			if (pthread_create(&p->pthread, NULL, load_cache_entries_thread, p))
+				die("unable to create threaded load_cache_entries");
+			if (++thread == threads || !p->nr)
+				break;
+		}
+
+		ondisk = (struct ondisk_cache_entry *)((char *)mmap + src_offset);
+
+		/* On-disk flags are just 16 bits */
+		flags = get_be16(&ondisk->flags);
+
+		if (flags & CE_EXTENDED) {
+			struct ondisk_cache_entry_extended *ondisk2;
+			ondisk2 = (struct ondisk_cache_entry_extended *)ondisk;
+			name = ondisk2->name;
+		} else
+			name = ondisk->name;
+
+		if (!previous_name) {
+			size_t len;
+
+			/* v3 and earlier */
+			len = flags & CE_NAMEMASK;
+			if (len == CE_NAMEMASK)
+				len = strlen(name);
+			src_offset += (flags & CE_EXTENDED) ?
+				ondisk_cache_entry_extended_size(len) :
+				ondisk_cache_entry_size(len);
+		} else
+			src_offset += (name - ((char *)ondisk)) + expand_name_field(previous_name, name);
+	}
+
+	for (i = 0; i < threads; i++) {
+		struct load_cache_entries_thread_data *p = data + i;
+		if (pthread_join(p->pthread, NULL))
+			die("unable to join threaded load_cache_entries_thread");
+		mem_pool_combine(istate->ce_mem_pool, p->ce_mem_pool);
+		strbuf_release(&p->previous_name_buf);
+		consumed += p->consumed;
+	}
+	free(data);
+	strbuf_release(&previous_name_buf);
+
+	return consumed;
+}
+
+#endif
+
 /* remember to discard_cache() before reading a different cache! */
 int do_read_index(struct index_state *istate, const char *path, int must_exist)
 {
-	int fd, i;
+	int fd;
 	struct stat st;
 	unsigned long src_offset;
 	struct cache_header *hdr;
 	void *mmap;
 	size_t mmap_size;
-	struct strbuf previous_name_buf = STRBUF_INIT, *previous_name;
 
 	if (istate->initialized)
 		return istate->cache_nr;
@@ -1927,27 +2118,8 @@ int do_read_index(struct index_state *istate, const char *path, int must_exist)
 	istate->cache = xcalloc(istate->cache_alloc, sizeof(*istate->cache));
 	istate->initialized = 1;
 
-	if (istate->version == 4) {
-		previous_name = &previous_name_buf;
-		mem_pool_init(&istate->ce_mem_pool, 0, istate->cache_nr * (sizeof(struct cache_entry) + CACHE_ENTRY_PATH_LENGTH));
-	} else {
-		previous_name = NULL;
-		mem_pool_init(&istate->ce_mem_pool, 0, estimate_cache_size(mmap_size, istate->cache_nr));
-	}
-
 	src_offset = sizeof(*hdr);
-	for (i = 0; i < istate->cache_nr; i++) {
-		struct ondisk_cache_entry *disk_ce;
-		struct cache_entry *ce;
-		unsigned long consumed;
-
-		disk_ce = (struct ondisk_cache_entry *)((char *)mmap + src_offset);
-		ce = create_from_disk(istate->ce_mem_pool, disk_ce, &consumed, previous_name);
-		set_index_entry(istate, i, ce);
-
-		src_offset += consumed;
-	}
-	strbuf_release(&previous_name_buf);
+	src_offset += load_cache_entries(istate, mmap, mmap_size, src_offset);
 	istate->timestamp.sec = st.st_mtime;
 	istate->timestamp.nsec = ST_MTIME_NSEC(st);
 
