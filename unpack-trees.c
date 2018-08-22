@@ -1303,12 +1303,15 @@ int unpack_trees(unsigned len, struct tree_desc *t, struct unpack_trees_options 
 	if (!o->skip_sparse_checkout) {
 		if (core_virtualfilesystem) {
 			o->el = &el;
+			slog_aux_intmax("index", "sparse_checkout_count", el.nr);
 		} else {
 			char *sparse = git_pathdup("info/sparse-checkout");
 			if (add_excludes_from_file_to_list(sparse, "", 0, &el, NULL) < 0)
 				o->skip_sparse_checkout = 1;
-			else
+			else {
 				o->el = &el;
+				slog_aux_intmax("index", "sparse_checkout_count", el.nr);
+			}
 			free(sparse);
 		}
 	}

@@ -732,8 +732,11 @@ static int try_deserialize_read_from_file(const struct wt_status *cmd_s,
 	 * For "fail" or "no", try exactly once to read the status cache.
 	 * Return an error if the file is stale.
 	 */
-	if (dw == DESERIALIZE_WAIT__FAIL || dw == DESERIALIZE_WAIT__NO)
-		return try_deserialize_read_from_file_1(cmd_s, path, des_s);
+	if (dw == DESERIALIZE_WAIT__FAIL || dw == DESERIALIZE_WAIT__NO) {
+		result = try_deserialize_read_from_file_1(cmd_s, path, des_s);
+		k = 0;
+		goto done;
+	}
 
 	/*
 	 * Wait for the status cache file to refresh.  Wait duration can
@@ -761,6 +764,12 @@ static int try_deserialize_read_from_file(const struct wt_status *cmd_s,
 	trace_printf_key(&trace_deserialize,
 			 "wait polled=%d result=%d '%s'",
 			 k, result, path);
+
+done:
+	slog_aux_string("status", "deserialize",
+			((result == DESERIALIZE_OK) ? "ok" : "reject"));
+	slog_aux_intmax("status", "deserialize_wait", k);
+
 	return result;
 }
 
@@ -793,6 +802,8 @@ int wt_status_deserialize(const struct wt_status *cmd_s,
 		 * term, since we cannot read stdin multiple times.
 		 */
 		result = wt_deserialize_fd(cmd_s, &des_s, 0);
+		slog_aux_string("status", "deserialize_stdin",
+				((result == DESERIALIZE_OK) ? "ok" : "reject"));
 	}
 
 	if (result == DESERIALIZE_OK)

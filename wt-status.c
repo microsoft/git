@@ -582,7 +582,10 @@ static void wt_status_collect_updated_cb(struct diff_queue_struct *q,
 
 static void wt_status_collect_changes_worktree(struct wt_status *s)
 {
+	int slog_tid;
 	struct rev_info rev;
+
+	slog_tid = slog_start_timer("status", "worktree");
 
 	init_revisions(&rev, NULL);
 	setup_revisions(0, NULL, &rev, NULL);
@@ -602,12 +605,17 @@ static void wt_status_collect_changes_worktree(struct wt_status *s)
 	rev.diffopt.rename_score = s->rename_score >= 0 ? s->rename_score : rev.diffopt.rename_score;
 	copy_pathspec(&rev.prune_data, &s->pathspec);
 	run_diff_files(&rev, 0);
+
+	slog_stop_timer(slog_tid);
 }
 
 static void wt_status_collect_changes_index(struct wt_status *s)
 {
+	int slog_tid;
 	struct rev_info rev;
 	struct setup_revision_opt opt;
+
+	slog_tid = slog_start_timer("status", "changes_index");
 
 	init_revisions(&rev, NULL);
 	memset(&opt, 0, sizeof(opt));
@@ -638,11 +646,16 @@ static void wt_status_collect_changes_index(struct wt_status *s)
 	rev.diffopt.rename_score = s->rename_score >= 0 ? s->rename_score : rev.diffopt.rename_score;
 	copy_pathspec(&rev.prune_data, &s->pathspec);
 	run_diff_index(&rev, 1);
+
+	slog_stop_timer(slog_tid);
 }
 
 static void wt_status_collect_changes_initial(struct wt_status *s)
 {
+	int slog_tid;
 	int i;
+
+	slog_tid = slog_start_timer("status", "changes_initial");
 
 	for (i = 0; i < active_nr; i++) {
 		struct string_list_item *it;
@@ -674,16 +687,21 @@ static void wt_status_collect_changes_initial(struct wt_status *s)
 			oidcpy(&d->oid_index, &ce->oid);
 		}
 	}
+
+	slog_stop_timer(slog_tid);
 }
 
 static void wt_status_collect_untracked(struct wt_status *s)
 {
+	int slog_tid;
 	int i;
 	struct dir_struct dir;
 	uint64_t t_begin = getnanotime();
 
 	if (!s->show_untracked_files)
 		return;
+
+	slog_tid = slog_start_timer("status", "untracked");
 
 	memset(&dir, 0, sizeof(dir));
 	if (s->show_untracked_files != SHOW_ALL_UNTRACKED_FILES)
@@ -727,6 +745,8 @@ static void wt_status_collect_untracked(struct wt_status *s)
 
 	if (advice_status_u_option)
 		s->untracked_in_ms = (getnanotime() - t_begin) / 1000000;
+
+	slog_stop_timer(slog_tid);
 }
 
 void wt_status_collect(struct wt_status *s)

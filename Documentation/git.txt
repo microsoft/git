@@ -775,6 +775,12 @@ standard output.
 	adequate and support for it is likely to be removed in the
 	foreseeable future (along with the variable).
 
+`GIT_SLOG_PARENT_SID`::
+	(Experimental) A transient environment variable set by top-level
+	Git commands and inherited by child Git commands.  It contains
+	a session id that will be written the structured logging output
+	to help associate child and parent processes.
+
 Discussion[[Discussion]]
 ------------------------
 

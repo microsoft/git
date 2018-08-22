@@ -1322,8 +1322,9 @@ static int stateless_connect(const char *service_name)
 	return 0;
 }
 
-int cmd_main(int argc, const char **argv)
+static int real_cmd_main(int argc, const char **argv)
 {
+	int slog_tid;
 	struct strbuf buf = STRBUF_INIT;
 	int nongit;
 
@@ -1332,6 +1333,8 @@ int cmd_main(int argc, const char **argv)
 		error("remote-curl: usage: git remote-curl <remote> [<url>]");
 		return 1;
 	}
+
+	slog_set_command_name("remote-curl");
 
 	options.verbosity = 1;
 	options.progress = !!isatty(2);
@@ -1362,14 +1365,20 @@ int cmd_main(int argc, const char **argv)
 		if (starts_with(buf.buf, "fetch ")) {
 			if (nongit)
 				die("remote-curl: fetch attempted without a local repo");
+			slog_tid = slog_start_timer("curl", "fetch");
 			parse_fetch(&buf);
+			slog_stop_timer(slog_tid);
 
 		} else if (!strcmp(buf.buf, "list") || starts_with(buf.buf, "list ")) {
 			int for_push = !!strstr(buf.buf + 4, "for-push");
+			slog_tid = slog_start_timer("curl", "list");
 			output_refs(get_refs(for_push));
+			slog_stop_timer(slog_tid);
 
 		} else if (starts_with(buf.buf, "push ")) {
+			slog_tid = slog_start_timer("curl", "push");
 			parse_push(&buf);
+			slog_stop_timer(slog_tid);
 
 		} else if (skip_prefix(buf.buf, "option ", &arg)) {
 			char *value = strchr(arg, ' ');
@@ -1410,4 +1419,9 @@ int cmd_main(int argc, const char **argv)
 	http_cleanup();
 
 	return 0;
+}
+
+int cmd_main(int argc, const char **argv)
+{
+	return slog_wrap_main(real_cmd_main, argc, argv);
 }

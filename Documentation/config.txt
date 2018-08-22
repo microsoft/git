@@ -3269,6 +3269,39 @@ showbranch.default::
 	The default set of branches for linkgit:git-show-branch[1].
 	See linkgit:git-show-branch[1].
 
+slog.path::
+	(EXPERIMENTAL) Enable structured logging to a file.  This must be
+	an absolute path.  (Git must be compiled with STRUCTURED_LOGGING=1.)
+
+slog.pretty::
+	(EXPERIMENTAL) Pretty-print structured log data when true.
+	(Git must be compiled with STRUCTURED_LOGGING=1.)
+
+slog.detail::
+	(EXPERIMENTAL) May be set to a boolean value or a list of comma
+	separated tokens.  Controls which categories of optional "detail"
+	events are generated.  Default to off.  This is conceptually
+	similar to the different GIT_TRACE_<key> values.
++
+Detail events are generic events with a context-specific payload.  This
+may represent a single function call or a section of performance sensitive
+code.
++
+This is intended to be an extendable facility where new events can easily
+be added (possibly only for debugging or performance testing purposes).
+
+slog.timers::
+	(EXPERIMENTAL) May be set to a boolean value or a list of comma
+	separated tokens.  Controls which categories of SLOG timers are
+	enabled.  Defaults to off.  Data for enabled timers is added to
+	the `cmd_exit` event.
+
+slog.aux::
+	(EXPERIMENTAL) May be set to a boolean value or a list of
+	comma separated tokens.  Controls which categories of SLOG
+	"aux" data are enabled.  Defaults to off.  "Aux" data is added
+	to the `cmd_exit` event.
+
 splitIndex.maxPercentChange::
 	When the split index feature is used, this specifies the
 	percent of entries the split index can contain compared to the

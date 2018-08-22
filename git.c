@@ -329,6 +329,7 @@ static int handle_alias(int *argcp, const char ***argv)
 			commit_pager_choice();
 
 			child.use_shell = 1;
+			child.slog_child_class = "alias";
 			argv_array_push(&child.args, alias_string + 1);
 			argv_array_pushv(&child.args, (*argv) + 1);
 
@@ -475,6 +476,7 @@ static int run_builtin(struct cmd_struct *p, int argc, const char **argv)
 		die("pre-command hook aborted command");
 
 	trace_argv_printf(argv, "trace: built-in: git");
+	slog_set_command_name(p->cmd);
 
 	/*
 	 * Validate the state of the cache entries in the index before and
@@ -722,6 +724,7 @@ static void execv_dashed_external(const char **argv)
 	cmd.clean_on_exit = 1;
 	cmd.wait_after_clean = 1;
 	cmd.silent_exec_failure = 1;
+	cmd.slog_child_class = "alias";
 
 	if (run_pre_command_hook(cmd.args.argv))
 		die("pre-command hook aborted command");
@@ -802,7 +805,7 @@ static int run_argv(int *argcp, const char ***argv)
 	return done_alias;
 }
 
-int cmd_main(int argc, const char **argv)
+static int real_cmd_main(int argc, const char **argv)
 {
 	const char *cmd;
 	int done_help = 0;
@@ -891,4 +894,9 @@ int cmd_main(int argc, const char **argv)
 		cmd, strerror(errno));
 
 	return 1;
+}
+
+int cmd_main(int argc, const char **argv)
+{
+	return slog_wrap_main(real_cmd_main, argc, argv);
 }

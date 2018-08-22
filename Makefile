@@ -442,6 +442,8 @@ all::
 # When cross-compiling, define HOST_CPU as the canonical name of the CPU on
 # which the built Git will run (for instance "x86_64").
 #
+# Define STRUCTURED_LOGGING if you want structured logging to be available.
+#
 # Define RUNTIME_PREFIX to configure Git to resolve its ancillary tooling and
 # support files relative to the location of the runtime binary, rather than
 # hard-coding them into the binary. Git installations built with RUNTIME_PREFIX
@@ -711,6 +713,7 @@ TEST_BUILTINS_OBJS += test-genrandom.o
 TEST_BUILTINS_OBJS += test-hashmap.o
 TEST_BUILTINS_OBJS += test-iconv.o
 TEST_BUILTINS_OBJS += test-index-version.o
+TEST_BUILTINS_OBJS += test-json-writer.o
 TEST_BUILTINS_OBJS += test-lazy-init-name-hash.o
 TEST_BUILTINS_OBJS += test-match-trees.o
 TEST_BUILTINS_OBJS += test-mergesort.o
@@ -874,6 +877,7 @@ LIB_OBJS += hashmap.o
 LIB_OBJS += help.o
 LIB_OBJS += hex.o
 LIB_OBJS += ident.o
+LIB_OBJS += json-writer.o
 LIB_OBJS += kwset.o
 LIB_OBJS += levenshtein.o
 LIB_OBJS += line-log.o
@@ -957,6 +961,7 @@ LIB_OBJS += split-index.o
 LIB_OBJS += strbuf.o
 LIB_OBJS += streaming.o
 LIB_OBJS += string-list.o
+LIB_OBJS += structured-logging.o
 LIB_OBJS += submodule.o
 LIB_OBJS += submodule-config.o
 LIB_OBJS += sub-process.o
@@ -1331,6 +1336,10 @@ ifdef ZLIB_PATH
 	EXTLIBS += -L$(ZLIB_PATH)/$(lib) $(CC_LD_DYNPATH)$(ZLIB_PATH)/$(lib)
 endif
 EXTLIBS += -lz
+
+ifdef STRUCTURED_LOGGING
+	BASIC_CFLAGS += -DSTRUCTURED_LOGGING
+endif
 
 ifndef NO_OPENSSL
 	OPENSSL_LIBSSL = -lssl
@@ -2549,6 +2558,7 @@ GIT-BUILD-OPTIONS: FORCE
 	@echo TAR=\''$(subst ','\'',$(subst ','\'',$(TAR)))'\' >>$@+
 	@echo NO_CURL=\''$(subst ','\'',$(subst ','\'',$(NO_CURL)))'\' >>$@+
 	@echo NO_EXPAT=\''$(subst ','\'',$(subst ','\'',$(NO_EXPAT)))'\' >>$@+
+	@echo STRUCTURED_LOGGING=\''$(subst ','\'',$(subst ','\'',$(STRUCTURED_LOGGING)))'\' >>$@+
 	@echo USE_LIBPCRE1=\''$(subst ','\'',$(subst ','\'',$(USE_LIBPCRE1)))'\' >>$@+
 	@echo USE_LIBPCRE2=\''$(subst ','\'',$(subst ','\'',$(USE_LIBPCRE2)))'\' >>$@+
 	@echo NO_LIBPCRE1_JIT=\''$(subst ','\'',$(subst ','\'',$(NO_LIBPCRE1_JIT)))'\' >>$@+

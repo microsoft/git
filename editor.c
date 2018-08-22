@@ -66,6 +66,7 @@ int launch_editor(const char *path, struct strbuf *buffer, const char *const *en
 		p.argv = args;
 		p.env = env;
 		p.use_shell = 1;
+		p.slog_child_class = "editor";
 		if (start_command(&p) < 0)
 			return error("unable to start editor '%s'", editor);
 

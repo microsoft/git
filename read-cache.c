@@ -1992,6 +1992,7 @@ static void freshen_shared_index(const char *shared_index, int warn)
 int read_index_from(struct index_state *istate, const char *path,
 		    const char *gitdir)
 {
+	int slog_tid;
 	uint64_t start = getnanotime();
 	struct split_index *split_index;
 	int ret;
@@ -2002,8 +2003,12 @@ int read_index_from(struct index_state *istate, const char *path,
 	if (istate->initialized)
 		return istate->cache_nr;
 
+	slog_tid = slog_start_timer("index", "do_read_index");
 	ret = do_read_index(istate, path, 0);
+	slog_stop_timer(slog_tid);
 	trace_performance_since(start, "read cache %s", path);
+
+	slog_aux_intmax("index", "cache_nr", istate->cache_nr);
 
 	split_index = istate->split_index;
 	if (!split_index || is_null_oid(&split_index->base_oid)) {
@@ -2018,11 +2023,15 @@ int read_index_from(struct index_state *istate, const char *path,
 
 	base_oid_hex = oid_to_hex(&split_index->base_oid);
 	base_path = xstrfmt("%s/sharedindex.%s", gitdir, base_oid_hex);
+	slog_tid = slog_start_timer("index", "do_read_index");
 	ret = do_read_index(split_index->base, base_path, 1);
+	slog_stop_timer(slog_tid);
 	if (oidcmp(&split_index->base_oid, &split_index->base->oid))
 		die("broken index, expect %s in %s, got %s",
 		    base_oid_hex, base_path,
 		    oid_to_hex(&split_index->base->oid));
+
+	slog_aux_intmax("index", "split_index_cache_nr", split_index->base->cache_nr);
 
 	freshen_shared_index(base_path, 0);
 	merge_base_index(istate);
@@ -2558,7 +2567,9 @@ static int commit_locked_index(struct lock_file *lk)
 static int do_write_locked_index(struct index_state *istate, struct lock_file *lock,
 				 unsigned flags)
 {
+	int slog_timer = slog_start_timer("index", "do_write_index");
 	int ret = do_write_index(istate, lock->tempfile, 0);
+	slog_stop_timer(slog_timer);
 	if (ret)
 		return ret;
 	if (flags & COMMIT_LOCK)
@@ -2639,11 +2650,14 @@ static int clean_shared_index_files(const char *current_hex)
 static int write_shared_index(struct index_state *istate,
 			      struct tempfile **temp)
 {
+	int slog_tid = SLOG_UNDEFINED_TIMER_ID;
 	struct split_index *si = istate->split_index;
 	int ret;
 
 	move_cache_to_base_index(istate);
+	slog_tid = slog_start_timer("index", "do_write_index");
 	ret = do_write_index(si->base, *temp, 1);
+	slog_stop_timer(slog_tid);
 	if (ret)
 		return ret;
 	ret = adjust_shared_perm(get_tempfile_path(*temp));

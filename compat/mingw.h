@@ -146,8 +146,15 @@ static inline int fcntl(int fd, int cmd, ...)
 	errno = EINVAL;
 	return -1;
 }
+
 /* bash cannot reliably detect negative return codes as failure */
+#if defined(STRUCTURED_LOGGING)
+#include "structured-logging.h"
+#define exit(code) exit(slog_exit_code((code) & 0xff))
+#else
 #define exit(code) exit((code) & 0xff)
+#endif
+
 #define sigemptyset(x) (void)0
 static inline int sigaddset(sigset_t *set, int signum)
 { return 0; }
