@@ -1754,9 +1754,8 @@ static unsigned long expand_name_field(struct strbuf *name, const char *cp_)
 
 	if (name->len < len)
 		die("malformed name field in the index");
-	strbuf_remove(name, name->len - len, len);
-	for (ep = cp; *ep; ep++)
-		; /* find the end */
+	strbuf_setlen(name, name->len - len);
+	ep = cp + strlen((const char *)cp);
 	strbuf_add(name, cp, ep - cp);
 	return (const char *)ep + 1 - cp_;
 }
