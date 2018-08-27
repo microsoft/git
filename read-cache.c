@@ -1959,16 +1959,13 @@ struct load_cache_entries_thread_data
 	struct mem_pool *ce_mem_pool;
 	int offset, nr;
 	void *mmap;
+	size_t mmap_size;
 	unsigned long start_offset;
 	struct strbuf previous_name_buf;
 	struct strbuf *previous_name;
 	unsigned long consumed;	/* return # of bytes in index file processed */
 };
 
-/*
-* A thread proc to run the load_cache_entries() computation
-* across multiple background threads.
-*/
 static void *load_cache_entries_thread(void *_data)
 {
 	struct load_cache_entries_thread_data *p = _data;
@@ -1978,11 +1975,41 @@ static void *load_cache_entries_thread(void *_data)
 	return NULL;
 }
 
+static void *load_index_extensions_thread(void *_data)
+{
+	struct load_cache_entries_thread_data *p = _data;
+	unsigned long src_offset = p->start_offset;
+
+	while (src_offset <= p->mmap_size - the_hash_algo->rawsz - 8) {
+		/* After an array of active_nr index entries,
+		 * there can be arbitrary number of extended
+		 * sections, each of which is prefixed with
+		 * extension name (4-byte) and section length
+		 * in 4-byte network byte order.
+		 */
+		uint32_t extsize;
+		memcpy(&extsize, (char *)p->mmap + src_offset + 4, 4);
+		extsize = ntohl(extsize);
+		if (read_index_extension(p->istate,
+					(const char *)p->mmap + src_offset,
+					(char *)p->mmap + src_offset + 8,
+					extsize) < 0) {
+			munmap(p->mmap, p->mmap_size);
+			die("index file corrupt");
+		}
+		src_offset += 8;
+		src_offset += extsize;
+	}
+	p->consumed += src_offset - p->start_offset;
+
+	return NULL;
+}
+
 static unsigned long load_cache_entries(struct index_state *istate,
 			void *mmap, size_t mmap_size, unsigned long src_offset)
 {
 	struct strbuf previous_name_buf = STRBUF_INIT, *previous_name;
-	struct load_cache_entries_thread_data *data;
+	struct load_cache_entries_thread_data *data, *p;
 	int nr_threads, cpus, ce_per_thread;
 	unsigned long consumed;
 	int i, thread;
@@ -2012,16 +2039,16 @@ static unsigned long load_cache_entries(struct index_state *istate,
 	else
 		previous_name = NULL;
 
+	/* allocate an extra thread for loading the index extensions */
 	ce_per_thread = DIV_ROUND_UP(istate->cache_nr, nr_threads);
-	data = xcalloc(nr_threads, sizeof(struct load_cache_entries_thread_data));
+	data = xcalloc(nr_threads + 1, sizeof(struct load_cache_entries_thread_data));
 
 	/*
 	 * Loop through index entries starting a thread for every ce_per_thread
-	 * entries. Exit the loop when we've created the final thread (no need
-	 * to parse the remaining entries.
+	 * entries.
 	 */
 	consumed = thread = 0;
-	for (i = 0; ; i++) {
+	for (i = 0; i < istate->cache_nr; i++) {
 		struct ondisk_cache_entry *ondisk;
 		const char *name;
 		unsigned int flags;
@@ -2031,8 +2058,7 @@ static unsigned long load_cache_entries(struct index_state *istate,
 		 * kick off a thread to process them
 		 */
 		if (0 == i % ce_per_thread) {
-			struct load_cache_entries_thread_data *p = &data[thread];
-
+			p = &data[thread];
 			p->istate = istate;
 			p->offset = i;
 			p->nr = ce_per_thread < istate->cache_nr - i ? ce_per_thread : istate->cache_nr - i;
@@ -2054,10 +2080,8 @@ static unsigned long load_cache_entries(struct index_state *istate,
 
 			if (pthread_create(&p->pthread, NULL, load_cache_entries_thread, p))
 				die("unable to create load_cache_entries_thread");
-
-			/* exit the loop when we've created the last thread */
-			if (++thread == nr_threads)
-				break;
+				
+			thread++;
 		}
 
 		ondisk = (struct ondisk_cache_entry *)((char *)mmap + src_offset);
@@ -2086,7 +2110,18 @@ static unsigned long load_cache_entries(struct index_state *istate,
 			src_offset += (name - ((char *)ondisk)) + expand_name_field(previous_name, name);
 	}
 
-	for (i = 0; i < nr_threads; i++) {
+	/* create a thread to load the index extensions */
+	p = &data[thread];
+	p->istate = istate;
+	mem_pool_init(&p->ce_mem_pool, 0);
+	p->mmap = mmap;
+	p->mmap_size = mmap_size;
+	p->start_offset = src_offset;
+
+	if (pthread_create(&p->pthread, NULL, load_index_extensions_thread, p))
+		die("unable to create load_index_extensions_thread");
+
+	for (i = 0; i < nr_threads + 1; i++) {
 		struct load_cache_entries_thread_data *p = data + i;
 		if (pthread_join(p->pthread, NULL))
 			die("unable to join load_cache_entries_thread");
