@@ -31,6 +31,9 @@ int main(int argc, const char **argv)
 	 * onto stdin/stdout/stderr in the child processes we spawn.
 	 */
 	sanitize_stdfds();
+	restore_sigpipe_to_default();
+
+	trace2_initialize(argv);
 
 	git_resolve_executable_dir(argv[0]);
 
@@ -39,8 +42,6 @@ int main(int argc, const char **argv)
 	initialize_the_repository();
 
 	attr_start();
-
-	restore_sigpipe_to_default();
 
 	return cmd_main(argc, argv);
 }

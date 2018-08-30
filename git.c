@@ -147,16 +147,20 @@ static int handle_options(const char ***argv, int *argc, int *envchanged)
 				git_set_exec_path(cmd + 1);
 			else {
 				puts(git_exec_path());
+				trace2_cmd_verb("_query_");
 				exit(0);
 			}
 		} else if (!strcmp(cmd, "--html-path")) {
 			puts(system_path(GIT_HTML_PATH));
+			trace2_cmd_verb("_query_");
 			exit(0);
 		} else if (!strcmp(cmd, "--man-path")) {
 			puts(system_path(GIT_MAN_PATH));
+			trace2_cmd_verb("_query_");
 			exit(0);
 		} else if (!strcmp(cmd, "--info-path")) {
 			puts(system_path(GIT_INFO_PATH));
+			trace2_cmd_verb("_query_");
 			exit(0);
 		} else if (!strcmp(cmd, "-p") || !strcmp(cmd, "--paginate")) {
 			use_pager = 1;
@@ -285,6 +289,7 @@ static int handle_options(const char ***argv, int *argc, int *envchanged)
 			(*argv)++;
 			(*argc)--;
 		} else if (skip_prefix(cmd, "--list-cmds=", &cmd)) {
+			trace2_cmd_verb("_query_");
 			if (!strcmp(cmd, "parseopt")) {
 				struct string_list list = STRING_LIST_INIT_DUP;
 				int i;
@@ -332,8 +337,13 @@ static int handle_alias(int *argcp, const char ***argv)
 			commit_pager_choice();
 
 			child.use_shell = 1;
+			child.trace2_child_class = "shell_alias";
 			argv_array_push(&child.args, alias_string + 1);
 			argv_array_pushv(&child.args, (*argv) + 1);
+
+			trace2_cmd_alias(alias_command, child.args.argv);
+			trace2_cmd_list_config();
+			trace2_cmd_verb("_run_shell_alias_");
 
 			ret = run_command(&child);
 			if (ret >= 0)   /* normal exit */
@@ -368,6 +378,9 @@ static int handle_alias(int *argcp, const char ***argv)
 		REALLOC_ARRAY(new_argv, count + *argcp);
 		/* insert after command name */
 		memcpy(new_argv + count, *argv + 1, sizeof(char *) * *argcp);
+
+		trace2_cmd_alias(alias_command, new_argv);
+		trace2_cmd_list_config();
 
 		*argv = new_argv;
 		*argcp += count - 1;
@@ -478,6 +491,8 @@ static int run_builtin(struct cmd_struct *p, int argc, const char **argv)
 		die("pre-command hook aborted command");
 
 	trace_argv_printf(argv, "trace: built-in: git");
+	trace2_cmd_verb(p->cmd);
+	trace2_cmd_list_config();
 
 	validate_cache_entries(&the_index);
 	exit_code = status = p->fn(argc, argv, prefix);
@@ -735,23 +750,34 @@ static void execv_dashed_external(const char **argv)
 	cmd.clean_on_exit = 1;
 	cmd.wait_after_clean = 1;
 	cmd.silent_exec_failure = 1;
+	cmd.trace2_child_class = "dashed";
 
 	if (run_pre_command_hook(cmd.args.argv))
 		die("pre-command hook aborted command");
 
 	trace_argv_printf(cmd.args.argv, "trace: exec:");
+	trace2_exec(NULL, cmd.args.argv);
 
 	/*
 	 * If we fail because the command is not found, it is
 	 * OK to return. Otherwise, we just pass along the status code,
 	 * or our usual generic code if we were not even able to exec
 	 * the program.
+	 *
+	 * If the child process ran and we are now going to exit, emit a
+	 * generic string as our trace2 command verb to indicate that we
+	 * launched a dashed command.
 	 */
 	exit_code = status = run_command(&cmd);
-	if (status >= 0)
+	trace2_exec_result(status);
+	if (status >= 0) {
+		trace2_cmd_verb("_run_dashed_");
 		exit(status);
-	else if (errno != ENOENT)
+	}
+	else if (errno != ENOENT) {
+		trace2_cmd_verb("_run_dashed_");
 		exit(128);
+	}
 
 	run_post_command_hook();
 }
@@ -778,6 +804,15 @@ static int run_argv(int *argcp, const char ***argv)
 			struct argv_array args = ARGV_ARRAY_INIT;
 			int i;
 
+			/*
+			 * The current process is committed to launching a
+			 * child process to run the command named in (**argv)
+			 * and exiting.  Log a generic string as the trace2
+			 * command verb to indicate this.  Note that the child
+			 * process will log the actual verb when it runs.
+			 */
+			trace2_cmd_verb("_run_git_alias_");
+
 			if (get_super_prefix())
 				die("%s doesn't support --super-prefix", **argv);
 
@@ -793,8 +828,8 @@ static int run_argv(int *argcp, const char ***argv)
 			 * if we fail because the command is not found, it is
 			 * OK to return. Otherwise, we just pass along the status code.
 			 */
-			i = run_command_v_opt(args.argv, RUN_SILENT_EXEC_FAILURE |
-					      RUN_CLEAN_ON_EXIT);
+			i = run_command_v_opt_tr2(args.argv, RUN_SILENT_EXEC_FAILURE |
+						  RUN_CLEAN_ON_EXIT, "git_alias");
 			if (i >= 0 || errno != ENOENT)
 				exit(i);
 			die("could not execute builtin %s", **argv);
@@ -925,5 +960,5 @@ int cmd_main(int argc, const char **argv)
 	fprintf(stderr, _("failed to run command '%s': %s\n"),
 		cmd, strerror(errno));
 
-	return 1;
+	return trace2_cmd_exit(1);
 }
