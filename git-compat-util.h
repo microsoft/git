@@ -1292,6 +1292,13 @@ struct fscache;
 extern int cmd_main(int, const char **);
 
 /*
+ * Intercept all calls to exit() and route them to trace2 to
+ * optionally emit a message before calling the real exit().
+ */
+int trace2_cmd_exit_fl(const char *file, int line, int code);
+#define exit(code) exit(trace2_cmd_exit_fl(__FILE__, __LINE__, (code)))
+
+/*
  * You can mark a stack variable with UNLEAK(var) to avoid it being
  * reported as a leak by tools like LSAN or valgrind. The argument
  * should generally be the variable itself (not its address and not what
