@@ -749,16 +749,29 @@ static int has_unmerged(struct wt_status *s)
 
 void wt_status_collect(struct wt_status *s)
 {
+	trace2_region_enter("status", "worktrees", the_repository);
 	wt_status_collect_changes_worktree(s);
-	if (s->is_initial)
-		wt_status_collect_changes_initial(s);
-	else
-		wt_status_collect_changes_index(s);
-	wt_status_collect_untracked(s);
+	trace2_region_leave("status", "worktrees", the_repository);
 
+	if (s->is_initial) {
+		trace2_region_enter("status", "initial", the_repository);
+		wt_status_collect_changes_initial(s);
+		trace2_region_leave("status", "initial", the_repository);
+	} else {
+		trace2_region_enter("status", "index", the_repository);
+		wt_status_collect_changes_index(s);
+		trace2_region_leave("status", "index", the_repository);
+	}
+
+	trace2_region_enter("status", "untracked", the_repository);
+	wt_status_collect_untracked(s);
+	trace2_region_leave("status", "untracked", the_repository);
+
+	trace2_region_enter("status", "committable", the_repository);
 	wt_status_get_state(&s->state, s->branch && !strcmp(s->branch, "HEAD"));
 	if (s->state.merge_in_progress && !has_unmerged(s))
 		s->committable = 1;
+	trace2_region_leave("status", "committable", the_repository);
 }
 
 void wt_status_collect_free_buffers(struct wt_status *s)
