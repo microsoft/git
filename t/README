@@ -319,6 +319,11 @@ GIT_TEST_OE_DELTA_SIZE=<n> exercises the uncomon pack-objects code
 path where deltas larger than this limit require extra memory
 allocation for bookkeeping.
 
+GIT_TEST_DISABLE_EOIE=<boolean> disables writing the EOIE extension.
+This is used to allow tests 1, 4-9 in t1700-split-index.sh to succeed
+as they currently hard code SHA values for the index which are no longer
+valid due to the addition of the EOIE extension.
+
 Naming Tests
 ------------
 
