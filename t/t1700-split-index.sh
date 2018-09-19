@@ -8,6 +8,7 @@ test_description='split index mode tests'
 sane_unset GIT_TEST_SPLIT_INDEX
 sane_unset GIT_FSMONITOR_TEST
 GIT_TEST_DISABLE_EOIE=true; export GIT_TEST_DISABLE_EOIE
+GIT_TEST_INDEX_THREADS=1; export GIT_TEST_INDEX_THREADS
 
 test_expect_success 'enable split index' '
 	git config splitIndex.maxPercentChange 100 &&

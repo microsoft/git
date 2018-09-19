@@ -2310,6 +2310,24 @@ int git_config_get_fsmonitor(void)
 	return 0;
 }
 
+int git_config_get_index_threads(void)
+{
+	int is_bool, val = 0;
+
+	val = git_env_ulong("GIT_TEST_INDEX_THREADS", 0);
+	if (val)
+		return val;
+
+	if (!git_config_get_bool_or_int("index.threads", &is_bool, &val)) {
+		if (is_bool)
+			return val ? 0 : 1;
+		else
+			return val;
+	}
+
+	return 0; /* auto */
+}
+
 int git_config_get_virtualfilesystem(void)
 {
 	if (git_config_get_pathname("core.virtualfilesystem", &core_virtualfilesystem))
