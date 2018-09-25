@@ -222,7 +222,7 @@ int is_excluded_from_virtualfilesystem(const char *pathname, int pathlen, int dt
 	if (dtype != DT_REG && dtype != DT_DIR && dtype != DT_LNK)
 		die(_("is_excluded_from_virtualfilesystem passed unhandled dtype"));
 
-	if (dtype == DT_REG) {
+	if (dtype == DT_REG || dtype == DT_LNK) {
 		int ret = is_included_in_virtualfilesystem(pathname, pathlen);
 		if (ret > 0)
 			return 0;
@@ -231,7 +231,7 @@ int is_excluded_from_virtualfilesystem(const char *pathname, int pathlen, int dt
 		return ret;
 	}
 
-	if (dtype == DT_DIR || dtype == DT_LNK) {
+	if (dtype == DT_DIR) {
 		if (!parent_directory_hashmap.tablesize && virtual_filesystem_data.len)
 			initialize_parent_directory_hashmap(&parent_directory_hashmap, &virtual_filesystem_data);
 		if (!parent_directory_hashmap.tablesize)
