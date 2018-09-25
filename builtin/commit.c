@@ -1618,6 +1618,7 @@ skip_init:
 	}
 
 	wt_status_print(&s);
+	enable_fscache(0);
 	return 0;
 }
 
