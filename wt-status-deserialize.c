@@ -725,15 +725,18 @@ static int try_deserialize_read_from_file(const struct wt_status *cmd_s,
 					  enum wt_status_deserialize_wait dw,
 					  struct wt_status *des_s)
 {
-	int k, limit;
+	int k = 0;
+	int limit;
 	int result = DESERIALIZE_ERR;
 
 	/*
 	 * For "fail" or "no", try exactly once to read the status cache.
 	 * Return an error if the file is stale.
 	 */
-	if (dw == DESERIALIZE_WAIT__FAIL || dw == DESERIALIZE_WAIT__NO)
-		return try_deserialize_read_from_file_1(cmd_s, path, des_s);
+	if (dw == DESERIALIZE_WAIT__FAIL || dw == DESERIALIZE_WAIT__NO) {
+		result = try_deserialize_read_from_file_1(cmd_s, path, des_s);
+		goto done;
+	}
 
 	/*
 	 * Wait for the status cache file to refresh.  Wait duration can
@@ -757,6 +760,12 @@ static int try_deserialize_read_from_file(const struct wt_status *cmd_s,
 
 		sleep_millisec(100);
 	}
+
+done:
+	trace2_data_string("status", the_repository, "deserialize/path", path);
+	trace2_data_intmax("status", the_repository, "deserialize/polled", k);
+	trace2_data_string("status", the_repository, "deserialize/result",
+			   ((result == DESERIALIZE_OK) ? "ok" : "reject"));
 
 	trace_printf_key(&trace_deserialize,
 			 "wait polled=%d result=%d '%s'",
@@ -783,6 +792,8 @@ int wt_status_deserialize(const struct wt_status *cmd_s,
 	struct wt_status des_s;
 	int result;
 
+	trace2_region_enter("status", "deserialize", the_repository);
+
 	if (path && *path && strcmp(path, "0")) {
 		result = try_deserialize_read_from_file(cmd_s, path, dw, &des_s);
 	} else {
@@ -793,7 +804,13 @@ int wt_status_deserialize(const struct wt_status *cmd_s,
 		 * term, since we cannot read stdin multiple times.
 		 */
 		result = wt_deserialize_fd(cmd_s, &des_s, 0);
+
+		trace2_data_string("status", the_repository, "deserialize/path", "STDIN");
+		trace2_data_string("status", the_repository, "deserialize/result",
+				   ((result == DESERIALIZE_OK) ? "ok" : "reject"));
 	}
+
+	trace2_region_leave("status", "deserialize", the_repository);
 
 	if (result == DESERIALIZE_OK) {
 		wt_status_get_state(&des_s.state, des_s.branch &&
