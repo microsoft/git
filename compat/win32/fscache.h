@@ -1,6 +1,11 @@
 #ifndef FSCACHE_H
 #define FSCACHE_H
 
+/*
+ * The fscache is thread specific. enable_fscache() must be called
+ * for each thread where caching is desired.
+ */
+
 int fscache_enable(int enable);
 #define enable_fscache(x) fscache_enable(x)
 

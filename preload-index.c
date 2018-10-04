@@ -43,6 +43,7 @@ static void *preload_thread(void *_data)
 	if (nr + p->offset > index->cache_nr)
 		nr = index->cache_nr - p->offset;
 
+	enable_fscache(1);
 	do {
 		struct cache_entry *ce = *cep++;
 		struct stat st;
@@ -69,6 +70,7 @@ static void *preload_thread(void *_data)
 		mark_fsmonitor_valid(ce);
 	} while (--nr > 0);
 	cache_def_clear(&cache);
+	enable_fscache(0);
 	return NULL;
 }
 
@@ -91,7 +93,6 @@ void preload_index(struct index_state *index, const struct pathspec *pathspec)
 	offset = 0;
 	work = DIV_ROUND_UP(index->cache_nr, threads);
 	memset(&data, 0, sizeof(data));
-	enable_fscache(1);
 	for (i = 0; i < threads; i++) {
 		struct thread_data *p = data+i;
 		p->index = index;
@@ -109,7 +110,6 @@ void preload_index(struct index_state *index, const struct pathspec *pathspec)
 			die("unable to join threaded lstat");
 	}
 	trace_performance_leave("preload index");
-	enable_fscache(0);
 }
 #endif
 

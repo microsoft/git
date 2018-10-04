@@ -4,14 +4,22 @@
 #include "fscache.h"
 #include "config.h"
 
-static int initialized;
-static volatile long enabled;
-static struct hashmap map;
-static CRITICAL_SECTION mutex;
-unsigned int lstat_requests;
-unsigned int opendir_requests;
-unsigned int fscache_requests;
-unsigned int fscache_misses;
+static volatile long initialized;
+static DWORD dwTlsIndex;
+/*
+ * Store one fscache per thread to avoid thread contention and locking.
+ * This is ok because multi-threaded access is 1) uncommon and 2) always
+ * splitting up the cache entries across multiple threads so there isn't
+ * any overlap between threads anyway.
+ */
+struct fscache {
+	volatile long enabled;
+	struct hashmap map;
+	unsigned int lstat_requests;
+	unsigned int opendir_requests;
+	unsigned int fscache_requests;
+	unsigned int fscache_misses;
+};
 static struct trace_key trace_fscache = TRACE_KEY_INIT(FSCACHE);
 
 /*
@@ -39,8 +47,6 @@ struct fsentry {
 	union {
 		/* Reference count of the directory listing. */
 		volatile long refcnt;
-		/* Handle to wait on the loading thread. */
-		HANDLE hwait;
 		struct {
 			/* More stat members (only used for file entries). */
 			off64_t st_size;
@@ -250,86 +256,65 @@ static struct fsentry *fsentry_create_list(const struct fsentry *dir,
 /*
  * Adds a directory listing to the cache.
  */
-static void fscache_add(struct fsentry *fse)
+static void fscache_add(struct fscache *cache, struct fsentry *fse)
 {
 	if (fse->list)
 		fse = fse->list;
 
 	for (; fse; fse = fse->next)
-		hashmap_add(&map, fse);
+		hashmap_add(&cache->map, fse);
 }
 
 /*
  * Clears the cache.
  */
-static void fscache_clear(void)
+static void fscache_clear(struct fscache *cache)
 {
-	hashmap_free(&map, 1);
-	hashmap_init(&map, (hashmap_cmp_fn)fsentry_cmp, NULL, 0);
-	lstat_requests = opendir_requests = 0;
-	fscache_misses = fscache_requests = 0;
+	hashmap_free(&cache->map, 1);
+	hashmap_init(&cache->map, (hashmap_cmp_fn)fsentry_cmp, NULL, 0);
+	cache->lstat_requests = cache->opendir_requests = 0;
+	cache->fscache_misses = cache->fscache_requests = 0;
 }
 
 /*
  * Checks if the cache is enabled for the given path.
  */
-int fscache_enabled(const char *path)
+static int do_fscache_enabled(struct fscache *cache, const char *path)
 {
-	return enabled > 0 && !is_absolute_path(path);
+	return cache->enabled > 0 && !is_absolute_path(path);
 }
 
-/*
- * Looks up a cache entry, waits if its being loaded by another thread.
- * The mutex must be owned by the calling thread.
- */
-static struct fsentry *fscache_get_wait(struct fsentry *key)
+int fscache_enabled(const char *path)
 {
-	struct fsentry *fse = hashmap_get(&map, key, NULL);
+	struct fscache *cache;
 
-	/* return if its a 'real' entry (future entries have refcnt == 0) */
-	if (!fse || fse->list || fse->refcnt)
-		return fse;
+	cache = (struct fscache *)TlsGetValue(dwTlsIndex);
 
-	/* create an event and link our key to the future entry */
-	key->hwait = CreateEvent(NULL, TRUE, FALSE, NULL);
-	key->next = fse->next;
-	fse->next = key;
-
-	/* wait for the loading thread to signal us */
-	LeaveCriticalSection(&mutex);
-	WaitForSingleObject(key->hwait, INFINITE);
-	CloseHandle(key->hwait);
-	EnterCriticalSection(&mutex);
-
-	/* repeat cache lookup */
-	return hashmap_get(&map, key, NULL);
+	return cache ? do_fscache_enabled(cache, path) : 0;
 }
 
 /*
  * Looks up or creates a cache entry for the specified key.
  */
-static struct fsentry *fscache_get(struct fsentry *key)
+static struct fsentry *fscache_get(struct fscache *cache, struct fsentry *key)
 {
-	struct fsentry *fse, *future, *waiter;
+	struct fsentry *fse;
 	int dir_not_found;
 
-	EnterCriticalSection(&mutex);
-	fscache_requests++;
+	cache->fscache_requests++;
 	/* check if entry is in cache */
-	fse = fscache_get_wait(key);
+	fse = hashmap_get(&cache->map, key, NULL);
 	if (fse) {
 		if (fse->st_mode)
 			fsentry_addref(fse);
 		else
 			fse = NULL; /* non-existing directory */
-		LeaveCriticalSection(&mutex);
 		return fse;
 	}
 	/* if looking for a file, check if directory listing is in cache */
 	if (!fse && key->list) {
-		fse = fscache_get_wait(key->list);
+		fse = hashmap_get(&cache->map, key->list, NULL);
 		if (fse) {
-			LeaveCriticalSection(&mutex);
 			/*
 			 * dir entry without file entry, or dir does not
 			 * exist -> file doesn't exist
@@ -339,25 +324,8 @@ static struct fsentry *fscache_get(struct fsentry *key)
 		}
 	}
 
-	/* add future entry to indicate that we're loading it */
-	future = key->list ? key->list : key;
-	future->next = NULL;
-	future->refcnt = 0;
-	hashmap_add(&map, future);
-
-	/* create the directory listing (outside mutex!) */
-	LeaveCriticalSection(&mutex);
-	fse = fsentry_create_list(future, &dir_not_found);
-	EnterCriticalSection(&mutex);
-
-	/* remove future entry and signal waiting threads */
-	hashmap_remove(&map, future, NULL);
-	waiter = future->next;
-	while (waiter) {
-		HANDLE h = waiter->hwait;
-		waiter = waiter->next;
-		SetEvent(h);
-	}
+	/* create the directory listing */
+	fse = fsentry_create_list(key->list ? key->list : key, &dir_not_found);
 
 	/* leave on error (errno set by fsentry_create_list) */
 	if (!fse) {
@@ -370,19 +338,18 @@ static struct fsentry *fscache_get(struct fsentry *key)
 			fse = fsentry_alloc(key->list->list,
 					    key->list->name, key->list->len);
 			fse->st_mode = 0;
-			hashmap_add(&map, fse);
+			hashmap_add(&cache->map, fse);
 		}
-		LeaveCriticalSection(&mutex);
 		return NULL;
 	}
 
 	/* add directory listing to the cache */
-	fscache_misses++;
-	fscache_add(fse);
+	cache->fscache_misses++;
+	fscache_add(cache, fse);
 
 	/* lookup file entry if requested (fse already points to directory) */
 	if (key->list)
-		fse = hashmap_get(&map, key, NULL);
+		fse = hashmap_get(&cache->map, key, NULL);
 
 	if (fse && !fse->st_mode)
 		fse = NULL; /* non-existing directory */
@@ -393,7 +360,6 @@ static struct fsentry *fscache_get(struct fsentry *key)
 	else
 		errno = ENOENT;
 
-	LeaveCriticalSection(&mutex);
 	return fse;
 }
 
@@ -403,43 +369,74 @@ static struct fsentry *fscache_get(struct fsentry *key)
  */
 int fscache_enable(int enable)
 {
-	int result;
+	int fscache;
+	struct fscache *cache;
+	int result = 0;
 
-	if (!initialized) {
-		int fscache = git_env_bool("GIT_TEST_FSCACHE", -1);
+	/* allow the cache to be disabled entirely */
+	fscache = git_env_bool("GIT_TEST_FSCACHE", -1);
+	if (fscache != -1)
+		core_fscache = fscache;
+	if (!core_fscache)
+		return 0;
 
-		/* allow the cache to be disabled entirely */
-		if (fscache != -1)
-			core_fscache = fscache;
-		if (!core_fscache)
-			return 0;
+	if (enable) {
+		/*
+		 * refcount the global fscache initialization so that the
+		 * opendir and lstat function pointers are redirected if
+		 * any threads are using the fscache.
+		 */
+		if (!initialized) {
+			if (!dwTlsIndex) {
+				dwTlsIndex = TlsAlloc();
+				if (dwTlsIndex == TLS_OUT_OF_INDEXES)
+					return 0;
+			}
 
-		InitializeCriticalSection(&mutex);
-		lstat_requests = opendir_requests = 0;
-		fscache_misses = fscache_requests = 0;
-		hashmap_init(&map, (hashmap_cmp_fn) fsentry_cmp, NULL, 0);
-		initialized = 1;
-	}
+			/* redirect opendir and lstat to the fscache implementations */
+			opendir = fscache_opendir;
+			lstat = fscache_lstat;
+		}
+		InterlockedIncrement(&initialized);
 
-	result = enable ? InterlockedIncrement(&enabled)
-			: InterlockedDecrement(&enabled);
-
-	if (enable && result == 1) {
-		/* redirect opendir and lstat to the fscache implementations */
-		opendir = fscache_opendir;
-		lstat = fscache_lstat;
-	} else if (!enable && !result) {
-		/* reset opendir and lstat to the original implementations */
-		opendir = dirent_opendir;
-		lstat = mingw_lstat;
-		EnterCriticalSection(&mutex);
-		trace_printf_key(&trace_fscache, "fscache: lstat %u, opendir %u, "
+		/* refcount the thread specific initialization */
+		cache = (struct fscache *)TlsGetValue(dwTlsIndex);
+		if (cache) {
+			InterlockedIncrement(&cache->enabled);
+		} else {
+			cache = (struct fscache *)xmalloc(sizeof(*cache));
+			cache->enabled = 1;
+			cache->lstat_requests = cache->opendir_requests = 0;
+			cache->fscache_misses = cache->fscache_requests = 0;
+			hashmap_init(&cache->map, (hashmap_cmp_fn)fsentry_cmp, NULL, 0);
+			if (!TlsSetValue(dwTlsIndex, cache))
+				BUG("TlsSetValue error");
+		}
+	} else {
+		/* update the thread specific fscache initialization */
+		cache = (struct fscache *)TlsGetValue(dwTlsIndex);
+		if (!cache)
+			BUG("fscache_enable(0) called on a thread where fscache has not been initialized");
+		InterlockedDecrement(&cache->enabled);
+		if (!cache->enabled) {
+			TlsSetValue(dwTlsIndex, NULL);
+			trace_printf_key(&trace_fscache, "fscache: lstat %u, opendir %u, "
 						 "total requests/misses %u/%u\n",
-				lstat_requests, opendir_requests,
-				fscache_requests, fscache_misses);
-		fscache_clear();
-		LeaveCriticalSection(&mutex);
+				cache->lstat_requests, cache->opendir_requests,
+				cache->fscache_requests, cache->fscache_misses);
+			fscache_clear(cache);
+			free(cache);
+		}
+
+		/* update the global fscache initialization */
+		InterlockedDecrement(&initialized);
+		if (!initialized) {
+			/* reset opendir and lstat to the original implementations */
+			opendir = dirent_opendir;
+			lstat = mingw_lstat;
+		}
 	}
+
 	trace_printf_key(&trace_fscache, "fscache: enable(%d)\n", enable);
 	return result;
 }
@@ -449,10 +446,11 @@ int fscache_enable(int enable)
  */
 void fscache_flush(void)
 {
-	if (enabled) {
-		EnterCriticalSection(&mutex);
-		fscache_clear();
-		LeaveCriticalSection(&mutex);
+	struct fscache *cache;
+
+	cache = (struct fscache *)TlsGetValue(dwTlsIndex);
+	if (cache && cache->enabled) {
+		fscache_clear(cache);
 	}
 }
 
@@ -464,11 +462,13 @@ int fscache_lstat(const char *filename, struct stat *st)
 {
 	int dirlen, base, len;
 	struct fsentry key[2], *fse;
+	struct fscache *cache;
 
-	if (!fscache_enabled(filename))
+	cache = (struct fscache *)TlsGetValue(dwTlsIndex);
+	if (!cache || !do_fscache_enabled(cache, filename))
 		return mingw_lstat(filename, st);
 
-	lstat_requests++;
+	cache->lstat_requests++;
 	/* split filename into path + name */
 	len = strlen(filename);
 	if (len && is_dir_sep(filename[len - 1]))
@@ -481,7 +481,7 @@ int fscache_lstat(const char *filename, struct stat *st)
 	/* lookup entry for path + name in cache */
 	fsentry_init(key, NULL, filename, dirlen);
 	fsentry_init(key + 1, key, filename + base, len - base);
-	fse = fscache_get(key + 1);
+	fse = fscache_get(cache, key + 1);
 	if (!fse)
 		return -1;
 
@@ -545,11 +545,13 @@ DIR *fscache_opendir(const char *dirname)
 	struct fsentry key, *list;
 	fscache_DIR *dir;
 	int len;
+	struct fscache *cache;
 
-	if (!fscache_enabled(dirname))
+	cache = (struct fscache *)TlsGetValue(dwTlsIndex);
+	if (!cache || !do_fscache_enabled(cache, dirname))
 		return dirent_opendir(dirname);
 
-	opendir_requests++;
+	cache->opendir_requests++;
 	/* prepare name (strip trailing '/', replace '.') */
 	len = strlen(dirname);
 	if ((len == 1 && dirname[0] == '.') ||
@@ -558,7 +560,7 @@ DIR *fscache_opendir(const char *dirname)
 
 	/* get directory listing from cache */
 	fsentry_init(&key, NULL, dirname, len);
-	list = fscache_get(&key);
+	list = fscache_get(cache, &key);
 	if (!list)
 		return NULL;
 
