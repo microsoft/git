@@ -137,6 +137,7 @@ static void update_index_from_diff(struct diff_queue_struct *q,
 		struct cache_entry *ce;
 		struct cache_entry *ceBefore;
 		struct checkout state = CHECKOUT_INIT;
+		FILE *f;
 
 		/*
 		 * When using the sparse-checkout feature the cache entries that are
@@ -148,7 +149,7 @@ static void update_index_from_diff(struct diff_queue_struct *q,
 		 * directory so that they will have the right content and the next
 		 * status call will show modified or untracked files correctly.
 		 */
-		if (core_apply_sparse_checkout && !file_exists(two->path))
+		if (core_apply_sparse_checkout)
 		{
 			pos = cache_name_pos(two->path, strlen(two->path));
 			if ((pos >= 0 && ce_skip_worktree(active_cache[pos])) && (is_missing || !was_missing))
@@ -162,7 +163,12 @@ static void update_index_from_diff(struct diff_queue_struct *q,
 					die(_("make_cache_entry failed for path '%s'"),
 						two->path);
 
-				checkout_entry(ceBefore, &state, NULL);
+				if (file_exists(two->path)) {
+					f = xfopen(two->path, "a");
+					if (f)
+						fclose(f);
+				} else
+					checkout_entry(ceBefore, &state, NULL);
 			}
 		}
 
