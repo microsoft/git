@@ -131,6 +131,7 @@ unset VISUAL EMAIL LANGUAGE COLUMNS $(env | sed -n \
 	-e '/^GIT_PERF_/d' \
 	-e '/^GIT_CURL_VERBOSE/d' \
 	-e '/^GIT_TRACE_CURL/d' \
+	-e '/^GIT_TR2_*/d' \
 	-e 's/^\(GIT_[^=]*\)=.*/\1/p')
 unset XDG_CACHE_HOME
 unset XDG_CONFIG_HOME
