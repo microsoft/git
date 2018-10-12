@@ -1114,13 +1114,17 @@ int cmd_rebase(int argc, const char **argv, const char *prefix)
 	 */
 
 	if (!use_builtin_rebase()) {
-		const char *path = mkpath("%s/git-legacy-rebase",
-					  git_exec_path());
+		struct argv_array args = ARGV_ARRAY_INIT;
+		int code;
 
-		if (sane_execvp(path, (char **)argv) < 0)
-			die_errno(_("could not exec %s"), path);
-		else
-			BUG("sane_execvp() returned???");
+		argv_array_push(&args, mkpath("%s/git-legacy-rebase",
+					      git_exec_path()));
+		argv_array_pushv(&args, argv + 1);
+		code = run_command_v_opt(args.argv, 0);
+		if (code < 0)
+			die_errno(_("could not exec %s"), args.argv[0]);
+		argv_array_clear(&args);
+		exit(code);
 	}
 
 	if (argc == 2 && !strcmp(argv[1], "-h"))
