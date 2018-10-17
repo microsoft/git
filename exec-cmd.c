@@ -330,22 +330,16 @@ const char **prepare_git_cmd(struct argv_array *out, const char **argv)
 int execv_git_cmd(const char **argv)
 {
 	struct argv_array nargv = ARGV_ARRAY_INIT;
-	int err;
 
 	prepare_git_cmd(&nargv, argv);
 	trace_argv_printf(nargv.argv, "trace: exec:");
-	trace2_exec("git", (const char **)nargv.argv);
 
 	/* execvp() can only ever return if it fails */
 	sane_execvp("git", (char **)nargv.argv);
 
-	err = errno;
-	trace_printf("trace: exec failed: %s\n", strerror(err));
-	trace2_exec_result(err);
+	trace_printf("trace: exec failed: %s\n", strerror(errno));
 
 	argv_array_clear(&nargv);
-
-	errno = err;
 	return -1;
 }
 

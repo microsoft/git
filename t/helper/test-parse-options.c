@@ -1,6 +1,7 @@
 #include "cache.h"
 #include "parse-options.h"
 #include "string-list.h"
+#include "trace2.h"
 
 static int boolean = 0;
 static int integer = 0;
@@ -151,6 +152,8 @@ int cmd_main(int argc, const char **argv)
 	};
 	int i;
 	int ret = 0;
+
+	trace2_cmd_verb("_parse_");
 
 	argc = parse_options(argc, (const char **)argv, prefix, options, usage, 0);
 

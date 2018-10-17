@@ -220,8 +220,28 @@ static int exists_in_PATH(const char *file)
 
 int sane_execvp(const char *file, char * const argv[])
 {
+#ifndef GIT_WINDOWS_NATIVE
+	/*
+	 * execvp() doesn't return, so we all we can do is tell trace2
+	 * what we are about to do and let it leave a hint in the log
+	 * (unless of course the execvp() fails).
+	 *
+	 * we skip this for Windows because the compat layer already
+	 * has to emulate the execvp() call anyway.
+	 */
+	int exec_id = trace2_exec(file, (const char**)argv);
+#endif
+
 	if (!execvp(file, argv))
 		return 0; /* cannot happen ;-) */
+
+#ifndef GIT_WINDOWS_NATIVE
+	{
+		int ec = errno;
+		trace2_exec_result(exec_id, ec);
+		errno = ec;
+	}
+#endif
 
 	/*
 	 * When a command can't be found because one of the directories

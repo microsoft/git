@@ -249,6 +249,21 @@ static void fn_command_verb_fl(const char *file, int line,
 	jw_release(&jw);
 }
 
+static void fn_command_subverb_fl(const char *file, int line,
+			       const char *command_subverb)
+{
+	const char *event_name = "cmd_subverb";
+	struct json_writer jw = JSON_WRITER_INIT;
+
+	jw_object_begin(&jw, 0);
+	event_fmt_prepare(event_name, file, line, NULL, &jw);
+	jw_object_string(&jw, "name", command_subverb);
+	jw_end(&jw);
+
+	tr2_dst_write_line(&tr2dst_event, &jw.json);
+	jw_release(&jw);
+}
+
 static void fn_alias_fl(const char *file, int line,
 			const char *alias, const char **argv)
 {
@@ -348,13 +363,14 @@ static void fn_thread_exit_fl(const char *file, int line,
 
 static void fn_exec_fl(const char *file, int line,
 		       uint64_t us_elapsed_absolute,
-		       const char *exe, const char **argv)
+		       int exec_id, const char *exe, const char **argv)
 {
 	const char *event_name = "exec";
 	struct json_writer jw = JSON_WRITER_INIT;
 
 	jw_object_begin(&jw, 0);
 	event_fmt_prepare(event_name, file, line, NULL, &jw);
+	jw_object_intmax(&jw, "exec_id", exec_id);
 	if (exe)
 		jw_object_string(&jw, "exe", exe);
 	jw_object_inline_begin_array(&jw, "argv");
@@ -367,13 +383,15 @@ static void fn_exec_fl(const char *file, int line,
 }
 
 static void fn_exec_result_fl(const char *file, int line,
-			      uint64_t us_elapsed_absolute, int code)
+			      uint64_t us_elapsed_absolute,
+			      int exec_id, int code)
 {
 	const char *event_name = "exec_result";
 	struct json_writer jw = JSON_WRITER_INIT;
 
 	jw_object_begin(&jw, 0);
 	event_fmt_prepare(event_name, file, line, NULL, &jw);
+	jw_object_intmax(&jw, "exec_id", exec_id);
 	jw_object_intmax(&jw, "code", code);
 	jw_end(&jw);
 
@@ -515,6 +533,7 @@ struct tr2_tgt tr2_tgt_event =
 	fn_error_va_fl,
 	fn_command_path_fl,
 	fn_command_verb_fl,
+	fn_command_subverb_fl,
 	fn_alias_fl,
 	fn_child_start_fl,
 	fn_child_exit_fl,
