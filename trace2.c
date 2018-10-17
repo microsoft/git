@@ -15,6 +15,7 @@
 static int trace2_enabled;
 
 static int tr2_next_child_id; /* modify under lock */
+static int tr2_next_exec_id; /* modify under lock */
 static int tr2_next_repo_id = 1; /* modify under lock. zero is reserved */
 
 /*
@@ -145,7 +146,7 @@ static void tr2main_signal_handler(int signo)
  * TODO remove this section header
  *****************************************************************/
 
-void trace2_initialize_fl(const char *file, int line, const char **argv)
+void trace2_initialize_fl(const char *file, int line)
 {
 	struct tr2_tgt *tgt_j;
 	int j;
@@ -164,11 +165,28 @@ void trace2_initialize_fl(const char *file, int line, const char **argv)
 	tr2tls_init();
 
 	/*
-	 * Emit 'version' and 'start' messages on each active builtin target.
+	 * Emit 'version' message on each active builtin target.
 	 */
 	for_each_wanted_builtin(j, tgt_j) {
 		if (tgt_j->pfn_version_fl)
 			tgt_j->pfn_version_fl(file, line);
+	}
+}
+
+int trace2_is_enabled(void)
+{
+	return trace2_enabled;
+}
+
+void trace2_cmd_start_fl(const char *file, int line, const char **argv)
+{
+	struct tr2_tgt *tgt_j;
+	int j;
+
+	if (!trace2_enabled)
+		return;
+
+	for_each_wanted_builtin(j, tgt_j) {
 		if (tgt_j->pfn_start_fl)
 			tgt_j->pfn_start_fl(file, line, argv);
 	}
@@ -243,6 +261,22 @@ void trace2_cmd_verb_fl(const char *file, int line, const char *command_verb)
 	for_each_wanted_builtin(j, tgt_j) {
 		if (tgt_j->pfn_command_verb_fl)
 			tgt_j->pfn_command_verb_fl(file, line, command_verb);
+	}
+}
+
+void trace2_cmd_subverb_fl(const char *file, int line,
+			   const char *command_subverb)
+{
+	struct tr2_tgt *tgt_j;
+	int j;
+
+	if (!trace2_enabled)
+		return;
+
+	for_each_wanted_builtin(j, tgt_j) {
+		if (tgt_j->pfn_command_subverb_fl)
+			tgt_j->pfn_command_subverb_fl(file, line,
+						      command_subverb);
 	}
 }
 
@@ -332,28 +366,33 @@ void trace2_child_exit_fl(const char *file, int line,
 	}
 }
 
-void trace2_exec_fl(const char *file, int line,
-		    const char *exe, const char **argv)
+int trace2_exec_fl(const char *file, int line,
+		   const char *exe, const char **argv)
 {
 	struct tr2_tgt *tgt_j;
 	int j;
+	int exec_id;
 	uint64_t us_now;
 	uint64_t us_elapsed_absolute;
 
 	if (!trace2_enabled)
-		return;
+		return -1;
 
 	us_now = getnanotime() / 1000;
 	us_elapsed_absolute = tr2tls_absolute_elapsed(us_now);
 
+	exec_id = tr2tls_locked_increment(&tr2_next_exec_id);
+
 	for_each_wanted_builtin(j, tgt_j) {
 		if (tgt_j->pfn_exec_fl)
 			tgt_j->pfn_exec_fl(file, line, us_elapsed_absolute,
-					   exe, argv);
+					   exec_id, exe, argv);
 	}
+
+	return exec_id;
 }
 
-void trace2_exec_result_fl(const char *file, int line, int code)
+void trace2_exec_result_fl(const char *file, int line, int exec_id, int code)
 {
 	struct tr2_tgt *tgt_j;
 	int j;
@@ -370,7 +409,7 @@ void trace2_exec_result_fl(const char *file, int line, int code)
 		if (tgt_j->pfn_exec_result_fl)
 			tgt_j->pfn_exec_result_fl(file, line,
 						  us_elapsed_absolute,
-						  code);
+						  exec_id, code);
 	}
 }
 

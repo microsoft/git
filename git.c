@@ -760,21 +760,25 @@ static void execv_dashed_external(const char **argv)
 	if (run_pre_command_hook(cmd.args.argv))
 		die("pre-command hook aborted command");
 
+	/*
+	 * The code in run_command() logs trace2 child_start/child_exit
+	 * events, so we do not need to report exec/exec_result events here.
+	 */
 	trace_argv_printf(cmd.args.argv, "trace: exec:");
-	trace2_exec(NULL, cmd.args.argv);
 
 	/*
 	 * If we fail because the command is not found, it is
 	 * OK to return. Otherwise, we just pass along the status code,
 	 * or our usual generic code if we were not even able to exec
 	 * the program.
-	 *
+	 */
+	exit_code = status = run_command(&cmd);
+
+	/*
 	 * If the child process ran and we are now going to exit, emit a
 	 * generic string as our trace2 command verb to indicate that we
 	 * launched a dashed command.
 	 */
-	exit_code = status = run_command(&cmd);
-	trace2_exec_result(status);
 	if (status >= 0) {
 		trace2_cmd_verb("_run_dashed_");
 		exit(status);
@@ -965,5 +969,5 @@ int cmd_main(int argc, const char **argv)
 	fprintf(stderr, _("failed to run command '%s': %s\n"),
 		cmd, strerror(errno));
 
-	return trace2_cmd_exit(1);
+	return 1;
 }

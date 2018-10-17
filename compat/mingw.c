@@ -1945,6 +1945,7 @@ static int try_shell_exec(const char *cmd, char *const *argv)
 		return 0;
 	prog = path_lookup(interpr, 1);
 	if (prog) {
+		int exec_id;
 		int argc = 0;
 #ifndef _MSC_VER
 		const
@@ -1954,14 +1955,16 @@ static int try_shell_exec(const char *cmd, char *const *argv)
 		ALLOC_ARRAY(argv2, argc + 1);
 		argv2[0] = (char *)cmd;	/* full path to the script file */
 		memcpy(&argv2[1], &argv[1], sizeof(*argv) * argc);
+		exec_id = trace2_exec(prog, argv2);
 		pid = mingw_spawnv(prog, argv2, interpr);
 		if (pid >= 0) {
 			int status;
 			if (waitpid(pid, &status, 0) < 0)
 				status = 255;
-			trace2_exec_result(status);
+			trace2_exec_result(exec_id, status);
 			exit(status);
 		}
+		trace2_exec_result(exec_id, -1);
 		pid = 1;	/* indicate that we tried but failed */
 		free(prog);
 		free(argv2);
@@ -1974,13 +1977,17 @@ int mingw_execv(const char *cmd, char *const *argv)
 	/* check if git_command is a shell script */
 	if (!try_shell_exec(cmd, argv)) {
 		int pid, status;
+		int exec_id;
 
+		exec_id = trace2_exec(cmd, (const char **)argv);
 		pid = mingw_spawnv(cmd, (const char **)argv, NULL);
-		if (pid < 0)
+		if (pid < 0) {
+			trace2_exec_result(exec_id, -1);
 			return -1;
+		}
 		if (waitpid(pid, &status, 0) < 0)
 			status = 255;
-		trace2_exec_result(status);
+		trace2_exec_result(exec_id, status);
 		exit(status);
 	}
 	return -1;
