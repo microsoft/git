@@ -6,6 +6,8 @@
 
 static volatile long initialized;
 static DWORD dwTlsIndex;
+static CRITICAL_SECTION mutex;
+
 /*
  * Store one fscache per thread to avoid thread contention and locking.
  * This is ok because multi-threaded access is 1) uncommon and 2) always
@@ -276,6 +278,53 @@ static void fscache_clear(struct fscache *cache)
 	cache->fscache_misses = cache->fscache_requests = 0;
 }
 
+struct fscache *fscache_getcache(void)
+{
+	return (struct fscache *)TlsGetValue(dwTlsIndex);
+}
+
+void fscache_mergecache(struct fscache *dest)
+{
+	struct hashmap_iter iter;
+	struct hashmap_entry *e;
+	struct fscache *cache = (struct fscache *)TlsGetValue(dwTlsIndex);
+
+	/*
+	 * Only do the merge if fscache was enabled and we have a dest
+	 * cache to merge into.
+	 */
+	if (!dest) {
+		fscache_enable(0);
+		return;
+	}
+	if (!cache)
+		BUG("fscache_mergecache() called on a thread where fscache has not been initialized");
+
+	TlsSetValue(dwTlsIndex, NULL);
+	trace_printf_key(&trace_fscache, "fscache: lstat %u, opendir %u, "
+		"total requests/misses %u/%u\n",
+		cache->lstat_requests, cache->opendir_requests,
+		cache->fscache_requests, cache->fscache_misses);
+
+	hashmap_iter_init(&cache->map, &iter);
+
+	/*
+	 * This is only safe because the primary thread we're merging into
+	 * isn't being used so the critical section only needs to prevent
+	 * the the child threads from stomping on each other.
+	 */
+	EnterCriticalSection(&mutex);
+	dest->lstat_requests += cache->lstat_requests;
+	dest->opendir_requests += cache->opendir_requests;
+	dest->fscache_requests += cache->fscache_requests;
+	dest->fscache_misses += cache->fscache_misses;
+	while ((e = hashmap_iter_next(&iter)))
+		hashmap_add(&dest->map, (struct fsentry *)e);
+	LeaveCriticalSection(&mutex);
+
+	free(cache);
+}
+
 /*
  * Checks if the cache is enabled for the given path.
  */
@@ -387,6 +436,7 @@ int fscache_enable(int enable)
 		 * any threads are using the fscache.
 		 */
 		if (!initialized) {
+			InitializeCriticalSection(&mutex);
 			if (!dwTlsIndex) {
 				dwTlsIndex = TlsAlloc();
 				if (dwTlsIndex == TLS_OUT_OF_INDEXES)

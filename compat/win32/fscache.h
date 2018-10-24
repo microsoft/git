@@ -18,4 +18,10 @@ void fscache_flush(void);
 DIR *fscache_opendir(const char *dir);
 int fscache_lstat(const char *file_name, struct stat *buf);
 
+/* opaque fscache structure */
+struct fscache;
+
+struct fscache *fscache_getcache(void);
+void fscache_mergecache(struct fscache *dest);
+
 #endif

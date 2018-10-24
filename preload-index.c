@@ -15,6 +15,8 @@ void preload_index(struct index_state *index, const struct pathspec *pathspec)
 
 #include <pthread.h>
 
+struct fscache *fscache;
+
 /*
  * Mostly randomly chosen maximum thread counts: we
  * cap the parallelism to 20 threads, and we want
@@ -70,7 +72,7 @@ static void *preload_thread(void *_data)
 		mark_fsmonitor_valid(ce);
 	} while (--nr > 0);
 	cache_def_clear(&cache);
-	enable_fscache(0);
+	fscache_mergecache(fscache);
 	return NULL;
 }
 
@@ -82,6 +84,7 @@ void preload_index(struct index_state *index, const struct pathspec *pathspec)
 	if (!core_preload_index)
 		return;
 
+	fscache = fscache_getcache();
 	threads = index->cache_nr / THREAD_COST;
 	if ((index->cache_nr > 1) && (threads < 2) && getenv("GIT_FORCE_PRELOAD_TEST"))
 		threads = 2;
