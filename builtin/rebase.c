@@ -954,6 +954,11 @@ int cmd_rebase(int argc, const char **argv, const char *prefix)
 		ACTION_EDIT_TODO,
 		ACTION_SHOW_CURRENT_PATCH,
 	} action = NO_ACTION;
+	static const char *action_names[] = {
+		N_("undefined"), N_("continue"), N_("skip"), N_("abort"),
+		N_("quit"), N_("edit_todo"), N_("show_current_patch"),
+		NULL
+	};
 	int committer_date_is_author_date = 0;
 	int ignore_date = 0;
 	int ignore_whitespace = 0;
@@ -1141,6 +1146,15 @@ int cmd_rebase(int argc, const char **argv, const char *prefix)
 	if (action == ACTION_EDIT_TODO && !is_interactive(&options))
 		die(_("The --edit-todo action can only be used during "
 		      "interactive rebase."));
+
+	if (trace2_is_enabled()) {
+		if (is_interactive(&options))
+			trace2_cmd_subverb("interactive");
+		else if (exec.nr)
+			trace2_cmd_subverb("interactive-exec");
+		else
+			trace2_cmd_subverb(action_names[action]);
+	}
 
 	switch (action) {
 	case ACTION_CONTINUE: {
