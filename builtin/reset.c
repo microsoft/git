@@ -415,6 +415,7 @@ int cmd_reset(int argc, const char **argv, const char *prefix)
 	if (patch_mode) {
 		if (reset_type != NONE)
 			die(_("--patch is incompatible with --{hard,mixed,soft}"));
+		trace2_cmd_subverb("patch-interactive");
 		return run_add_interactive(rev, "--patch=reset", &pathspec);
 	}
 
@@ -430,6 +431,13 @@ int cmd_reset(int argc, const char **argv, const char *prefix)
 	}
 	if (reset_type == NONE)
 		reset_type = MIXED; /* by default */
+
+	if (read_from_stdin)
+		trace2_cmd_subverb("path-stdin");
+	else if (pathspec.nr)
+		trace2_cmd_subverb("path");
+	else
+		trace2_cmd_subverb(reset_type_names[reset_type]);
 
 	if (reset_type != SOFT && (reset_type != MIXED || get_git_work_tree()))
 		setup_work_tree();
