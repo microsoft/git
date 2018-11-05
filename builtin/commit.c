@@ -1595,6 +1595,7 @@ skip_init:
 		if (s.relative_paths)
 			s.prefix = prefix;
 
+		trace2_cmd_subverb("deserialize");
 		result = wt_status_deserialize(&s, deserialize_path, dw);
 		if (result == DESERIALIZE_OK)
 			return 0;
@@ -1612,6 +1613,7 @@ skip_init:
 			fd = -1;
 	}
 
+	trace2_cmd_subverb("collect");
 	wt_status_collect(&s);
 
 	if (0 <= fd)
@@ -1626,6 +1628,7 @@ skip_init:
 		if (fd_serialize < 0)
 			die_errno(_("could not serialize to '%s'"),
 				  serialize_path);
+		trace2_cmd_subverb("serialize");
 		wt_status_serialize_v1(fd_serialize, &s);
 		close(fd_serialize);
 	}
