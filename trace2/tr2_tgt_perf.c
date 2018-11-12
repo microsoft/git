@@ -83,7 +83,7 @@ static void perf_fmt_prepare(
 
 		struct tr2_tbuf tb_now;
 
-		tr2_tbuf_current_time(&tb_now);
+		tr2_tbuf_local_time(&tb_now);
 		strbuf_addstr(buf, tb_now.buf);
 		strbuf_addch(buf, ' ');
 

@@ -81,7 +81,7 @@ static void event_fmt_prepare(const char *event_name,
 	jw_object_string(jw, "sid", tr2_sid_get());
 	jw_object_string(jw, "thread", ctx->thread_name.buf);
 
-	tr2_tbuf_current_time(&tb_now);
+	tr2_tbuf_utc_time(&tb_now);
 	jw_object_string(jw, "time", tb_now.buf);
 
 	if (file && *file) {

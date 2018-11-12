@@ -11,9 +11,10 @@
  * argument.
  */
 struct tr2_tbuf {
-	char buf[24];
+	char buf[32];
 };
 
-void tr2_tbuf_current_time(struct tr2_tbuf *tb);
+void tr2_tbuf_local_time(struct tr2_tbuf *tb);
+void tr2_tbuf_utc_time(struct tr2_tbuf *tb);
 
 #endif /* TR2_TBUF_H */
