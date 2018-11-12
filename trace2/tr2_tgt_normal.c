@@ -327,5 +327,6 @@ struct tr2_tgt tr2_tgt_normal =
 	NULL, /* region_enter */
 	NULL, /* region_leave */
 	NULL, /* data */
+	NULL, /* data_json */
 	fn_printf_va_fl,
 };

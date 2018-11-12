@@ -518,6 +518,36 @@ static void fn_data_fl(const char *file, int line,
 	}
 }
 
+static void fn_data_json_fl(const char *file, int line,
+			    uint64_t us_elapsed_absolute,
+			    uint64_t us_elapsed_region,
+			    const char *category,
+			    const struct repository *repo,
+			    const char *key,
+			    const struct json_writer *value)
+{
+	const char *event_name = "data_json";
+	struct tr2tls_thread_ctx *ctx = tr2tls_get_self();
+	if (ctx->nr_open_regions <= tr2env_event_nesting_wanted) {
+		struct json_writer jw = JSON_WRITER_INIT;
+		double t_abs = (double)us_elapsed_absolute / 1000000.0;
+		double t_rel = (double)us_elapsed_region / 1000000.0;
+
+		jw_object_begin(&jw, 0);
+		event_fmt_prepare(event_name, file, line, repo, &jw);
+		jw_object_double(&jw, "t_abs", 6, t_abs);
+		jw_object_double(&jw, "t_rel", 6, t_rel);
+		jw_object_intmax(&jw, "nesting", ctx->nr_open_regions);
+		jw_object_string(&jw, "category", category);
+		jw_object_string(&jw, "key", key);
+		jw_object_sub_jw(&jw, "value", value);
+		jw_end(&jw);
+
+		tr2_dst_write_line(&tr2dst_event, &jw.json);
+		jw_release(&jw);
+	}
+}
+
 struct tr2_tgt tr2_tgt_event =
 {
 	&tr2dst_event,
@@ -546,5 +576,6 @@ struct tr2_tgt tr2_tgt_event =
 	fn_region_enter_printf_va_fl,
 	fn_region_leave_printf_va_fl,
 	fn_data_fl,
+	fn_data_json_fl,
 	NULL, /* printf */
 };
