@@ -735,6 +735,33 @@ void trace2_data_intmax_fl(const char *file, int line,
 	strbuf_release(&buf_string);
 }
 
+void trace2_data_json_fl(const char *file, int line,
+			 const char *category,
+			 const struct repository *repo,
+			 const char *key,
+			 const struct json_writer *value)
+{
+	struct tr2_tgt *tgt_j;
+	int j;
+	uint64_t us_now;
+	uint64_t us_elapsed_absolute;
+	uint64_t us_elapsed_region;
+
+	if (!trace2_enabled)
+		return;
+
+	us_now = getnanotime() / 1000;
+	us_elapsed_absolute = tr2tls_absolute_elapsed(us_now);
+	us_elapsed_region = tr2tls_region_elasped_self(us_now);
+
+	for_each_wanted_builtin(j, tgt_j) {
+		if (tgt_j->pfn_data_fl)
+			tgt_j->pfn_data_json_fl(file, line, us_elapsed_absolute,
+						us_elapsed_region,
+						category, repo, key, value);
+	}
+}
+
 void trace2_printf_va_fl(const char *file, int line,
 			 const char *fmt, va_list ap)
 {

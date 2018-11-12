@@ -3,6 +3,7 @@
 #include "run-command.h"
 #include "quote.h"
 #include "version.h"
+#include "json-writer.h"
 #include "trace2/tr2_dst.h"
 #include "trace2/tr2_sid.h"
 #include "trace2/tr2_tbuf.h"
@@ -499,6 +500,25 @@ static void fn_data_fl(const char *file, int line,
 	strbuf_release(&buf_payload);
 }
 
+static void fn_data_json_fl(const char *file, int line,
+			    uint64_t us_elapsed_absolute,
+			    uint64_t us_elapsed_region,
+			    const char *category,
+			    const struct repository *repo,
+			    const char *key,
+			    const struct json_writer *value)
+{
+	const char *event_name = "data_json";
+	struct strbuf buf_payload = STRBUF_INIT;
+
+	strbuf_addf(&buf_payload, "%s:%s", key, value->json.buf);
+
+	perf_io_write_fl(file, line, event_name, repo,
+			 &us_elapsed_absolute, &us_elapsed_region, category,
+			 &buf_payload);
+	strbuf_release(&buf_payload);
+}
+
 static void fn_printf_va_fl(const char *file, int line,
 			    uint64_t us_elapsed_absolute,
 			    const char *fmt, va_list ap)
@@ -542,5 +562,6 @@ struct tr2_tgt tr2_tgt_perf =
 	fn_region_enter_printf_va_fl,
 	fn_region_leave_printf_va_fl,
 	fn_data_fl,
+	fn_data_json_fl,
 	fn_printf_va_fl,
 };

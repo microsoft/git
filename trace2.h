@@ -3,6 +3,7 @@
 
 struct child_process;
 struct repository;
+struct json_writer;
 
 /*
  * The public TRACE2 routines are grouped into the following groups:
@@ -350,6 +351,16 @@ void trace2_data_intmax_fl(const char *file, int line,
 
 #define trace2_data_intmax(category, repo, key, value) \
 	trace2_data_intmax_fl( \
+		__FILE__, __LINE__, (category), (repo), (key), (value))
+
+void trace2_data_json_fl(const char *file, int line,
+			 const char *category,
+			 const struct repository *repo,
+			 const char *key,
+			 const struct json_writer *jw);
+
+#define trace2_data_json(category, repo, key, value) \
+	trace2_data_json_fl( \
 		__FILE__, __LINE__, (category), (repo), (key), (value))
 
 /*
