@@ -15,6 +15,7 @@
 #include "sha1-array.h"
 #include "gpg-interface.h"
 #include "cache.h"
+#include "gvfs.h"
 
 int option_parse_push_signed(const struct option *opt,
 			     const char *arg, int unset)
@@ -40,7 +41,7 @@ int option_parse_push_signed(const struct option *opt,
 
 static void feed_object(const struct object_id *oid, FILE *fh, int negative)
 {
-	if (negative && !has_object_file(oid))
+	if (negative && !gvfs_config_is_set(GVFS_MISSING_OK) && !has_object_file(oid))
 		return;
 
 	if (negative)
