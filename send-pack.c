@@ -48,17 +48,6 @@ static int send_pack_config(const char *var, const char *value, void *unused)
 	return 0;
 }
 
-static void feed_object(const struct object_id *oid, FILE *fh, int negative)
-{
-	if (negative && !has_sha1_file(oid->hash))
-		return;
-
-	if (negative)
-		putc('^', fh);
-	fputs(oid_to_hex(oid), fh);
-	putc('\n', fh);
-}
-
 static void add_to_oid_list(const struct object_id *oid, struct string_list *list, int negative)
 {
 	if (negative && !has_sha1_file(oid->hash))
