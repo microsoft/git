@@ -250,6 +250,7 @@ void apply_virtualfilesystem(struct index_state *istate)
 {
 	char *buf, *entry;
 	int i;
+	int nr_tracked = 0;
 
 	if (!git_config_get_virtualfilesystem())
 		return;
@@ -278,6 +279,7 @@ void apply_virtualfilesystem(struct index_state *istate)
 					pos = -pos - 1;
 					while (pos < istate->cache_nr && !fspathncmp(istate->cache[pos]->name, entry, len)) {
 						istate->cache[pos]->ce_flags &= ~CE_SKIP_WORKTREE;
+						nr_tracked++;
 						pos++;
 					}
 				}
@@ -288,14 +290,19 @@ void apply_virtualfilesystem(struct index_state *istate)
 						ce->ce_flags &= ~CE_SKIP_WORKTREE;
 				} else {
 					int pos = index_name_pos(istate, entry, len);
-					if (pos >= 0)
+					if (pos >= 0) {
+						nr_tracked++;
 						istate->cache[pos]->ce_flags &= ~CE_SKIP_WORKTREE;
+					}
 				}
 			}
 
 			entry += len + 1;
 		}
 	}
+
+	if (nr_tracked > 0)
+		trace2_data_intmax("vfs", the_repository, "apply/tracked", nr_tracked);
 }
 
 /*
