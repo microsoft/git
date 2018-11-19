@@ -311,7 +311,7 @@ static void fn_child_start_fl(const char *file, int line,
 
 static void fn_child_exit_fl(const char *file, int line,
 			     uint64_t us_elapsed_absolute,
-			     int cid, int code,
+			     int cid, int pid, int code,
 			     uint64_t us_elapsed_child)
 {
 	const char *event_name = "child_exit";
@@ -321,6 +321,7 @@ static void fn_child_exit_fl(const char *file, int line,
 	jw_object_begin(&jw, 0);
 	event_fmt_prepare(event_name, file, line, NULL, &jw);
 	jw_object_intmax(&jw, "child_id", cid);
+	jw_object_intmax(&jw, "pid", pid);
 	jw_object_intmax(&jw, "code", code);
 	jw_object_double(&jw, "t_rel", 6, t_rel);
 	jw_end(&jw);

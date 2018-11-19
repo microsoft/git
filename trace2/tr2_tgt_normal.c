@@ -228,14 +228,14 @@ static void fn_child_start_fl(const char *file, int line,
 
 static void fn_child_exit_fl(const char *file, int line,
 			     uint64_t us_elapsed_absolute,
-			     int cid, int code,
+			     int cid, int pid, int code,
 			     uint64_t us_elapsed_child)
 {
 	struct strbuf buf_payload = STRBUF_INIT;
 	double elapsed = (double)us_elapsed_child / 1000000.0;
 
-	strbuf_addf(&buf_payload, "child_exit[%d] code:%d elapsed:%.6f",
-		    cid, code, elapsed);
+	strbuf_addf(&buf_payload, "child_exit[%d] pid:%d code:%d elapsed:%.6f",
+		    cid, pid, code, elapsed);
 	normal_io_write_fl(file, line, &buf_payload);
 	strbuf_release(&buf_payload);
 }

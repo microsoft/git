@@ -42,7 +42,7 @@ typedef void (tr2_tgt_evt_child_start_fl_t)
 	 const struct child_process *cmd);
 typedef void (tr2_tgt_evt_child_exit_fl_t)
 	(const char *file, int line, uint64_t us_elapsed_absolute, int cid,
-	 int code, uint64_t us_elapsed_child);
+	 int pid, int code, uint64_t us_elapsed_child);
 
 typedef void (tr2_tgt_evt_thread_start_fl_t)
 	(const char *file, int line, uint64_t us_elapsed_absolute);

@@ -362,6 +362,7 @@ void trace2_child_exit_fl(const char *file, int line,
 			tgt_j->pfn_child_exit_fl(
 				file, line, us_elapsed_absolute,
 				cmd->trace2_child_id,
+				cmd->pid,
 				child_exit_code, us_elapsed_child);
 	}
 }
