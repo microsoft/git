@@ -59,6 +59,17 @@ static void feed_object(const struct object_id *oid, FILE *fh, int negative)
 	putc('\n', fh);
 }
 
+static void add_to_oid_list(const struct object_id *oid, struct string_list *list, int negative)
+{
+	if (negative && !has_sha1_file(oid->hash))
+		return;
+
+	if (negative)
+		string_list_append(list, xstrfmt("^%s", oid_to_hex(oid)));
+	else
+		string_list_append(list, oid_to_hex(oid));
+}
+
 /*
  * Make a pack stream and spit it out into file descriptor fd
  */
@@ -73,6 +84,19 @@ static int pack_objects(int fd, struct ref *refs, struct oid_array *extra, struc
 	FILE *po_in;
 	int i;
 	int rc;
+	struct string_list oid_list = STRING_LIST_INIT_NODUP;
+	struct string_list_item *item;
+
+	for (i = 0; i < extra->nr; i++)
+		add_to_oid_list(&extra->oid[i], &oid_list, 1);
+
+	while (refs) {
+		if (!is_null_oid(&refs->old_oid))
+			add_to_oid_list(&refs->old_oid, &oid_list, 1);
+		if (!is_null_oid(&refs->new_oid))
+			add_to_oid_list(&refs->new_oid, &oid_list, 0);
+		refs = refs->next;
+	}
 
 	argv_array_push(&po.args, "pack-objects");
 	argv_array_push(&po.args, "--all-progress-implied");
@@ -99,15 +123,10 @@ static int pack_objects(int fd, struct ref *refs, struct oid_array *extra, struc
 	 * parameters by writing to the pipe.
 	 */
 	po_in = xfdopen(po.in, "w");
-	for (i = 0; i < extra->nr; i++)
-		feed_object(&extra->oid[i], po_in, 1);
-
-	while (refs) {
-		if (!is_null_oid(&refs->old_oid))
-			feed_object(&refs->old_oid, po_in, 1);
-		if (!is_null_oid(&refs->new_oid))
-			feed_object(&refs->new_oid, po_in, 0);
-		refs = refs->next;
+			
+	for_each_string_list_item(item, &oid_list) {
+		fputs(item->string, po_in);
+		putc('\n', po_in);
 	}
 
 	fflush(po_in);
@@ -129,6 +148,7 @@ static int pack_objects(int fd, struct ref *refs, struct oid_array *extra, struc
 	}
 
 	rc = finish_command(&po);
+	string_list_clear(&oid_list, 0);
 	if (rc) {
 		/*
 		 * For a normal non-zero exit, we assume pack-objects wrote
