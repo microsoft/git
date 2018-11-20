@@ -277,7 +277,7 @@ void apply_virtualfilesystem(struct index_state *istate)
 			if (buf[i - 1] == '/') {
 				if (ignore_case)
 					adjust_dirname_case(istate, entry);
-				pos = index_name_pos(istate, entry, len - 1);
+				pos = index_name_pos(istate, entry, len);
 				if (pos < 0) {
 					pos = -pos - 1;
 					while (pos < istate->cache_nr && !fspathncmp(istate->cache[pos]->name, entry, len)) {
