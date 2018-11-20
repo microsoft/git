@@ -349,4 +349,23 @@ test_expect_success 'on folder renamed' '
 	test_cmp expected actual
 '
 
+test_expect_success 'folder with same prefix as file' '
+	clean_repo &&
+	touch dir1.sln &&
+	write_script .git/hooks/virtualfilesystem <<-\EOF &&
+		printf "dir1/\0"
+		printf "dir1.sln\0"
+	EOF
+	git add dir1.sln &&
+	git ls-files -v > actual &&
+	cat > expected <<-\EOF &&
+		H dir1.sln
+		H dir1/file1.txt
+		H dir1/file2.txt
+		S dir2/file1.txt
+		S dir2/file2.txt
+	EOF
+	test_cmp expected actual
+'
+
 test_done
