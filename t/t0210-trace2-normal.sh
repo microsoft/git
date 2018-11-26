@@ -61,7 +61,7 @@ test_expect_success 'normal stream, return code 0' '
 		version $V
 		start _EXE_ trace2 001return 0
 		cmd_path _EXE_
-		cmd_verb trace2
+		cmd_verb trace2 (trace2)
 		exit elapsed:_TIME_ code:0
 		atexit elapsed:_TIME_ code:0
 	EOF
@@ -76,7 +76,7 @@ test_expect_success 'normal stream, return code 1' '
 		version $V
 		start _EXE_ trace2 001return 1
 		cmd_path _EXE_
-		cmd_verb trace2
+		cmd_verb trace2 (trace2)
 		exit elapsed:_TIME_ code:1
 		atexit elapsed:_TIME_ code:1
 	EOF
@@ -95,7 +95,7 @@ test_expect_success 'normal stream, exit code 0' '
 		version $V
 		start _EXE_ trace2 002exit 0
 		cmd_path _EXE_
-		cmd_verb trace2
+		cmd_verb trace2 (trace2)
 		exit elapsed:_TIME_ code:0
 		atexit elapsed:_TIME_ code:0
 	EOF
@@ -110,7 +110,7 @@ test_expect_success 'normal stream, exit code 1' '
 		version $V
 		start _EXE_ trace2 002exit 1
 		cmd_path _EXE_
-		cmd_verb trace2
+		cmd_verb trace2 (trace2)
 		exit elapsed:_TIME_ code:1
 		atexit elapsed:_TIME_ code:1
 	EOF
@@ -129,7 +129,7 @@ test_expect_success 'normal stream, error event' '
 		version $V
 		start _EXE_ trace2 003error '\''hello world'\'' '\''this is a test'\''
 		cmd_path _EXE_
-		cmd_verb trace2
+		cmd_verb trace2 (trace2)
 		error hello world
 		error this is a test
 		exit elapsed:_TIME_ code:0

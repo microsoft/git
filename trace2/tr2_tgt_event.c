@@ -235,7 +235,8 @@ static void fn_command_path_fl(const char *file, int line,
 }
 
 static void fn_command_verb_fl(const char *file, int line,
-			       const char *command_verb)
+			       const char *command_verb,
+			       const char *verb_hierarchy)
 {
 	const char *event_name = "cmd_verb";
 	struct json_writer jw = JSON_WRITER_INIT;
@@ -243,6 +244,8 @@ static void fn_command_verb_fl(const char *file, int line,
 	jw_object_begin(&jw, 0);
 	event_fmt_prepare(event_name, file, line, NULL, &jw);
 	jw_object_string(&jw, "name", command_verb);
+	if (verb_hierarchy && *verb_hierarchy)
+		jw_object_string(&jw, "hierarchy", verb_hierarchy);
 	jw_end(&jw);
 
 	tr2_dst_write_line(&tr2dst_event, &jw.json);

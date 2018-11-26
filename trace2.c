@@ -11,6 +11,7 @@
 #include "trace2/tr2_sid.h"
 #include "trace2/tr2_tgt.h"
 #include "trace2/tr2_tls.h"
+#include "trace2/tr2_verb.h"
 
 static int trace2_enabled;
 
@@ -118,6 +119,7 @@ static void tr2main_atexit_handler(void)
 
 	tr2tls_release();
 	tr2_sid_release();
+	tr2_verb_release();
 	tr2_cfg_free_patterns();
 
 	trace2_enabled = 0;
@@ -253,14 +255,19 @@ void trace2_cmd_path_fl(const char *file, int line, const char *pathname)
 void trace2_cmd_verb_fl(const char *file, int line, const char *command_verb)
 {
 	struct tr2_tgt *tgt_j;
+	const char *hierarchy;
 	int j;
 
 	if (!trace2_enabled)
 		return;
 
+	tr2_verb_append_hierarchy(command_verb);
+	hierarchy = tr2_verb_get_hierarchy();
+
 	for_each_wanted_builtin(j, tgt_j) {
 		if (tgt_j->pfn_command_verb_fl)
-			tgt_j->pfn_command_verb_fl(file, line, command_verb);
+			tgt_j->pfn_command_verb_fl(file, line, command_verb,
+						   hierarchy);
 	}
 }
 

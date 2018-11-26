@@ -60,6 +60,7 @@ test_expect_success 'event stream, error event' '
 	|    "exit_code":0,
 	|    "path":"_EXE_",
 	|    "verb":"trace2",
+	|    "verb_hierarchy":"trace2",
 	|    "version":"$V"
 	|  }
 	|};
@@ -114,6 +115,7 @@ test_expect_success 'event stream, return code 0' '
 	|    "exit_code":0,
 	|    "path":"_EXE_",
 	|    "verb":"trace2",
+	|    "verb_hierarchy":"trace2",
 	|    "version":"$V"
 	|  },
 	|  "_SID0_/_SID1_":{
@@ -142,6 +144,7 @@ test_expect_success 'event stream, return code 0' '
 	|    "exit_code":0,
 	|    "path":"_EXE_",
 	|    "verb":"trace2",
+	|    "verb_hierarchy":"trace2/trace2",
 	|    "version":"$V"
 	|  },
 	|  "_SID0_/_SID1_/_SID2_":{
@@ -154,6 +157,7 @@ test_expect_success 'event stream, return code 0' '
 	|    "exit_code":0,
 	|    "path":"_EXE_",
 	|    "verb":"trace2",
+	|    "verb_hierarchy":"trace2/trace2/trace2",
 	|    "version":"$V"
 	|  }
 	|};
@@ -193,6 +197,7 @@ test_expect_success 'event stream, list config' '
 	|    ],
 	|    "path":"_EXE_",
 	|    "verb":"trace2",
+	|    "verb_hierarchy":"trace2",
 	|    "version":"$V"
 	|  }
 	|};
@@ -227,6 +232,7 @@ test_expect_success 'basic trace2_data' '
 	|    "exit_code":0,
 	|    "path":"_EXE_",
 	|    "verb":"trace2",
+	|    "verb_hierarchy":"trace2",
 	|    "version":"$V"
 	|  }
 	|};

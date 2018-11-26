@@ -30,7 +30,8 @@ typedef void (tr2_tgt_evt_error_va_fl_t)
 typedef void (tr2_tgt_evt_command_path_fl_t)
 	(const char *file, int line, const char *command_path);
 typedef void (tr2_tgt_evt_command_verb_fl_t)
-	(const char *file, int line, const char *command_verb);
+	(const char *file, int line, const char *command_verb,
+	 const char *hierarchy);
 typedef void (tr2_tgt_evt_command_subverb_fl_t)
 	(const char *file, int line, const char *command_subverb);
 
