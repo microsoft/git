@@ -22,7 +22,7 @@ static struct tr2_dst tr2dst_perf   = { "GIT_TR2_PERF", 0, 0, 0 };
  *
  * Unit tests may want to use this to help with testing.
  */
-#define GIT_TR2_PERF_BARE "GIT_TR2_BARE"
+#define TR2_ENVVAR_PERF_BARE "GIT_TR2_BARE"
 static int tr2env_perf_bare;
 
 #define TR2FMT_PERF_FL_WIDTH       (50)
@@ -47,7 +47,7 @@ static int fn_init(void)
 
 	strbuf_addchars(&dots, '.', TR2_DOTS_BUFFER_SIZE);
 
-	bare = getenv(GIT_TR2_PERF_BARE);
+	bare = getenv(TR2_ENVVAR_PERF_BARE);
 	if (bare && *bare &&
 	    ((want_bare = git_parse_maybe_bool(bare)) != -1))
 		tr2env_perf_bare = want_bare;
