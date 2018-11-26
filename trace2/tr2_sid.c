@@ -5,6 +5,8 @@
  * This file contains "private/protected" routines for TRACE2.
  */
 
+#define TR2_ENVVAR_PARENT_SID "GIT_TR2_PARENT_SID"
+
 static struct strbuf tr2sid_buf = STRBUF_INIT;
 static int tr2sid_nr_git_parents;
 
@@ -28,7 +30,7 @@ static void tr2_sid_compute(void)
 	if (tr2sid_buf.len)
 		return;
 
-	parent_sid = getenv("SLOG_PARENT_SID");
+	parent_sid = getenv(TR2_ENVVAR_PARENT_SID);
 	if (parent_sid && *parent_sid) {
 		const char *p;
 		for (p = parent_sid; *p; p++)
@@ -44,7 +46,7 @@ static void tr2_sid_compute(void)
 	strbuf_addf(&tr2sid_buf, "%"PRIuMAX"-%"PRIdMAX,
 		    (uintmax_t)us_now, (intmax_t)getpid());
 
-	setenv("SLOG_PARENT_SID", tr2sid_buf.buf, 1);
+	setenv(TR2_ENVVAR_PARENT_SID, tr2sid_buf.buf, 1);
 }
 
 const char *tr2_sid_get(void)
