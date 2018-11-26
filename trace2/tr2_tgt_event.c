@@ -22,7 +22,7 @@ static struct tr2_dst tr2dst_event  = { "GIT_TR2_EVENT", 0, 0, 0 };
  * to update this if you just add another call to one of the existing
  * TRACE2 API methods.
  */
-#define GIT_TR2_EVENT_VERSION "1"
+#define TR2_EVENT_VERSION "1"
 
 /*
  * Region nesting limit for messages written to the event target.
@@ -35,7 +35,7 @@ static struct tr2_dst tr2dst_event  = { "GIT_TR2_EVENT", 0, 0, 0 };
  * event target.  Set this environment variable to a larger integer for
  * more detail in the event target.
  */
-#define GIT_TR2_EVENT_NESTING "GIT_TR2_EVENT_NESTING"
+#define TR2_ENVVAR_EVENT_NESTING "GIT_TR2_EVENT_NESTING"
 static int tr2env_event_nesting_wanted = 2;
 
 static int fn_init(void)
@@ -47,7 +47,7 @@ static int fn_init(void)
 	if (!want)
 		return want;
 
-	nesting = getenv(GIT_TR2_EVENT_NESTING);
+	nesting = getenv(TR2_ENVVAR_EVENT_NESTING);
 	if (nesting && ((want_nesting = atoi(nesting)) > 0))
 		tr2env_event_nesting_wanted = want_nesting;
 
@@ -100,7 +100,7 @@ static void fn_version_fl(const char *file, int line)
 
 	jw_object_begin(&jw, 0);
 	event_fmt_prepare(event_name, file, line, NULL, &jw);
-	jw_object_string(&jw, "evt", GIT_TR2_EVENT_VERSION);
+	jw_object_string(&jw, "evt", TR2_EVENT_VERSION);
 	jw_object_string(&jw, "exe", git_version_string);
 	jw_end(&jw);
 
