@@ -169,11 +169,14 @@ static void fn_command_path_fl(const char *file, int line,
 }
 
 static void fn_command_verb_fl(const char *file, int line,
-			       const char *command_verb)
+			       const char *command_verb,
+			       const char *verb_hierarchy)
 {
 	struct strbuf buf_payload = STRBUF_INIT;
 
 	strbuf_addf(&buf_payload, "cmd_verb %s", command_verb);
+	if (verb_hierarchy && *verb_hierarchy)
+		strbuf_addf(&buf_payload, " (%s)", verb_hierarchy);
 	normal_io_write_fl(file, line, &buf_payload);
 	strbuf_release(&buf_payload);
 }

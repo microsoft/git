@@ -265,7 +265,8 @@ static void fn_command_path_fl(const char *file, int line,
 }
 
 static void fn_command_verb_fl(const char *file, int line,
-			       const char *command_verb)
+			       const char *command_verb,
+			       const char *verb_hierarchy)
 {
 	const char *event_name = "cmd_verb";
 	struct strbuf buf_payload = STRBUF_INIT;

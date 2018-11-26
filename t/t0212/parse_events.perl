@@ -130,6 +130,7 @@ while (<>) {
     
     elsif ($event eq 'cmd_verb') {
 	$processes->{$sid}->{'verb'} = $line->{'name'};
+	$processes->{$sid}->{'verb_hierarchy'} = $line->{'hierarchy'};
     }
 
     elsif ($event eq 'alias') {
