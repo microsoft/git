@@ -14,6 +14,7 @@ struct child_process {
 	int trace2_child_id;
 	uint64_t trace2_child_us_start;
 	const char *trace2_child_class;
+	const char *trace2_hook_name;
 
 	/*
 	 * Using .in, .out, .err:

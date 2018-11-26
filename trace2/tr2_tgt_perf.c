@@ -314,11 +314,16 @@ static void fn_child_start_fl(const char *file, int line,
 {
 	const char *event_name = "child_start";
 	struct strbuf buf_payload = STRBUF_INIT;
-	const char *child_class = ((cmd->trace2_child_class) ?
-				   cmd->trace2_child_class : "?");
 
-	strbuf_addf(&buf_payload, "[ch%d] class:%s",
-		    cmd->trace2_child_id, child_class);
+	if (cmd->trace2_hook_name) {
+		strbuf_addf(&buf_payload, "[ch%d] class:hook hook:%s",
+			    cmd->trace2_child_id, cmd->trace2_hook_name);
+	} else {
+		const char *child_class = ((cmd->trace2_child_class) ?
+					   cmd->trace2_child_class : "?");
+		strbuf_addf(&buf_payload, "[ch%d] class:%s",
+			    cmd->trace2_child_id, child_class);
+	}
 
 	if (cmd->dir) {
 		strbuf_addstr(&buf_payload, " cd:");

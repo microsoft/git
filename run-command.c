@@ -1415,6 +1415,7 @@ int run_hook_argv(const char *const *env, const char *name,
 	hook.env = env;
 	hook.no_stdin = 1;
 	hook.stdout_to_stderr = 1;
+	hook.trace2_hook_name = name;
 
 	return run_command(&hook);
 }
