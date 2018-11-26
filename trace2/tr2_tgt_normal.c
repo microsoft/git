@@ -20,7 +20,7 @@ static struct tr2_dst tr2dst_normal = { "GIT_TR2", 0, 0, 0 };
  *
  * Unit tests may want to use this to help with testing.
  */
-#define GIT_TR2_NORMAL_BARE "GIT_TR2_BARE"
+#define TR2_ENVVAR_NORMAL_BARE "GIT_TR2_BARE"
 static int tr2env_normal_bare;
 
 #define TR2FMT_NORMAL_FL_WIDTH       (50)
@@ -34,7 +34,7 @@ static int fn_init(void)
 	if (!want)
 		return want;
 
-	bare = getenv(GIT_TR2_NORMAL_BARE);
+	bare = getenv(TR2_ENVVAR_NORMAL_BARE);
 	if (bare && *bare &&
 	    ((want_bare = git_parse_maybe_bool(bare)) != -1))
 		tr2env_normal_bare = want_bare;
