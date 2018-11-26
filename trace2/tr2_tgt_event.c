@@ -291,13 +291,18 @@ static void fn_child_start_fl(const char *file, int line,
 {
 	const char *event_name = "child_start";
 	struct json_writer jw = JSON_WRITER_INIT;
-	const char *child_class = ((cmd->trace2_child_class) ?
-				   cmd->trace2_child_class : "?");
 
 	jw_object_begin(&jw, 0);
 	event_fmt_prepare(event_name, file, line, NULL, &jw);
 	jw_object_intmax(&jw, "child_id", cmd->trace2_child_id);
-	jw_object_string(&jw, "child_class", child_class);
+	if (cmd->trace2_hook_name) {
+		jw_object_string(&jw, "child_class", "hook");
+		jw_object_string(&jw, "hook_name", cmd->trace2_hook_name);
+	} else {
+		const char *child_class = ((cmd->trace2_child_class) ?
+					   cmd->trace2_child_class : "?");
+		jw_object_string(&jw, "child_class", child_class);
+	}
 	if (cmd->dir)
 		jw_object_string(&jw, "cd", cmd->dir);
 	jw_object_bool(&jw, "use_shell", cmd->use_shell);
