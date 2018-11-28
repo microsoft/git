@@ -49,6 +49,7 @@ struct child_process {
 	unsigned use_shell:1;
 	unsigned clean_on_exit:1;
 	unsigned wait_after_clean:1;
+	unsigned close_parent_file_descriptors:1;
 	void (*clean_on_exit_handler)(struct child_process *process);
 	void *clean_on_exit_handler_cbdata;
 };

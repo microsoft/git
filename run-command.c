@@ -716,6 +716,7 @@ fail_pipe:
 {
 	int notify_pipe[2];
 	int null_fd = -1;
+	int fd;
 	char **childenv;
 	struct argv_array argv = ARGV_ARRAY_INIT;
 	struct child_err cerr;
@@ -794,6 +795,11 @@ fail_pipe:
 
 		if (cmd->dir && chdir(cmd->dir))
 			child_die(CHILD_ERR_CHDIR);
+
+		if (cmd->close_parent_file_descriptors) {
+			for (fd = 3; fd < 256; ++fd)
+				set_cloexec(fd);
+		}
 
 		/*
 		 * restore default signal handlers here, in case
