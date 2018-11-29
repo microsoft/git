@@ -87,6 +87,7 @@ int subprocess_start(struct hashmap *hashmap, struct subprocess_entry *entry, co
 	process->in = -1;
 	process->out = -1;
 	process->clean_on_exit = 1;
+	process->close_parent_file_descriptors = 1;
 	process->clean_on_exit_handler = subprocess_exit_handler;
 	process->trace2_child_class = "subprocess";
 
