@@ -470,6 +470,7 @@ int cmd_reset(int argc, const char **argv, const char *prefix)
 						"use '--quiet' to avoid this.  Set the config setting reset.quiet to true\n"
 						"to make this the default.\n"), t_delta_in_ms / 1000.0);
 				}
+				the_index.updated_skipworktree = 1;
 			}
 		} else {
 			int err = reset_index(&oid, reset_type, quiet);
