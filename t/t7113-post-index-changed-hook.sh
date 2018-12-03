@@ -96,7 +96,7 @@ test_expect_success 'test checkout and reset trigger the hook' '
 	git reset --hard &&
 	test_path_is_file testsuccess && rm -f testsuccess &&
 	test_path_is_missing testfailure &&
-	git checkout -b test &&
+	git checkout -B test &&
 	test_path_is_file testsuccess && rm -f testsuccess &&
 	test_path_is_missing testfailure
 '
