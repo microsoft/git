@@ -36,6 +36,8 @@ test_expect_success 'test status, add, commit, others trigger hook without flags
 	mkdir -p dir2 &&
 	touch dir2/file1.txt &&
 	touch dir2/file2.txt &&
+	: force index to be dirty &&
+	test-tool chmtime +60 dir1/file1.txt &&
 	git status &&
 	test_path_is_file testsuccess && rm -f testsuccess &&
 	test_path_is_missing testfailure &&
@@ -81,12 +83,16 @@ test_expect_success 'test checkout and reset trigger the hook' '
 		fi
 		echo "success" >testsuccess
 	EOF
+	: force index to be dirty &&
+	test-tool chmtime +60 dir1/file1.txt &&
 	git checkout master &&
 	test_path_is_file testsuccess && rm -f testsuccess &&
 	test_path_is_missing testfailure &&
+	test-tool chmtime +60 dir1/file1.txt &&
 	git checkout HEAD &&
 	test_path_is_file testsuccess && rm -f testsuccess &&
 	test_path_is_missing testfailure &&
+	test-tool chmtime +60 dir1/file1.txt &&
 	git reset --hard &&
 	test_path_is_file testsuccess && rm -f testsuccess &&
 	test_path_is_missing testfailure &&
@@ -120,6 +126,8 @@ test_expect_success 'test reset --mixed and update-index triggers the hook' '
 		fi
 		echo "success" >testsuccess
 	EOF
+	: force index to be dirty &&
+	test-tool chmtime +60 dir1/file1.txt &&
 	git reset --mixed HEAD~1 &&
 	test_path_is_file testsuccess && rm -f testsuccess &&
 	test_path_is_missing testfailure &&
