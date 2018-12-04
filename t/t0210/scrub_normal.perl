@@ -6,13 +6,7 @@
 use strict;
 use warnings;
 
-my $space = '\W+';
-my $qpath = '\'[^\']*\'';
-my $string= '.*';
 my $float = '[0-9]*\.[0-9]+([eE][-+]?[0-9]+)?';
-
-my $verb;
-my $rest;
 
 # This code assumes that the trace2 data was written with bare
 # turned on (which omits the "<clock> <file>:<line>" prefix.
@@ -23,20 +17,32 @@ while (<>) {
     # simplify our HEREDOC in the test script.
     s/elapsed:$float/elapsed:_TIME_/g;
 
-    if ($_ =~ m/^start/) {
-	# The 'start' message lists the contents of argv.  On some
-	# platforms (Windows), argv[0] is a canonical absolute path to
-	# the EXE rather than the value passed in the shell script.
-	# Replace it with a placeholder to simplify our HEREDOC in the
-	# test script.
-	($verb, $rest) = (m/^(start) $space $qpath $space ($string)/x);
-	print "$verb _EXE_ $rest\n";
+    my $line = $_;
+
+    # we expect:
+    #    start <argv0> [<argv1> [<argv2> [...]]]
+    #
+    # where argv0 might be a relative or absolute path, with
+    # or without quotes, and platform dependent.  Replace argv0
+    # with a token for HEREDOC matching in the test script.
+
+    if ($line =~ m/^start/) {
+	$line =~ /^start\s+(.*)/;
+	my $argv = $1;
+	$argv =~ m/(\'[^\']*\'|[^ ]+)\s+(.*)/;
+	my $argv_0 = $1;
+	my $argv_rest = $2;
+
+	print "start _EXE_ $argv_rest\n";
     }
-    elsif ($_ =~ m/^cmd_path/) {
+    elsif ($line =~ m/^cmd_path/) {
 	# Likewise, the 'cmd_path' message breaks out argv[0].
-	print "cmd_path _EXE_\n";
+	#
+	# This line is only emitted when RUNTIME_PREFIX is defined,
+	# so just omit it for testing purposes.
+	# print "cmd_path _EXE_\n";
     }
     else {
-	print "$_";
+	print "$line";
     }
 }

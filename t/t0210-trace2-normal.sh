@@ -41,7 +41,6 @@ GIT_TR2_BARE=1 && export GIT_TR2_BARE
 # We do confirm the following API features:
 # [] the 'version <v>' event
 # [] the 'start <argv>' event
-# [] the 'cmd_path <argv[0]>' event
 # [] the 'cmd_verb <verb>' event
 # [] the 'exit <time> code:<code>' event
 # [] the 'atexit <time> code:<code>' event
@@ -60,7 +59,6 @@ test_expect_success 'normal stream, return code 0' '
 	cat >expect <<-EOF &&
 		version $V
 		start _EXE_ trace2 001return 0
-		cmd_path _EXE_
 		cmd_verb trace2 (trace2)
 		exit elapsed:_TIME_ code:0
 		atexit elapsed:_TIME_ code:0
@@ -75,7 +73,6 @@ test_expect_success 'normal stream, return code 1' '
 	cat >expect <<-EOF &&
 		version $V
 		start _EXE_ trace2 001return 1
-		cmd_path _EXE_
 		cmd_verb trace2 (trace2)
 		exit elapsed:_TIME_ code:1
 		atexit elapsed:_TIME_ code:1
@@ -94,7 +91,6 @@ test_expect_success 'normal stream, exit code 0' '
 	cat >expect <<-EOF &&
 		version $V
 		start _EXE_ trace2 002exit 0
-		cmd_path _EXE_
 		cmd_verb trace2 (trace2)
 		exit elapsed:_TIME_ code:0
 		atexit elapsed:_TIME_ code:0
@@ -109,7 +105,6 @@ test_expect_success 'normal stream, exit code 1' '
 	cat >expect <<-EOF &&
 		version $V
 		start _EXE_ trace2 002exit 1
-		cmd_path _EXE_
 		cmd_verb trace2 (trace2)
 		exit elapsed:_TIME_ code:1
 		atexit elapsed:_TIME_ code:1
@@ -128,7 +123,6 @@ test_expect_success 'normal stream, error event' '
 	cat >expect <<-EOF &&
 		version $V
 		start _EXE_ trace2 003error '\''hello world'\'' '\''this is a test'\''
-		cmd_path _EXE_
 		cmd_verb trace2 (trace2)
 		error hello world
 		error this is a test
