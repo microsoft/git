@@ -37,7 +37,11 @@ while (<>) {
     }
     elsif ($tokens[$col_verb] =~ m/cmd_path/) {
 	# Likewise, the 'cmd_path' message breaks out argv[0].
-	$tokens[$col_rest] = "_EXE_";
+	#
+	# This line is only emitted when RUNTIME_PREFIX is defined,
+	# so just omit it for testing purposes.
+	# $tokens[$col_rest] = "_EXE_";
+	goto SKIP_LINE;
     }
     elsif ($tokens[$col_verb] =~ m/child_exit/) {
 	$tokens[$col_rest] =~ s/ pid:\d* / pid:_PID_ /;
