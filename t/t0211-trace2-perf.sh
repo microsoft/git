@@ -51,7 +51,6 @@ test_expect_success 'perf stream, return code 0' '
 	cat >expect <<-EOF &&
 		main|version|||||$V
 		main|start|||||_EXE_ trace2 001return 0
-		main|cmd_path|||||_EXE_
 		main|cmd_verb|||||trace2
 		main|exit||_T_ABS_|||code:0
 		main|atexit||_T_ABS_|||code:0
@@ -66,7 +65,6 @@ test_expect_success 'perf stream, return code 1' '
 	cat >expect <<-EOF &&
 		main|version|||||$V
 		main|start|||||_EXE_ trace2 001return 1
-		main|cmd_path|||||_EXE_
 		main|cmd_verb|||||trace2
 		main|exit||_T_ABS_|||code:1
 		main|atexit||_T_ABS_|||code:1
@@ -85,7 +83,6 @@ test_expect_success 'perf stream, error event' '
 	cat >expect <<-EOF &&
 		main|version|||||$V
 		main|start|||||_EXE_ trace2 003error '\''hello world'\'' '\''this is a test'\''
-		main|cmd_path|||||_EXE_
 		main|cmd_verb|||||trace2
 		main|error|||||hello world
 		main|error|||||this is a test
@@ -107,17 +104,14 @@ test_expect_success 'perf stream, error event' '
 # Which should generate events:
 #    P1: version
 #    P1: start
-#    P1: cmd_path
 #    P1: cmd_verb
 #    P1: child_start
 #        P2: version
 #        P2: start
-#        P2: cmd_path
 #        P2: cmd_verb
 #        P2: child_start
 #            P3: version
 #            P3: start
-#            P3: cmd_path
 #            P3: cmd_verb
 #            P3: exit
 #            P3: atexit
@@ -135,17 +129,14 @@ test_expect_success 'perf stream, child processes' '
 	cat >expect <<-EOF &&
 		main|version|||||$V
 		main|start|||||_EXE_ trace2 004child $TT trace2 004child $TT trace2 001return 0
-		main|cmd_path|||||_EXE_
 		main|cmd_verb|||||trace2
 		main|child_start||_T_ABS_|||[ch0] class:? argv: $TT trace2 004child $TT trace2 001return 0
 		main|version|||||$V
 		main|start|||||_EXE_ trace2 004child $TT trace2 001return 0
-		main|cmd_path|||||_EXE_
 		main|cmd_verb|||||trace2
 		main|child_start||_T_ABS_|||[ch0] class:? argv: $TT trace2 001return 0
 		main|version|||||$V
 		main|start|||||_EXE_ trace2 001return 0
-		main|cmd_path|||||_EXE_
 		main|cmd_verb|||||trace2
 		main|exit||_T_ABS_|||code:0
 		main|atexit||_T_ABS_|||code:0
