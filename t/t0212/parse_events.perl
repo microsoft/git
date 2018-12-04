@@ -125,7 +125,12 @@ while (<>) {
 
     elsif ($event eq 'cmd_path') {
 	## $processes->{$sid}->{'path'} = $line->{'path'};
-	$processes->{$sid}->{'path'} = "_EXE_";
+	#
+	# Like in the 'start' event, we need to replace the value of
+	# argv[0] with a token for HEREDOC purposes.  However, the
+	# event is only emitted when RUNTIME_PREFIX is defined, so
+	# just omit it for testing purposes.
+	# $processes->{$sid}->{'path'} = "_EXE_";
     }
     
     elsif ($event eq 'cmd_verb') {

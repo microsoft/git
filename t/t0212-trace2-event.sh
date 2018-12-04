@@ -54,11 +54,10 @@ test_expect_success 'event stream, error event' '
 	|      "this is a test"
 	|    ],
 	|    "errors":[
-	|      "hello world",
-	|      "this is a test"
+	|      "%s",
+	|      "%s"
 	|    ],
 	|    "exit_code":0,
-	|    "path":"_EXE_",
 	|    "verb":"trace2",
 	|    "verb_hierarchy":"trace2",
 	|    "version":"$V"
@@ -113,7 +112,6 @@ test_expect_success 'event stream, return code 0' '
 	|      }
 	|    },
 	|    "exit_code":0,
-	|    "path":"_EXE_",
 	|    "verb":"trace2",
 	|    "verb_hierarchy":"trace2",
 	|    "version":"$V"
@@ -142,7 +140,6 @@ test_expect_success 'event stream, return code 0' '
 	|      }
 	|    },
 	|    "exit_code":0,
-	|    "path":"_EXE_",
 	|    "verb":"trace2",
 	|    "verb_hierarchy":"trace2/trace2",
 	|    "version":"$V"
@@ -155,7 +152,6 @@ test_expect_success 'event stream, return code 0' '
 	|      "0"
 	|    ],
 	|    "exit_code":0,
-	|    "path":"_EXE_",
 	|    "verb":"trace2",
 	|    "verb_hierarchy":"trace2/trace2/trace2",
 	|    "version":"$V"
@@ -195,7 +191,6 @@ test_expect_success 'event stream, list config' '
 	|        "value":"hello world"
 	|      }
 	|    ],
-	|    "path":"_EXE_",
 	|    "verb":"trace2",
 	|    "verb_hierarchy":"trace2",
 	|    "version":"$V"
@@ -230,7 +225,6 @@ test_expect_success 'basic trace2_data' '
 	|      }
 	|    },
 	|    "exit_code":0,
-	|    "path":"_EXE_",
 	|    "verb":"trace2",
 	|    "verb_hierarchy":"trace2",
 	|    "version":"$V"
