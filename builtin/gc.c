@@ -12,6 +12,7 @@
 
 #include "builtin.h"
 #include "repository.h"
+#include "gvfs.h"
 #include "config.h"
 #include "tempfile.h"
 #include "lockfile.h"
@@ -615,6 +616,9 @@ int cmd_gc(int argc, const char **argv, const char *prefix)
 	}
 	if (quiet)
 		strvec_push(&repack, "-q");
+
+	if ((!auto_gc || (auto_gc && gc_auto_threshold > 0)) && gvfs_config_is_set(GVFS_BLOCK_COMMANDS))
+		die(_("'git gc' is not supported on a GVFS repo"));
 
 	if (auto_gc) {
 		/*
