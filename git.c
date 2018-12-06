@@ -1,4 +1,5 @@
 #include "builtin.h"
+#include "gvfs.h"
 #include "config.h"
 #include "exec-cmd.h"
 #include "help.h"
@@ -19,6 +20,7 @@
 #define SUPPORT_SUPER_PREFIX	(1<<4)
 #define DELAY_PAGER_CONFIG	(1<<5)
 #define NO_PARSEOPT		(1<<6) /* parse-options is not used */
+#define BLOCK_ON_GVFS_REPO	(1<<7) /* command not allowed in GVFS repos */
 
 struct cmd_struct {
 	const char *cmd;
@@ -521,6 +523,9 @@ static int run_builtin(struct cmd_struct *p, int argc, const char **argv)
 	if (!help && p->option & NEED_WORK_TREE)
 		setup_work_tree();
 
+	if (!help && p->option & BLOCK_ON_GVFS_REPO && gvfs_config_is_set(GVFS_BLOCK_COMMANDS))
+		die("'git %s' is not supported on a GVFS repo", p->cmd);
+
 	if (run_pre_command_hook(argv))
 		die("pre-command hook aborted command");
 
@@ -606,7 +611,7 @@ static struct cmd_struct commands[] = {
 	{ "for-each-ref", cmd_for_each_ref, RUN_SETUP },
 	{ "for-each-repo", cmd_for_each_repo, RUN_SETUP_GENTLY },
 	{ "format-patch", cmd_format_patch, RUN_SETUP },
-	{ "fsck", cmd_fsck, RUN_SETUP },
+	{ "fsck", cmd_fsck, RUN_SETUP | BLOCK_ON_GVFS_REPO},
 	{ "fsck-objects", cmd_fsck, RUN_SETUP },
 	{ "fsmonitor--daemon", cmd_fsmonitor__daemon, SUPPORT_SUPER_PREFIX | RUN_SETUP },
 	{ "gc", cmd_gc, RUN_SETUP },
@@ -647,7 +652,7 @@ static struct cmd_struct commands[] = {
 	{ "pack-refs", cmd_pack_refs, RUN_SETUP },
 	{ "patch-id", cmd_patch_id, RUN_SETUP_GENTLY | NO_PARSEOPT },
 	{ "pickaxe", cmd_blame, RUN_SETUP },
-	{ "prune", cmd_prune, RUN_SETUP },
+	{ "prune", cmd_prune, RUN_SETUP | BLOCK_ON_GVFS_REPO},
 	{ "prune-packed", cmd_prune_packed, RUN_SETUP },
 	{ "pull", cmd_pull, RUN_SETUP | NEED_WORK_TREE },
 	{ "push", cmd_push, RUN_SETUP },
@@ -659,7 +664,7 @@ static struct cmd_struct commands[] = {
 	{ "remote", cmd_remote, RUN_SETUP },
 	{ "remote-ext", cmd_remote_ext, NO_PARSEOPT },
 	{ "remote-fd", cmd_remote_fd, NO_PARSEOPT },
-	{ "repack", cmd_repack, RUN_SETUP },
+	{ "repack", cmd_repack, RUN_SETUP | BLOCK_ON_GVFS_REPO },
 	{ "replace", cmd_replace, RUN_SETUP },
 	{ "rerere", cmd_rerere, RUN_SETUP },
 	{ "reset", cmd_reset, RUN_SETUP },
@@ -679,7 +684,7 @@ static struct cmd_struct commands[] = {
 	{ "stash", cmd_stash, RUN_SETUP | NEED_WORK_TREE },
 	{ "status", cmd_status, RUN_SETUP | NEED_WORK_TREE },
 	{ "stripspace", cmd_stripspace },
-	{ "submodule--helper", cmd_submodule__helper, RUN_SETUP | SUPPORT_SUPER_PREFIX },
+	{ "submodule--helper", cmd_submodule__helper, RUN_SETUP | SUPPORT_SUPER_PREFIX | BLOCK_ON_GVFS_REPO },
 	{ "switch", cmd_switch, RUN_SETUP | NEED_WORK_TREE },
 	{ "symbolic-ref", cmd_symbolic_ref, RUN_SETUP },
 	{ "tag", cmd_tag, RUN_SETUP | DELAY_PAGER_CONFIG },
@@ -697,7 +702,7 @@ static struct cmd_struct commands[] = {
 	{ "verify-tag", cmd_verify_tag, RUN_SETUP },
 	{ "version", cmd_version },
 	{ "whatchanged", cmd_whatchanged, RUN_SETUP },
-	{ "worktree", cmd_worktree, RUN_SETUP },
+	{ "worktree", cmd_worktree, RUN_SETUP | BLOCK_ON_GVFS_REPO },
 	{ "write-tree", cmd_write_tree, RUN_SETUP },
 };
 
