@@ -1,0 +1,159 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project DefaultTargets="Build" ToolsVersion="14.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup Label="ProjectConfigurations">
+    <ProjectConfiguration Include="Debug|Win32">
+      <Configuration>Debug</Configuration>
+      <Platform>Win32</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Release|Win32">
+      <Configuration>Release</Configuration>
+      <Platform>Win32</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Debug|x64">
+      <Configuration>Debug</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Release|x64">
+      <Configuration>Release</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+  </ItemGroup>
+  <PropertyGroup Label="Globals">
+    <ProjectGuid>{0A176EC9-E934-45B8-B87F-16C7F4C80039}</ProjectGuid>
+    <Keyword>Win32Proj</Keyword>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
+  <PropertyGroup Condition="'$(Configuration)'=='Debug'" Label="Configuration">
+    <UseDebugLibraries>true</UseDebugLibraries>
+    <LinkIncremental>true</LinkIncremental>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)'=='Release'" Label="Configuration">
+    <UseDebugLibraries>false</UseDebugLibraries>
+    <WholeProgramOptimization>true</WholeProgramOptimization>
+  </PropertyGroup>
+  <PropertyGroup>
+    <ConfigurationType>Application</ConfigurationType>
+    <PlatformToolset>v140</PlatformToolset>
+    <!-- <CharacterSet>UTF-8</CharacterSet> -->
+    <OutDir>..\</OutDir>
+    <!-- <IntDir>$(ProjectDir)$(Configuration)\</IntDir> -->
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
+  <ImportGroup Label="ExtensionSettings">
+  </ImportGroup>
+  <ImportGroup Label="Shared">
+  </ImportGroup>
+  <ImportGroup Label="PropertySheets">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+  </ImportGroup>
+  <PropertyGroup Label="UserMacros" />
+  <PropertyGroup>
+    <GenerateManifest>false</GenerateManifest>
+    <EnableManagedIncrementalBuild>true</EnableManagedIncrementalBuild>
+  </PropertyGroup>
+  <ItemDefinitionGroup>
+    <ClCompile>
+      <AdditionalOptions>          -nologo %(AdditionalOptions)</AdditionalOptions>
+      <AdditionalIncludeDirectories>..\..\..\.;..\..\..\compat;..\..\..\compat\poll;..\..\..\compat\regex;..\..\..\compat\vcbuild\GEN.DEPS\include;..\..\..\compat\vcbuild\GEN.DEPS\include\expat;..\..\..\compat\vcbuild\GEN.DEPS\include\zlib;..\..\..\compat\vcbuild\include;..\..\..\compat\win32;c:\Program Files (x86)\Microsoft Visual Studio 14.0\VC\INCLUDE;c:\Program Files (x86)\Windows Kits\10\Include\10.0.10240.0\ucrt;c:\Program Files (x86)\Windows Kits\8.1\Include\shared;c:\Program Files (x86)\Windows Kits\8.1\Include\um;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <EnableParallelCodeGeneration />
+      <MinimalRebuild>true</MinimalRebuild>
+      <InlineFunctionExpansion>OnlyExplicitInline</InlineFunctionExpansion>
+      <PrecompiledHeader />
+      <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>
+    </ClCompile>
+    <Lib>
+      <SuppressStartupBanner>true</SuppressStartupBanner>
+    </Lib>
+    <Link>
+      <AdditionalDependencies>advapi32.lib;kernel32.lib;ntdll.lib;shell32.lib;user32.lib;wininet.lib;ws2_32.lib;..\..\..\compat\vcbuild\GEN.PKGS\libiconv.1.14.0.11\build\native\lib\v110\$(Platform)\Release\dynamic\cdecl\libiconv.lib;$(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalLibraryDirectories>..\..\..\compat/vcbuild/GEN.DEPS/lib;c:/Program Files (x86)/Windows Kits/8.1/lib/winv6.3/um/x64;c:/Program Files (x86)/Windows Kits/10/lib/10.0.10240.0/ucrt/x64;c:/Program Files (x86)/Microsoft Visual Studio 14.0/VC/lib/amd64</AdditionalLibraryDirectories>
+      <AdditionalOptions>invalidcontinue.obj %(AdditionalOptions)</AdditionalOptions>
+      <ManifestFile>..\..\..\compat\win32\git.manifest</ManifestFile>
+      <SubSystem>Console</SubSystem>
+    </Link>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Platform)'=='Win32'">
+    <Link>
+      <TargetMachine>MachineX86</TargetMachine>
+    </Link>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)'=='Debug'">
+    <ClCompile>
+      <Optimization>Disabled</Optimization>
+      <PreprocessorDefinitions>WIN32;_DEBUG;DEFAULT_HELP_FORMAT=&quot;html&quot;;DETECT_MSYS_TTY;HAVE_ALLOCA_H;HAVE_STRING_H;NATIVE_CRLF;NDEBUG;NOGDI;NO_GETTEXT;NO_INET_NTOP;NO_INET_PTON;NO_INTTYPES_H;NO_IPV6;NO_LIBGEN_H;NO_MEMMEM;NO_MKDTEMP;NO_MKSTEMPS;NO_POLL;NO_POSIX_GOODIES;NO_PREAD;NO_SETENV;NO_STRCASESTR;NO_STRLCPY;NO_STRTOUMAX;NO_ST_BLOCKS_IN_STRUCT_STAT;NO_SYMLINK_HEAD;NO_SYS_POLL_H;OBJECT_CREATION_MODE=1;PAGER_ENV=&quot;LESS=FRX LV=-c&quot;;PROTECT_NTFS_DEFAULT=1;RUNTIME_PREFIX;SHA1_HEADER=&lt;openssl/sha.h&gt;;SHELL_PATH=&quot;/bin/sh&quot;;STRIP_EXTENSION=&quot;.exe&quot;;UNRELIABLE_FSTAT;USE_CURL_FOR_IMAP_SEND;USE_WIN32_MMAP;WIN32;XDL_FAST_HASH;_CONSOLE;_CRT_NONSTDC_NO_DEPRECATE;_CRT_SECURE_NO_WARNINGS;__USE_MINGW_ACCESS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <RuntimeLibrary>MultiThreadedDebugDLL</RuntimeLibrary>
+    </ClCompile>
+    <Link>
+      <GenerateDebugInformation>true</GenerateDebugInformation>
+    </Link>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)'=='Release'">
+    <ClCompile>
+      <Optimization>MaxSpeed</Optimization>
+      <IntrinsicFunctions>true</IntrinsicFunctions>
+      <PreprocessorDefinitions>WIN32;NDEBUG;DEFAULT_HELP_FORMAT=&quot;html&quot;;DETECT_MSYS_TTY;HAVE_ALLOCA_H;HAVE_STRING_H;NATIVE_CRLF;NDEBUG;NOGDI;NO_GETTEXT;NO_INET_NTOP;NO_INET_PTON;NO_INTTYPES_H;NO_IPV6;NO_LIBGEN_H;NO_MEMMEM;NO_MKDTEMP;NO_MKSTEMPS;NO_POLL;NO_POSIX_GOODIES;NO_PREAD;NO_SETENV;NO_STRCASESTR;NO_STRLCPY;NO_STRTOUMAX;NO_ST_BLOCKS_IN_STRUCT_STAT;NO_SYMLINK_HEAD;NO_SYS_POLL_H;OBJECT_CREATION_MODE=1;PAGER_ENV=&quot;LESS=FRX LV=-c&quot;;PROTECT_NTFS_DEFAULT=1;RUNTIME_PREFIX;SHA1_HEADER=&lt;openssl/sha.h&gt;;SHELL_PATH=&quot;/bin/sh&quot;;STRIP_EXTENSION=&quot;.exe&quot;;UNRELIABLE_FSTAT;USE_CURL_FOR_IMAP_SEND;USE_WIN32_MMAP;WIN32;XDL_FAST_HASH;_CONSOLE;_CRT_NONSTDC_NO_DEPRECATE;_CRT_SECURE_NO_WARNINGS;__USE_MINGW_ACCESS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <RuntimeLibrary>MultiThreadedDLL</RuntimeLibrary>
+      <FunctionLevelLinking>true</FunctionLevelLinking>
+      <FavorSizeOrSpeed>Speed</FavorSizeOrSpeed>
+    </ClCompile>
+    <Link>
+      <GenerateDebugInformation>true</GenerateDebugInformation>
+      <EnableCOMDATFolding>true</EnableCOMDATFolding>
+      <OptimizeReferences>true</OptimizeReferences>
+    </Link>
+  </ItemDefinitionGroup>
+  <ItemGroup>
+    <ClCompile Include="..\..\..\common-main.c" />
+    <ClCompile Include="..\..\..\t\helper\test-sha1-array.c" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\..\..\libgit\libgit.vcxproj">
+      <Project>{E07B9989-2BF7-4F21-8918-BE22BA467AC3}</Project>
+      <ReferenceOutputAssembly>false</ReferenceOutputAssembly>
+    </ProjectReference>
+    <ProjectReference Include="..\..\..\xdiff\lib\xdiff_lib.vcxproj">
+      <Project>{278FFB51-0296-4A44-A81A-22B87B7C3592}</Project>
+      <ReferenceOutputAssembly>false</ReferenceOutputAssembly>
+    </ProjectReference>
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="packages.config" />
+  </ItemGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
+  <ImportGroup Label="ExtensionTargets">
+    <Import Project="..\..\..\compat\vcbuild\GEN.PKGS\curl.7.30.0.2\build\native\curl.targets" Condition="Exists('..\..\..\compat\vcbuild\GEN.PKGS\curl.7.30.0.2\build\native\curl.targets')" />
+    <Import Project="..\..\..\compat\vcbuild\GEN.PKGS\curl.redist.7.30.0.2\build\native\curl.redist.targets" Condition="Exists('..\..\..\compat\vcbuild\GEN.PKGS\curl.redist.7.30.0.2\build\native\curl.redist.targets')" />
+    <Import Project="..\..\..\compat\vcbuild\GEN.PKGS\expat.2.1.0.11\build\native\expat.targets" Condition="Exists('..\..\..\compat\vcbuild\GEN.PKGS\expat.2.1.0.11\build\native\expat.targets')" />
+    <Import Project="..\..\..\compat\vcbuild\GEN.PKGS\libiconv.1.14.0.11\build\native\libiconv.targets" Condition="Exists('..\..\..\compat\vcbuild\GEN.PKGS\libiconv.1.14.0.11\build\native\libiconv.targets')" />
+    <Import Project="..\..\..\compat\vcbuild\GEN.PKGS\libiconv.redist.1.14.0.11\build\native\libiconv.redist.targets" Condition="Exists('..\..\..\compat\vcbuild\GEN.PKGS\libiconv.redist.1.14.0.11\build\native\libiconv.redist.targets')" />
+    <Import Project="..\..\..\compat\vcbuild\GEN.PKGS\libssh2.1.4.3.3\build\native\libssh2.targets" Condition="Exists('..\..\..\compat\vcbuild\GEN.PKGS\libssh2.1.4.3.3\build\native\libssh2.targets')" />
+    <Import Project="..\..\..\compat\vcbuild\GEN.PKGS\libssh2.redist.1.4.3.3\build\native\libssh2.redist.targets" Condition="Exists('..\..\..\compat\vcbuild\GEN.PKGS\libssh2.redist.1.4.3.3\build\native\libssh2.redist.targets')" />
+    <Import Project="..\..\..\compat\vcbuild\GEN.PKGS\openssl.v120.windesktop.msvcstl.dyn.rt-dyn.x64.1.0.2.0\build\native\openssl.v120.windesktop.msvcstl.dyn.rt-dyn.x64.targets" Condition="Exists('..\..\..\compat\vcbuild\GEN.PKGS\openssl.v120.windesktop.msvcstl.dyn.rt-dyn.x64.1.0.2.0\build\native\openssl.v120.windesktop.msvcstl.dyn.rt-dyn.x64.targets')" />
+    <Import Project="..\..\..\compat\vcbuild\GEN.PKGS\openssl.v120.windesktop.msvcstl.dyn.rt-dyn.x86.1.0.2.1\build\native\openssl.v120.windesktop.msvcstl.dyn.rt-dyn.x86.targets" Condition="Exists('..\..\..\compat\vcbuild\GEN.PKGS\openssl.v120.windesktop.msvcstl.dyn.rt-dyn.x86.1.0.2.1\build\native\openssl.v120.windesktop.msvcstl.dyn.rt-dyn.x86.targets')" />
+    <Import Project="..\..\..\compat\vcbuild\GEN.PKGS\openssl.v140.windesktop.msvcstl.dyn.rt-dyn.x64.1.0.2.1\build\native\openssl.v140.windesktop.msvcstl.dyn.rt-dyn.x64.targets" Condition="Exists('..\..\..\compat\vcbuild\GEN.PKGS\openssl.v140.windesktop.msvcstl.dyn.rt-dyn.x64.1.0.2.1\build\native\openssl.v140.windesktop.msvcstl.dyn.rt-dyn.x64.targets')" />
+    <Import Project="..\..\..\compat\vcbuild\GEN.PKGS\openssl.v140.windesktop.msvcstl.dyn.rt-dyn.x86.1.0.2.1\build\native\openssl.v140.windesktop.msvcstl.dyn.rt-dyn.x86.targets" Condition="Exists('..\..\..\compat\vcbuild\GEN.PKGS\openssl.v140.windesktop.msvcstl.dyn.rt-dyn.x86.1.0.2.1\build\native\openssl.v140.windesktop.msvcstl.dyn.rt-dyn.x86.targets')" />
+    <Import Project="..\..\..\compat\vcbuild\GEN.PKGS\zlib.v120.windesktop.msvcstl.dyn.rt-dyn.1.2.8.8\build\native\zlib.v120.windesktop.msvcstl.dyn.rt-dyn.targets" Condition="Exists('..\..\..\compat\vcbuild\GEN.PKGS\zlib.v120.windesktop.msvcstl.dyn.rt-dyn.1.2.8.8\build\native\zlib.v120.windesktop.msvcstl.dyn.rt-dyn.targets')" />
+    <Import Project="..\..\..\compat\vcbuild\GEN.PKGS\zlib.v140.windesktop.msvcstl.dyn.rt-dyn.1.2.8.8\build\native\zlib.v140.windesktop.msvcstl.dyn.rt-dyn.targets" Condition="Exists('..\..\..\compat\vcbuild\GEN.PKGS\zlib.v140.windesktop.msvcstl.dyn.rt-dyn.1.2.8.8\build\native\zlib.v140.windesktop.msvcstl.dyn.rt-dyn.targets')" />
+  </ImportGroup>
+  <Target Name="EnsureNuGetPackageBuildImports" BeforeTargets="PrepareForBuild">
+    <PropertyGroup>
+      <ErrorText>This project references NuGet package(s) that are missing on this computer. Use NuGet Package Restore to download them.  For more information, see http://go.microsoft.com/fwlink/?LinkID=322105. The missing file is {0}.</ErrorText>
+    </PropertyGroup>
+    <Error Condition="!Exists('..\..\..\compat\vcbuild\GEN.PKGS\curl.7.30.0.2\build\native\curl.targets')" Text="$([System.String]::Format('$(ErrorText)', '..\..\..\compat\vcbuild\GEN.PKGS\curl.7.30.0.2\build\native\curl.targets'))" />
+    <Error Condition="!Exists('..\..\..\compat\vcbuild\GEN.PKGS\curl.redist.7.30.0.2\build\native\curl.redist.targets')" Text="$([System.String]::Format('$(ErrorText)', '..\..\..\compat\vcbuild\GEN.PKGS\curl.redist.7.30.0.2\build\native\curl.redist.targets'))" />
+    <Error Condition="!Exists('..\..\..\compat\vcbuild\GEN.PKGS\expat.2.1.0.11\build\native\expat.targets')" Text="$([System.String]::Format('$(ErrorText)', '..\..\..\compat\vcbuild\GEN.PKGS\expat.2.1.0.11\build\native\expat.targets'))" />
+    <Error Condition="!Exists('..\..\..\compat\vcbuild\GEN.PKGS\libiconv.1.14.0.11\build\native\libiconv.targets')" Text="$([System.String]::Format('$(ErrorText)', '..\..\..\compat\vcbuild\GEN.PKGS\libiconv.1.14.0.11\build\native\libiconv.targets'))" />
+    <Error Condition="!Exists('..\..\..\compat\vcbuild\GEN.PKGS\libiconv.redist.1.14.0.11\build\native\libiconv.redist.targets')" Text="$([System.String]::Format('$(ErrorText)', '..\..\..\compat\vcbuild\GEN.PKGS\libiconv.redist.1.14.0.11\build\native\libiconv.redist.targets'))" />
+    <Error Condition="!Exists('..\..\..\compat\vcbuild\GEN.PKGS\libssh2.1.4.3.3\build\native\libssh2.targets')" Text="$([System.String]::Format('$(ErrorText)', '..\..\..\compat\vcbuild\GEN.PKGS\libssh2.1.4.3.3\build\native\libssh2.targets'))" />
+    <Error Condition="!Exists('..\..\..\compat\vcbuild\GEN.PKGS\libssh2.redist.1.4.3.3\build\native\libssh2.redist.targets')" Text="$([System.String]::Format('$(ErrorText)', '..\..\..\compat\vcbuild\GEN.PKGS\libssh2.redist.1.4.3.3\build\native\libssh2.redist.targets'))" />
+    <Error Condition="!Exists('..\..\..\compat\vcbuild\GEN.PKGS\openssl.v120.windesktop.msvcstl.dyn.rt-dyn.x64.1.0.2.0\build\native\openssl.v120.windesktop.msvcstl.dyn.rt-dyn.x64.targets')" Text="$([System.String]::Format('$(ErrorText)', '..\..\..\compat\vcbuild\GEN.PKGS\openssl.v120.windesktop.msvcstl.dyn.rt-dyn.x64.1.0.2.0\build\native\openssl.v120.windesktop.msvcstl.dyn.rt-dyn.x64.targets'))" />
+    <Error Condition="!Exists('..\..\..\compat\vcbuild\GEN.PKGS\openssl.v120.windesktop.msvcstl.dyn.rt-dyn.x86.1.0.2.1\build\native\openssl.v120.windesktop.msvcstl.dyn.rt-dyn.x86.targets')" Text="$([System.String]::Format('$(ErrorText)', '..\..\..\compat\vcbuild\GEN.PKGS\openssl.v120.windesktop.msvcstl.dyn.rt-dyn.x86.1.0.2.1\build\native\openssl.v120.windesktop.msvcstl.dyn.rt-dyn.x86.targets'))" />
+    <Error Condition="!Exists('..\..\..\compat\vcbuild\GEN.PKGS\openssl.v140.windesktop.msvcstl.dyn.rt-dyn.x64.1.0.2.1\build\native\openssl.v140.windesktop.msvcstl.dyn.rt-dyn.x64.targets')" Text="$([System.String]::Format('$(ErrorText)', '..\..\..\compat\vcbuild\GEN.PKGS\openssl.v140.windesktop.msvcstl.dyn.rt-dyn.x64.1.0.2.1\build\native\openssl.v140.windesktop.msvcstl.dyn.rt-dyn.x64.targets'))" />
+    <Error Condition="!Exists('..\..\..\compat\vcbuild\GEN.PKGS\openssl.v140.windesktop.msvcstl.dyn.rt-dyn.x86.1.0.2.1\build\native\openssl.v140.windesktop.msvcstl.dyn.rt-dyn.x86.targets')" Text="$([System.String]::Format('$(ErrorText)', '..\..\..\compat\vcbuild\GEN.PKGS\openssl.v140.windesktop.msvcstl.dyn.rt-dyn.x86.1.0.2.1\build\native\openssl.v140.windesktop.msvcstl.dyn.rt-dyn.x86.targets'))" />
+    <Error Condition="!Exists('..\..\..\compat\vcbuild\GEN.PKGS\zlib.v120.windesktop.msvcstl.dyn.rt-dyn.1.2.8.8\build\native\zlib.v120.windesktop.msvcstl.dyn.rt-dyn.targets')" Text="$([System.String]::Format('$(ErrorText)', '..\..\..\compat\vcbuild\GEN.PKGS\zlib.v120.windesktop.msvcstl.dyn.rt-dyn.1.2.8.8\build\native\zlib.v120.windesktop.msvcstl.dyn.rt-dyn.targets'))" />
+    <Error Condition="!Exists('..\..\..\compat\vcbuild\GEN.PKGS\zlib.v140.windesktop.msvcstl.dyn.rt-dyn.1.2.8.8\build\native\zlib.v140.windesktop.msvcstl.dyn.rt-dyn.targets')" Text="$([System.String]::Format('$(ErrorText)', '..\..\..\compat\vcbuild\GEN.PKGS\zlib.v140.windesktop.msvcstl.dyn.rt-dyn.1.2.8.8\build\native\zlib.v140.windesktop.msvcstl.dyn.rt-dyn.targets'))" />
+  </Target>
+  <Target Name="t/helper/test-sha1-array_AfterBuild" AfterTargets="AfterBuild">
+    <Copy SourceFiles="..\..\..\compat\vcbuild\GEN.PKGS\libiconv.redist.1.14.0.11\build\native\bin\v110\$(Platform)\Release\dynamic\cdecl\libiconv.dll" DestinationFolder="$(TargetDir)" SkipUnchangedFiles="true" />
+  </Target>
+</Project>
