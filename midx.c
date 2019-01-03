@@ -768,6 +768,7 @@ static int write_midx_internal(const char *object_dir, struct multi_pack_index *
 	struct pack_midx_entry *entries = NULL;
 	int large_offsets_needed = 0;
 	int result = 0;
+	uint32_t *expire_int_ids = NULL;
 
 	midx_name = get_midx_filename(object_dir);
 	if (safe_create_leading_directories(midx_name)) {
@@ -792,6 +793,9 @@ static int write_midx_internal(const char *object_dir, struct multi_pack_index *
 	ALLOC_ARRAY(packs.names, packs.alloc_names);
 	ALLOC_ARRAY(packs.perm, packs.alloc_perm);
 
+	if (packs_to_drop && packs_to_drop->nr)
+		expire_int_ids = xcalloc(packs_to_drop->nr, sizeof(uint32_t));
+
 	if (packs.m) {
 		int drop_index = 0, missing_drops = 0;
 		for (i = 0; i < packs.m->num_packs; i++) {
@@ -800,8 +804,8 @@ static int write_midx_internal(const char *object_dir, struct multi_pack_index *
 						 packs_to_drop->items[drop_index].string);
 
 				if (!cmp) {
+					expire_int_ids[drop_index] = i;
 					drop_index++;
-					continue;
 				} else if (cmp > 0) {
 					error(_("did not see pack-file %s to drop"),
 					      packs_to_drop->items[drop_index].string);
@@ -832,14 +836,42 @@ static int write_midx_internal(const char *object_dir, struct multi_pack_index *
 
 	for_each_file_in_pack_dir(object_dir, add_pack_to_midx, &packs);
 
-	if (packs.m && packs.nr == packs.m->num_packs)
+	if (packs.m && packs.nr == packs.m->num_packs && !packs_to_drop)
 		goto cleanup;
+
+	sort_packs_by_name(packs.names, packs.nr, packs.perm);
+
+	if (packs_to_drop && packs_to_drop->nr) {
+		int drop_index = 0;
+		int j;
+
+		/* truncate the list of packs */
+		for (i = 0; i < packs.nr; i++) {
+			if (drop_index < packs_to_drop->nr &&
+			    !strcmp(packs.names[i], packs_to_drop->items[drop_index].string)) {
+				packs.pack_name_concat_len -= strlen(packs_to_drop->items[drop_index].string) + 1;
+				drop_index++;
+			} else {
+				packs.list[i - drop_index] = packs.list[i];
+				packs.names[i - drop_index] = packs.names[i];
+			}
+		}
+
+		for (j = packs_to_drop->nr - 1; j >= 0; j--) {
+			int expired_int_id = packs.perm[expire_int_ids[j]];
+
+			for (i = 0; i < packs.nr; i++) {
+				if (packs.perm[i] > expired_int_id)
+					packs.perm[i] = packs.perm[i] - 1;
+			}
+		}
+
+		packs.nr = packs.nr - packs_to_drop->nr;
+	}
 
 	if (packs.pack_name_concat_len % MIDX_CHUNK_ALIGNMENT)
 		packs.pack_name_concat_len += MIDX_CHUNK_ALIGNMENT -
 					      (packs.pack_name_concat_len % MIDX_CHUNK_ALIGNMENT);
-
-	sort_packs_by_name(packs.names, packs.nr, packs.perm);
 
 	entries = get_sorted_entries(packs.m, packs.list, packs.perm, packs.nr, &nr_entries);
 
@@ -962,6 +994,7 @@ cleanup:
 	free(packs.perm);
 	free(entries);
 	free(midx_name);
+	free(expire_int_ids);
 	return result;
 }
 
