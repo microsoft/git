@@ -764,6 +764,7 @@ TEST_BUILTINS_OBJS += test-write-cache.o
 
 # Do not add more tests here unless they have extra dependencies. Add
 # them in TEST_BUILTINS_OBJS above.
+TEST_PROGRAMS_NEED_X += test-dump-linkage
 TEST_PROGRAMS_NEED_X += test-fake-ssh
 TEST_PROGRAMS_NEED_X += test-line-buffer
 TEST_PROGRAMS_NEED_X += test-svn-fe
@@ -2690,6 +2691,9 @@ perf: all
 	$(MAKE) -C t/perf/ all
 
 .PHONY: test perf
+
+t/helper/test-dump-linkage$X: t/helper/test-dump-linkage.o GIT-LDFLAGS $(GITLIBS)
+	$(QUIET_LINK)$(CC) $(ALL_CFLAGS) -o $@ $(ALL_LDFLAGS) $(filter %.o,$^) $(CURL_LIBCURL) $(LIBS)
 
 t/helper/test-line-buffer$X: $(VCSSVN_LIB)
 
