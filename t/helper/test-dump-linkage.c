@@ -79,7 +79,7 @@ static void dump_iconv_info(void)
 {
 	printf("iconv: NO_ICONV\n");
 }
-#else
+#elif defined(_LIBICONV_VERSION)
 static void dump_iconv_info(void)
 {
 	/* the header that we compiled against */
@@ -87,6 +87,11 @@ static void dump_iconv_info(void)
 
 	/* the symbol exported from the DLL we linked to */
 	printf("iconv:dll_version:   0x%08x\n", _libiconv_version);
+}
+#else
+static void dump_iconv_info(void)
+{
+	printf("iconv: glibc?\n");
 }
 #endif
 
