@@ -967,18 +967,24 @@ end_of_spawn:
 		return -1;
 	}
 
-	if (need_in)
+	if (need_in) {
 		close(fdin[0]);
+		set_cloexec(fdin[1]);
+	}
 	else if (cmd->in)
 		close(cmd->in);
 
-	if (need_out)
+	if (need_out) {
 		close(fdout[1]);
+		set_cloexec(fdout[0]);
+	}
 	else if (cmd->out)
 		close(cmd->out);
 
-	if (need_err)
+	if (need_err) {
 		close(fderr[1]);
+		set_cloexec(fderr[0]);
+	}
 	else if (cmd->err)
 		close(cmd->err);
 
