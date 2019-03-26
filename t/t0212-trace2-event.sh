@@ -1,5 +1,14 @@
 #!/bin/sh
 
+# Disable loading of Trace2 settings from the system config
+# (usually "/etc/gitconfig") to eliminate system dependencies.
+GIT_TEST_TR2_SYSTEM_CONFIG=0 && export GIT_TEST_TR2_SYSTEM_CONFIG
+
+# Turn off any inherited trace2 settings for this test.
+unset GIT_TR2 GIT_TR2_PERF GIT_TR2_EVENT
+unset GIT_TR2_BARE
+unset GIT_TR2_CONFIG_PARAMS
+
 test_description='test trace2 facility'
 . ./test-lib.sh
 
@@ -14,11 +23,6 @@ PATH="$TTDIR:$PATH" && export PATH
 # Warning: only cover our actual calls to test-tool and/or git.
 # Warning: So you may see extra lines in artifact files when
 # Warning: interactively debugging.
-
-# Turn off any inherited trace2 settings for this test.
-unset GIT_TR2 GIT_TR2_PERF GIT_TR2_EVENT
-unset GIT_TR2_BARE
-unset GIT_TR2_CONFIG_PARAMS
 
 V=$(git version | sed -e 's/^git version //') && export V
 
@@ -221,6 +225,44 @@ test_expect_success 'basic trace2_data' '
 	|        "k2":"v2"
 	|      }
 	|    },
+	|    "exit_code":0,
+	|    "hierarchy":"trace2",
+	|    "name":"trace2",
+	|    "version":"$V"
+	|  }
+	|};
+	EOF
+	test_cmp expect actual
+'
+
+# Now test using system config by using a mocked up config file
+# rather than inheriting "/etc/gitconfig".  Here we do not use
+# GIT_TR2* environment variables.
+
+MOCK=./mock_system_config
+
+test_expect_success 'setup mocked /etc/gitconfig' '
+	git config --file $MOCK trace2.eventTarget "$(pwd)/trace.event"
+'
+
+test_expect_success JSON_PP 'using mock, event stream, error event' '
+	test_when_finished "rm trace.event actual expect" &&
+	GIT_TEST_TR2_SYSTEM_CONFIG="$MOCK" test-tool trace2 003error "hello world" "this is a test" &&
+	perl "$TEST_DIRECTORY/t0212/parse_events.perl" <trace.event >actual &&
+	sed -e "s/^|//" >expect <<-EOF &&
+	|VAR1 = {
+	|  "_SID0_":{
+	|    "argv":[
+	|      "_EXE_",
+	|      "trace2",
+	|      "003error",
+	|      "hello world",
+	|      "this is a test"
+	|    ],
+	|    "errors":[
+	|      "%s",
+	|      "%s"
+	|    ],
 	|    "exit_code":0,
 	|    "hierarchy":"trace2",
 	|    "name":"trace2",

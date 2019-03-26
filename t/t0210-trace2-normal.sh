@@ -1,5 +1,14 @@
 #!/bin/sh
 
+# Disable loading of Trace2 settings from the system config
+# (usually "/etc/gitconfig") to eliminate system dependencies.
+GIT_TEST_TR2_SYSTEM_CONFIG=0 && export GIT_TEST_TR2_SYSTEM_CONFIG
+
+# Turn off any inherited trace2 settings for this test.
+unset GIT_TR2 GIT_TR2_PERF GIT_TR2_EVENT
+unset GIT_TR2_BRIEF
+unset GIT_TR2_CONFIG_PARAMS
+
 test_description='test trace2 facility (normal target)'
 . ./test-lib.sh
 
@@ -14,11 +23,6 @@ PATH="$TTDIR:$PATH" && export PATH
 # Warning: only cover our actual calls to test-tool and/or git.
 # Warning: So you may see extra lines in artifact files when
 # Warning: interactively debugging.
-
-# Turn off any inherited trace2 settings for this test.
-unset GIT_TR2 GIT_TR2_PERF GIT_TR2_EVENT
-unset GIT_TR2_BRIEF
-unset GIT_TR2_CONFIG_PARAMS
 
 V=$(git version | sed -e 's/^git version //') && export V
 
@@ -126,6 +130,33 @@ test_expect_success 'normal stream, error event' '
 		cmd_name trace2 (trace2)
 		error hello world
 		error this is a test
+		exit elapsed:_TIME_ code:0
+		atexit elapsed:_TIME_ code:0
+	EOF
+	test_cmp expect actual
+'
+
+# Now test using system config by using a mocked up config file
+# rather than inheriting "/etc/gitconfig".  Here we do not use
+# GIT_TR2* environment variables.
+
+unset GIT_TR2_BRIEF
+
+MOCK=./mock_system_config
+
+test_expect_success 'setup mocked /etc/gitconfig' '
+	git config --file $MOCK trace2.normalTarget "$(pwd)/trace.normal" &&
+	git config --file $MOCK trace2.normalBrief 1
+'
+
+test_expect_success 'using mock, normal stream, return code 0' '
+	test_when_finished "rm trace.normal actual expect" &&
+	GIT_TEST_TR2_SYSTEM_CONFIG="$MOCK" test-tool trace2 001return 0 &&
+	perl "$TEST_DIRECTORY/t0210/scrub_normal.perl" <trace.normal >actual &&
+	cat >expect <<-EOF &&
+		version $V
+		start _EXE_ trace2 001return 0
+		cmd_name trace2 (trace2)
 		exit elapsed:_TIME_ code:0
 		atexit elapsed:_TIME_ code:0
 	EOF

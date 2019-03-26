@@ -114,6 +114,37 @@ values are recognized.
 	Enables the target, opens and writes to a Unix Domain Socket
 	(on platforms that support them).
 
+== Trace2 Settings in System Config
+
+Trace2 also reads configuration information from the system config.
+This is intended to help adminstrators to gather system-wide Git
+performance data.
+
+Trace2 only reads the system configuration, it does not read global,
+local, worktree, or `-c` config settings.
+
+Trace2 will try to load the following system configuration settings
+and then read the corresponding environment variables at startup.
+
+....
+---------------------------------------------------
+trace2.normalTarget          GIT_TR2
+trace2.normalBrief           GIT_TR2_BRIEF
+
+trace2.perfTarget            GIT_TR2_PERF
+trace2.perfBrief             GIT_TR2_PERF_BRIEF
+
+trace2.eventTarget           GIT_TR2_EVENT
+trace2.eventBrief            GIT_TR2_EVENT_BRIEF
+trace2.eventNesting          GIT_TR2_EVENT_NESTING
+
+trace2.configParams          GIT_TR2_CONFIG_PARAMS
+
+trace2.destinationDebug      GIT_TR2_DST_DEBUG
+---------------------------------------------------
+....
+
+
 == Trace2 API
 
 All public Trace2 functions and macros are defined in `trace2.h` and
