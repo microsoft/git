@@ -12,6 +12,7 @@
 #include "../attr.h"
 #include "../string-list.h"
 #include "win32/fscache.h"
+#include "../trace2.h"
 
 #define HCAST(type, handle) ((type)(intptr_t)handle)
 
@@ -3153,6 +3154,8 @@ int wmain(int argc, const wchar_t **wargv)
 	int i, maxlen, exit_status;
 	char *buffer, **save;
 	const char **argv;
+
+	trace2_initialize_clock();
 
 #ifdef _MSC_VER
 #ifdef _DEBUG

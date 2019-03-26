@@ -20,6 +20,22 @@ struct json_writer;
  */
 
 /*
+ * Initialize the TRACE2 clock and do nothing else, in particular
+ * no mallocs and no system nor environment inspection.
+ *
+ * This should be called at the very top of main() to capture the
+ * process start time.  This is intended to reduce chicken-n-egg
+ * bootstrap pressure.
+ *
+ * It is safe to call this more than once (I'm looking at you Windows
+ * with mingw_startup() and mingw_main().)
+ *
+ * The main trace2_initialize_fl() may be called a little later
+ * after more infrastructure is established.
+ */
+void trace2_initialize_clock(void);
+
+/*
  * Initialize TRACE2 tracing facility if any of the builtin TRACE2
  * targets are enabled in the environment.  Emits a 'version' event.
  *
