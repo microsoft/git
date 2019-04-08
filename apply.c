@@ -3408,7 +3408,7 @@ static int verify_index_match(struct apply_state *state,
 		return 0;
 	}
 	return ie_match_stat(state->repo->index, ce, st,
-			     CE_MATCH_IGNORE_VALID | CE_MATCH_IGNORE_SKIP_WORKTREE);
+			     CE_MATCH_IGNORE_VALID);
 }
 
 #define SUBMODULE_PATCH_WITHOUT_INDEX 1
