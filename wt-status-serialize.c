@@ -297,6 +297,8 @@ void wt_status_serialize_v1(int fd, struct wt_status *s)
 	struct string_list_item *iter;
 	int k;
 
+	trace2_region_enter("status", "serialize", the_repository);
+
 	/*
 	 * version header must be first line.
 	 */
@@ -330,4 +332,6 @@ void wt_status_serialize_v1(int fd, struct wt_status *s)
 		}
 		packet_flush(fd);
 	}
+
+	trace2_region_leave("status", "serialize", the_repository);
 }
