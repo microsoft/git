@@ -195,4 +195,9 @@ int is_promisor_object(const struct object_id *oid);
 int load_idx(const char *path, const unsigned int hashsz, void *idx_map,
 	     size_t idx_size, struct packed_git *p);
 
+/*
+ * Return the number of objects fetched from a packfile.
+ */
+unsigned long get_nr_unpack_entry(void);
+
 #endif
