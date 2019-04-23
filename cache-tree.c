@@ -222,7 +222,7 @@ static void discard_unused_subtrees(struct cache_tree *it)
 	}
 }
 
-int cache_tree_fully_valid(struct cache_tree *it)
+static int cache_tree_fully_valid_1(struct cache_tree *it)
 {
 	int i;
 	if (!it)
@@ -230,10 +230,21 @@ int cache_tree_fully_valid(struct cache_tree *it)
 	if (it->entry_count < 0 || !has_object_file(&it->oid))
 		return 0;
 	for (i = 0; i < it->subtree_nr; i++) {
-		if (!cache_tree_fully_valid(it->down[i]->cache_tree))
+		if (!cache_tree_fully_valid_1(it->down[i]->cache_tree))
 			return 0;
 	}
 	return 1;
+}
+
+int cache_tree_fully_valid(struct cache_tree *it)
+{
+	int result;
+
+	trace2_region_enter("cache_tree", "fully_valid", NULL);
+	result = cache_tree_fully_valid_1(it);
+	trace2_region_leave("cache_tree", "fully_valid", NULL);
+
+	return result;
 }
 
 static int update_one(struct cache_tree *it,
@@ -757,10 +768,14 @@ void prime_cache_tree(struct repository *r,
 		      struct index_state *istate,
 		      struct tree *tree)
 {
+	trace2_region_enter("cache_tree", "prime_cache_tree", r);
+
 	cache_tree_free(&istate->cache_tree);
 	istate->cache_tree = cache_tree();
 	prime_cache_tree_rec(r, istate->cache_tree, tree);
 	istate->cache_changed |= CACHE_TREE_CHANGED;
+
+	trace2_region_leave("cache_tree", "prime_cache_tree", r);
 }
 
 /*
