@@ -987,8 +987,11 @@ static void update_refs_for_switch(const struct checkout_opts *opts,
 	remove_branch_state(the_repository, !opts->quiet);
 	strbuf_release(&msg);
 	if (!opts->quiet &&
-	    (new_branch_info->path || (!opts->force_detach && !strcmp(new_branch_info->name, "HEAD"))))
+	    (new_branch_info->path || (!opts->force_detach && !strcmp(new_branch_info->name, "HEAD")))) {
+		trace2_region_enter("exp", "report_tracking", the_repository);
 		report_tracking(new_branch_info);
+		trace2_region_leave("exp", "report_tracking", the_repository);
+	}
 }
 
 static int add_pending_uninteresting_ref(const char *refname,
