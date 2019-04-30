@@ -1574,7 +1574,9 @@ int unpack_trees(unsigned len, struct tree_desc *t, struct unpack_trees_options 
 		}
 
 		trace_performance_enter();
+		trace2_region_enter("exp", "traverse_trees", the_repository);
 		ret = traverse_trees(len, t, &info);
+		trace2_region_leave("exp", "traverse_trees", the_repository);
 		trace_performance_leave("traverse_trees");
 		if (ret < 0)
 			goto return_failed;
