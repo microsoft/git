@@ -3,6 +3,8 @@
 test_description='test trace2 facility'
 . ./test-lib.sh
 
+perl -MJSON::PP -e 0 >/dev/null 2>&1 && test_set_prereq JSON_PP
+
 # Add t/helper directory to PATH so that we can use a relative
 # path to run nested instances of test-tool.exe (see 004child).
 # This helps with HEREDOC comparisons later.
@@ -38,7 +40,7 @@ V=$(git version | sed -e 's/^git version //') && export V
 #
 # To the above, add multiple 'error <msg>' events
 
-test_expect_success 'event stream, error event' '
+test_expect_success JSON_PP 'event stream, error event' '
 	test_when_finished "rm trace.event actual expect" &&
 	GIT_TR2_EVENT="$(pwd)/trace.event" test-tool trace2 003error "hello world" "this is a test" &&
 	perl "$TEST_DIRECTORY/t0212/parse_events.perl" <trace.event >actual &&
@@ -75,7 +77,7 @@ test_expect_success 'event stream, error event' '
 #    P2: |--- TT trace2 004child
 #    P3:      |--- TT trace2 001return 0
 
-test_expect_success 'event stream, return code 0' '
+test_expect_success JSON_PP 'event stream, return code 0' '
 	test_when_finished "rm trace.event actual expect" &&
 	GIT_TR2_EVENT="$(pwd)/trace.event" test-tool trace2 004child test-tool trace2 004child test-tool trace2 001return 0 &&
 	perl "$TEST_DIRECTORY/t0212/parse_events.perl" <trace.event >actual &&
@@ -162,7 +164,7 @@ test_expect_success 'event stream, return code 0' '
 
 # Test listing of all "interesting" config settings.
 
-test_expect_success 'event stream, list config' '
+test_expect_success JSON_PP 'event stream, list config' '
 	test_when_finished "rm trace.event actual expect" &&
 	git config --local t0212.abc 1 &&
 	git config --local t0212.def "hello world" &&
@@ -197,7 +199,7 @@ test_expect_success 'event stream, list config' '
 	test_cmp expect actual
 '
 
-test_expect_success 'basic trace2_data' '
+test_expect_success JSON_PP 'basic trace2_data' '
 	test_when_finished "rm trace.event actual expect" &&
 	GIT_TR2_EVENT="$(pwd)/trace.event" test-tool trace2 006data test_category k1 v1 test_category k2 v2 &&
 	perl "$TEST_DIRECTORY/t0212/parse_events.perl" <trace.event >actual &&
