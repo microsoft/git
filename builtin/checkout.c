@@ -25,6 +25,8 @@
 #include "submodule.h"
 #include "advice.h"
 
+void exp_tr2_report_packfile_data(const char *label);
+
 static int checkout_optimize_new_branch;
 
 static const char * const checkout_usage[] = {
@@ -590,10 +592,12 @@ static int merge_working_tree(const struct checkout_opts *opts,
 
 	resolve_undo_clear();
 	if (opts->force) {
+		exp_tr2_report_packfile_data("before:checkout/reset_tree");
 		trace2_region_enter("exp", "checkout/reset_tree", the_repository);
 		ret = reset_tree(get_commit_tree(new_branch_info->commit),
 				 opts, 1, writeout_error);
 		trace2_region_leave("exp", "checkout/reset_tree", the_repository);
+		exp_tr2_report_packfile_data("after:checkout/reset_tree");
 		if (ret)
 			return ret;
 	} else {
@@ -634,9 +638,12 @@ static int merge_working_tree(const struct checkout_opts *opts,
 		tree = parse_tree_indirect(&new_branch_info->commit->object.oid);
 		init_tree_desc(&trees[1], tree->buffer, tree->size);
 
+		exp_tr2_report_packfile_data("before:checkout/unpack_trees");
 		trace2_region_enter("exp", "checkout/unpack_trees", the_repository);
 		ret = unpack_trees(2, trees, &topts);
 		trace2_region_leave("exp", "checkout/unpack_trees", the_repository);
+		exp_tr2_report_packfile_data("after:checkout/unpack_trees");
+
 		clear_unpack_trees_porcelain(&topts);
 		if (ret == -1) {
 			/*
@@ -823,9 +830,11 @@ static void update_refs_for_switch(const struct checkout_opts *opts,
 	strbuf_release(&msg);
 	if (!opts->quiet &&
 	    (new_branch_info->path || (!opts->force_detach && !strcmp(new_branch_info->name, "HEAD")))) {
+		exp_tr2_report_packfile_data("before:checkout/report_tracking");
 		trace2_region_enter("exp", "checkout/report_tracking", the_repository);
 		report_tracking(new_branch_info);
 		trace2_region_leave("exp", "checkout/report_tracking", the_repository);
+		exp_tr2_report_packfile_data("after:checkout/report_tracking");
 	}
 }
 

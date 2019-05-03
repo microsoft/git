@@ -4,6 +4,8 @@
 #include <Psapi.h>
 #include <tlHelp32.h>
 
+void exp_tr2_report_packfile_data(const char *label);
+
 #define NR_PIDS_LIMIT 42
 
 /*
@@ -154,6 +156,7 @@ void trace2_collect_process_info(enum trace2_process_info_reason reason)
 		return;
 
 	case TRACE2_PROCESS_INFO_EXIT:
+		exp_tr2_report_packfile_data("after:exit");
 		get_peak_memory_info();
 		return;
 

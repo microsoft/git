@@ -29,6 +29,8 @@
 #include "revision.h"
 #include "commit-reach.h"
 
+void exp_tr2_report_packfile_data(const char *label);
+
 struct path_hashmap_entry {
 	struct hashmap_entry e;
 	char path[FLEX_ARRAY];
@@ -391,6 +393,7 @@ static int unpack_trees_start(struct merge_options *o,
 
 	trace2_region_enter("exp", "merge_recursive/unpack_trees", the_repository);
 	rc = unpack_trees(3, t, &o->unpack_opts);
+	exp_tr2_report_packfile_data("merge_recursive/unpack_trees");
 	trace2_region_leave("exp", "merge_recursive/unpack_trees", the_repository);
 
 	cache_tree_free(&active_cache_tree);

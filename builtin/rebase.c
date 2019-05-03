@@ -25,6 +25,8 @@
 #include "rerere.h"
 #include "branch.h"
 
+void exp_tr2_report_packfile_data(const char *label);
+
 static char const * const builtin_rebase_usage[] = {
 	N_("git rebase [-i] [options] [--exec <cmd>] [--onto <newbase>] "
 		"[<upstream>] [<branch>]"),
@@ -438,6 +440,7 @@ static int reset_head(struct object_id *oid, const char *action,
 
 	trace2_region_enter("exp", "rebase/unpack_trees", the_repository);
 	unpack_trees_result = unpack_trees(nr, desc, &unpack_tree_opts);
+	exp_tr2_report_packfile_data("rebase/unpack_trees");
 	trace2_region_leave("exp", "rebase/unpack_trees", the_repository);
 
 	if (unpack_trees_result) {

@@ -9,6 +9,8 @@
 #include "unpack-trees.h"
 #include "dir.h"
 
+void exp_tr2_report_packfile_data(const char *label);
+
 static const char *merge_argument(struct commit *commit)
 {
 	return oid_to_hex(commit ? &commit->object.oid : the_hash_algo->empty_tree);
@@ -99,6 +101,7 @@ int checkout_fast_forward(struct repository *r,
 
 	trace2_region_enter("exp", "merge/unpack_trees", the_repository);
 	unpack_trees_result = unpack_trees(nr_trees, t, &opts);
+	exp_tr2_report_packfile_data("merge/unpack_trees");
 	trace2_region_leave("exp", "merge/unpack_trees", the_repository);
 
 	if (unpack_trees_result) {

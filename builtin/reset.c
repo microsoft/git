@@ -28,6 +28,8 @@
 #include "quote.h"
 #include "dir.h"
 
+void exp_tr2_report_packfile_data(const char *label);
+
 #define REFRESH_INDEX_DELAY_WARNING_IN_MS (2 * 1000)
 
 static const char * const git_reset_usage[] = {
@@ -99,9 +101,12 @@ static int reset_index(const struct object_id *oid, int reset_type, int quiet)
 
 	if (reset_type == MIXED || reset_type == HARD) {
 		tree = parse_tree_indirect(oid);
+
+		exp_tr2_report_packfile_data("before:prime_cache_tree");
 		trace2_region_enter("exp", "prime_cache_tree", the_repository);
 		prime_cache_tree(&the_index, tree);
 		trace2_region_leave("exp", "prime_cache_tree", the_repository);
+		exp_tr2_report_packfile_data("after:prime_cache_tree");
 	}
 
 	ret = 0;

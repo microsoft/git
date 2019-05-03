@@ -17,6 +17,38 @@
 #include "object-store.h"
 #include "midx.h"
 
+/*
+ * Experiment fields for checkout/reset analysis.
+ * TODO remove these before submitting upstream.
+ */
+static intmax_t exp_tr2_count_unpack_entry = 0;
+static intmax_t exp_tr2_count_unpack_compressed_entry = 0;
+static intmax_t exp_tr2_count_patch_delta = 0;
+
+void exp_tr2_report_packfile_data(const char *label)
+{
+	struct strbuf buf = STRBUF_INIT;
+	size_t len;
+
+	strbuf_addstr(&buf, label);
+	strbuf_addch(&buf, '/');
+	len = buf.len;
+
+	strbuf_addstr(&buf, "unpack_entry");
+	trace2_data_intmax("exp", the_repository, buf.buf, exp_tr2_count_unpack_entry);
+	strbuf_setlen(&buf, len);
+
+	strbuf_addstr(&buf, "unpack_compressed_entry");
+	trace2_data_intmax("exp", the_repository, buf.buf, exp_tr2_count_unpack_compressed_entry);
+	strbuf_setlen(&buf, len);
+
+	strbuf_addstr(&buf, "patch_delta");
+	trace2_data_intmax("exp", the_repository, buf.buf, exp_tr2_count_patch_delta);
+	strbuf_setlen(&buf, len);
+
+	strbuf_release(&buf);
+}
+
 char *odb_pack_name(struct strbuf *buf,
 		    const unsigned char *sha1,
 		    const char *ext)
@@ -1579,6 +1611,8 @@ static void *unpack_compressed_entry(struct packed_git *p,
 	git_zstream stream;
 	unsigned char *buffer, *in;
 
+	exp_tr2_count_unpack_compressed_entry++;
+
 	buffer = xmallocz_gently(size);
 	if (!buffer)
 		return NULL;
@@ -1651,6 +1685,8 @@ void *unpack_entry(struct repository *r, struct packed_git *p, off_t obj_offset,
 	struct unpack_entry_stack_ent *delta_stack = small_delta_stack;
 	int delta_stack_nr = 0, delta_stack_alloc = UNPACK_ENTRY_STACK_PREALLOC;
 	int base_from_cache = 0;
+
+	exp_tr2_count_unpack_entry++;
 
 	write_pack_access_log(p, obj_offset);
 
@@ -1797,6 +1833,8 @@ void *unpack_entry(struct repository *r, struct packed_git *p, off_t obj_offset,
 		data = patch_delta(base, base_size,
 				   delta_data, delta_size,
 				   &size);
+
+		exp_tr2_count_patch_delta++;
 
 		/*
 		 * We could not apply the delta; warn the user, but keep going.

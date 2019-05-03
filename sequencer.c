@@ -33,6 +33,8 @@
 #include "commit-reach.h"
 #include "rebase-interactive.h"
 
+void exp_tr2_report_packfile_data(const char *label);
+
 #define GIT_REFLOG_ACTION "GIT_REFLOG_ACTION"
 
 const char sign_off_header[] = "Signed-off-by: ";
@@ -3005,6 +3007,7 @@ static int do_reset(const char *name, int len, struct replay_opts *opts)
 
 	trace2_region_enter("exp", "sequencer/unpack_trees", the_repository);
 	unpack_trees_result = unpack_trees(1, &desc, &unpack_tree_opts);
+	exp_tr2_report_packfile_data("sequencer/unpack_trees");
 	trace2_region_leave("exp", "sequencer/unpack_trees", the_repository);
 
 	if (unpack_trees_result) {
