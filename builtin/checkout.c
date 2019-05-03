@@ -590,8 +590,10 @@ static int merge_working_tree(const struct checkout_opts *opts,
 
 	resolve_undo_clear();
 	if (opts->force) {
+		trace2_region_enter("exp", "checkout/reset_tree", the_repository);
 		ret = reset_tree(get_commit_tree(new_branch_info->commit),
 				 opts, 1, writeout_error);
+		trace2_region_leave("exp", "checkout/reset_tree", the_repository);
 		if (ret)
 			return ret;
 	} else {
@@ -632,7 +634,9 @@ static int merge_working_tree(const struct checkout_opts *opts,
 		tree = parse_tree_indirect(&new_branch_info->commit->object.oid);
 		init_tree_desc(&trees[1], tree->buffer, tree->size);
 
+		trace2_region_enter("exp", "checkout/unpack_trees", the_repository);
 		ret = unpack_trees(2, trees, &topts);
+		trace2_region_leave("exp", "checkout/unpack_trees", the_repository);
 		clear_unpack_trees_porcelain(&topts);
 		if (ret == -1) {
 			/*
@@ -819,9 +823,9 @@ static void update_refs_for_switch(const struct checkout_opts *opts,
 	strbuf_release(&msg);
 	if (!opts->quiet &&
 	    (new_branch_info->path || (!opts->force_detach && !strcmp(new_branch_info->name, "HEAD")))) {
-		trace2_region_enter("exp", "report_tracking", the_repository);
+		trace2_region_enter("exp", "checkout/report_tracking", the_repository);
 		report_tracking(new_branch_info);
-		trace2_region_leave("exp", "report_tracking", the_repository);
+		trace2_region_leave("exp", "checkout/report_tracking", the_repository);
 	}
 }
 

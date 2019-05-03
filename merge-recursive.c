@@ -389,7 +389,10 @@ static int unpack_trees_start(struct merge_options *o,
 	init_tree_desc_from_tree(t+1, head);
 	init_tree_desc_from_tree(t+2, merge);
 
+	trace2_region_enter("exp", "merge_recursive/unpack_trees", the_repository);
 	rc = unpack_trees(3, t, &o->unpack_opts);
+	trace2_region_leave("exp", "merge_recursive/unpack_trees", the_repository);
+
 	cache_tree_free(&active_cache_tree);
 
 	/*
