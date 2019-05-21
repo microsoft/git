@@ -5,6 +5,7 @@
  */
 #include "cache.h"
 #include "merge-recursive.h"
+#include "virtualfilesystem.h"
 
 #include "advice.h"
 #include "alloc.h"
@@ -865,7 +866,8 @@ static int was_dirty(struct merge_options *opt, const char *path)
 {
 	struct cache_entry *ce;
 
-	if (opt->priv->call_depth || !was_tracked(opt, path))
+	if (opt->priv->call_depth || !was_tracked(opt, path) ||
+	    is_excluded_from_virtualfilesystem(path, strlen(path), DT_REG) == 1)
 		return 0;
 
 	ce = index_file_exists(opt->priv->unpack_opts.src_index,
