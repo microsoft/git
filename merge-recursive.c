@@ -29,6 +29,7 @@
 #include "tree-walk.h"
 #include "unpack-trees.h"
 #include "xdiff-interface.h"
+#include "virtualfilesystem.h"
 
 struct merge_options_internal {
 	int call_depth;
@@ -858,7 +859,8 @@ static int was_dirty(struct merge_options *opt, const char *path)
 {
 	struct cache_entry *ce;
 
-	if (opt->priv->call_depth || !was_tracked(opt, path))
+	if (opt->priv->call_depth || !was_tracked(opt, path) ||
+	    is_excluded_from_virtualfilesystem(path, strlen(path), DT_REG) == 1)
 		return 0;
 
 	ce = index_file_exists(opt->priv->unpack_opts.src_index,
