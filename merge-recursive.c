@@ -850,7 +850,7 @@ static int was_dirty(struct merge_options *opt, const char *path)
 
 	ce = index_file_exists(opt->unpack_opts.src_index,
 			       path, strlen(path), ignore_case);
-	return verify_uptodate(ce, &opt->unpack_opts) != 0;
+	return !ce || verify_uptodate(ce, &opt->unpack_opts) != 0;
 }
 
 static int make_room_for_path(struct merge_options *opt, const char *path)
