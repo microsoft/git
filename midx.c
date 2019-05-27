@@ -1165,6 +1165,15 @@ int expire_midx_packs(const char *object_dir)
 		if (m->packs[i]->pack_keep)
 			continue;
 
+		if (r->objects->packed_git_mru.prev == &m->packs[i]->mru)
+			r->objects->packed_git_mru.prev = m->packs[i]->mru.prev;
+		if (r->objects->packed_git_mru.next == &m->packs[i]->mru)
+			r->objects->packed_git_mru.next = m->packs[i]->mru.next;
+		if (m->packs[i]->mru.next)
+			m->packs[i]->mru.next->prev = m->packs[i]->mru.prev;
+		if (m->packs[i]->mru.prev)
+			m->packs[i]->mru.prev->next = m->packs[i]->mru.next;
+
 		pack_name = xstrdup(m->packs[i]->pack_name);
 		close_pack(m->packs[i]);
 		FREE_AND_NULL(m->packs[i]);
