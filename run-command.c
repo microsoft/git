@@ -1407,6 +1407,17 @@ int run_hook_argv(const char *const *env, const char *name,
 	const char *p;
 
 	p = find_hook(name);
+	/*
+	 * Backwards compatibility hack in VFS for Git: when originally
+	 * introduced (and used!), it was called `post-index-changed`, but this
+	 * name was changed during the review on the Git mailing list.
+	 *
+	 * Therefore, when the `post-index-change` hook is not found, let's
+	 * look for a hook with the old name (which would be found in case of
+	 * already-existing checkouts).
+	 */
+	if (!p && !strcmp(name, "post-index-change"))
+		p = find_hook("post-index-changed");
 	if (!p)
 		return 0;
 
