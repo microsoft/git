@@ -36,6 +36,7 @@
 #include "help.h"
 #include "commit-reach.h"
 #include "commit-graph.h"
+#include "gvfs.h"
 
 static const char * const builtin_commit_usage[] = {
 	N_("git commit [<options>] [--] <pathspec>..."),
@@ -1519,6 +1520,9 @@ int cmd_status(int argc, const char **argv, const char *prefix)
 		usage_with_options(builtin_status_usage, builtin_status_options);
 
 	status_init_config(&s, git_status_config);
+	if (gvfs_config_is_set(GVFS_STATUS_NORENAMES_ON_CONFLICT) && s.whence != FROM_COMMIT)
+		no_renames = 1;
+
 	argc = parse_options(argc, argv, prefix,
 			     builtin_status_options,
 			     builtin_status_usage, 0);
