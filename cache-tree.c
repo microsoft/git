@@ -235,6 +235,17 @@ int cache_tree_fully_valid(struct cache_tree *it)
 	return 1;
 }
 
+int cache_tree_fully_valid__trace2(struct cache_tree *it, const char *label)
+{
+	int result;
+
+	trace2_region_enter("cache_tree", label, NULL);
+	result = cache_tree_fully_valid(it);
+	trace2_region_leave("cache_tree", label, NULL);
+
+	return result;
+}
+
 static int update_one(struct cache_tree *it,
 		      struct cache_entry **cache,
 		      int entries,
@@ -655,7 +666,7 @@ int write_index_as_tree(struct object_id *oid, struct index_state *index_state, 
 	if (!index_state->cache_tree)
 		index_state->cache_tree = cache_tree();
 
-	was_valid = cache_tree_fully_valid(index_state->cache_tree);
+	was_valid = cache_tree_fully_valid__trace2(index_state->cache_tree, "write_index_as_tree/cache_tree_fully_valid");
 	if (!was_valid) {
 		if (cache_tree_update(index_state, flags) < 0) {
 			ret = WRITE_TREE_UNMERGED_INDEX;

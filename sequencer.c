@@ -641,7 +641,7 @@ static struct object_id *get_cache_tree_oid(struct index_state *istate)
 	if (!istate->cache_tree)
 		istate->cache_tree = cache_tree();
 
-	if (!cache_tree_fully_valid(istate->cache_tree))
+	if (!cache_tree_fully_valid__trace2(istate->cache_tree, "get_cache_tree_oid/cache_tree_fully_valid"))
 		if (cache_tree_update(istate, 0)) {
 			error(_("unable to update cache tree"));
 			return NULL;

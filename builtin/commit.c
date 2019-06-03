@@ -531,7 +531,7 @@ static const char *prepare_index(int argc, const char **argv, const char *prefix
 		hold_locked_index(&index_lock, LOCK_DIE_ON_ERROR);
 		refresh_cache_or_die(refresh_flags);
 		if (active_cache_changed
-		    || !cache_tree_fully_valid(active_cache_tree))
+		    || !cache_tree_fully_valid__trace2(active_cache_tree, "prepare_index/cache_tree_fully_valid"))
 			update_main_cache_tree(WRITE_TREE_SILENT);
 		if (write_locked_index(&the_index, &index_lock,
 				       COMMIT_LOCK | SKIP_IF_UNCHANGED))

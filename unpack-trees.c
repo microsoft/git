@@ -1641,7 +1641,7 @@ int unpack_trees(unsigned len, struct tree_desc *t, struct unpack_trees_options 
 				cache_tree_verify(the_repository, &o->result);
 			if (!o->result.cache_tree)
 				o->result.cache_tree = cache_tree();
-			if (!cache_tree_fully_valid(o->result.cache_tree))
+			if (!cache_tree_fully_valid__trace2(o->result.cache_tree, "unpack_trees/cache_tree_fully_valid"))
 				cache_tree_update(&o->result,
 						  WRITE_TREE_SILENT |
 						  WRITE_TREE_REPAIR);

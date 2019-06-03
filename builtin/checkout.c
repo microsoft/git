@@ -806,7 +806,7 @@ static int merge_working_tree(const struct checkout_opts *opts,
 	if (!active_cache_tree)
 		active_cache_tree = cache_tree();
 
-	if (!cache_tree_fully_valid(active_cache_tree))
+	if (!cache_tree_fully_valid__trace2(active_cache_tree, "merge_working_tree/cache_tree_fully_valid"))
 		cache_tree_update(&the_index, WRITE_TREE_SILENT | WRITE_TREE_REPAIR);
 
 	if (write_locked_index(&the_index, &lock_file, COMMIT_LOCK))

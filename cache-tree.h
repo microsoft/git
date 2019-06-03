@@ -31,6 +31,7 @@ void cache_tree_write(struct strbuf *, struct cache_tree *root);
 struct cache_tree *cache_tree_read(const char *buffer, unsigned long size);
 
 int cache_tree_fully_valid(struct cache_tree *);
+int cache_tree_fully_valid__trace2(struct cache_tree *it, const char *label);
 int cache_tree_update(struct index_state *, int);
 void cache_tree_verify(struct repository *, struct index_state *);
 

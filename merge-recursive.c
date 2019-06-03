@@ -433,7 +433,7 @@ struct tree *write_tree_from_memory(struct merge_options *opt)
 	if (!istate->cache_tree)
 		istate->cache_tree = cache_tree();
 
-	if (!cache_tree_fully_valid(istate->cache_tree) &&
+	if (!cache_tree_fully_valid__trace2(istate->cache_tree, "write_tree_from_memory/cache_tree_fully_valid") &&
 	    cache_tree_update(istate, 0) < 0) {
 		err(opt, _("error building trees"));
 		return NULL;
