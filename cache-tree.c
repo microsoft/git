@@ -463,7 +463,11 @@ int cache_tree_update(struct index_state *istate, int flags)
 	if (i)
 		return i;
 	trace_performance_enter();
+	trace2_region_enter("cache_tree", "cache_tree_update/update_one", NULL);
+
 	i = update_one(it, cache, entries, "", 0, &skip, flags);
+
+	trace2_region_leave("cache_tree", "cache_tree_update/update_one", NULL);
 	trace_performance_leave("cache_tree_update");
 	if (i < 0)
 		return i;
