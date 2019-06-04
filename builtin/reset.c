@@ -95,7 +95,7 @@ static int reset_index(const struct object_id *oid, int reset_type, int quiet)
 	}
 	nr++;
 
-	if (unpack_trees(nr, desc, &opts))
+	if (unpack_trees__trace2(nr, desc, &opts, "reset/reset_index/unpack_trees"))
 		goto out;
 
 	if (reset_type == MIXED || reset_type == HARD) {

@@ -851,7 +851,7 @@ static int reset_head(struct object_id *oid, const char *action,
 		goto leave_reset_head;
 	}
 
-	if (unpack_trees(nr, desc, &unpack_tree_opts)) {
+	if (unpack_trees__trace2(nr, desc, &unpack_tree_opts, "rebase/reset_head/unpack_trees")) {
 		ret = -1;
 		goto leave_reset_head;
 	}

@@ -677,7 +677,7 @@ static int read_tree_trivial(struct object_id *common, struct object_id *head,
 		parse_tree(trees[i]);
 		init_tree_desc(t+i, trees[i]->buffer, trees[i]->size);
 	}
-	if (unpack_trees(nr_trees, t, &opts))
+	if (unpack_trees__trace2(nr_trees, t, &opts, "merge/read_trivial_tree/unpack_trees"))
 		return -1;
 	return 0;
 }

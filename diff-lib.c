@@ -515,7 +515,7 @@ static int diff_cache(struct rev_info *revs,
 	opts.pathspec->recursive = 1;
 
 	init_tree_desc(&t, tree->buffer, tree->size);
-	return unpack_trees(1, &t, &opts);
+	return unpack_trees__trace2(1, &t, &opts, "diff-lib/diff_cache/unpack_trees");
 }
 
 int run_diff_index(struct rev_info *revs, int cached)

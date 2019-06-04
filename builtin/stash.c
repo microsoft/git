@@ -257,7 +257,7 @@ static int reset_tree(struct object_id *i_tree, int update, int reset)
 	opts.update = update;
 	opts.fn = oneway_merge;
 
-	if (unpack_trees(nr_trees, t, &opts))
+	if (unpack_trees__trace2(nr_trees, t, &opts, "stash/reset_tree/unpack_trees"))
 		return -1;
 
 	if (write_locked_index(&the_index, &lock_file, COMMIT_LOCK))

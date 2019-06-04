@@ -1670,6 +1670,19 @@ return_failed:
 	goto done;
 }
 
+int unpack_trees__trace2(unsigned n, struct tree_desc *t,
+			 struct unpack_trees_options *options,
+			 const char *label)
+{
+	int result;
+
+	trace2_region_enter("unpacktree", label, NULL);
+	result = unpack_trees(n, t, options);
+	trace2_region_leave("unpacktree", label, NULL);
+
+	return result;
+}
+
 /* Here come the merge functions */
 
 static int reject_merge(const struct cache_entry *ce,

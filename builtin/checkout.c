@@ -516,7 +516,7 @@ static int reset_tree(struct tree *tree, const struct checkout_opts *o,
 	opts.dst_index = &the_index;
 	parse_tree(tree);
 	init_tree_desc(&tree_desc, tree->buffer, tree->size);
-	switch (unpack_trees(1, &tree_desc, &opts)) {
+	switch (unpack_trees__trace2(1, &tree_desc, &opts, "checkout/reset_tree/unpack_trees")) {
 	case -2:
 		*writeout_error = 1;
 		/*
@@ -717,7 +717,7 @@ static int merge_working_tree(const struct checkout_opts *opts,
 		tree = parse_tree_indirect(&new_branch_info->commit->object.oid);
 		init_tree_desc(&trees[1], tree->buffer, tree->size);
 
-		ret = unpack_trees(2, trees, &topts);
+		ret = unpack_trees__trace2(2, trees, &topts, "checkout/merge_working_tree/unpack_trees");
 		clear_unpack_trees_porcelain(&topts);
 		if (ret == -1) {
 			/*

@@ -422,7 +422,7 @@ static void create_base_index(const struct commit *current_head)
 		die(_("failed to unpack HEAD tree object"));
 	parse_tree(tree);
 	init_tree_desc(&t, tree->buffer, tree->size);
-	if (unpack_trees(1, &t, &opts))
+	if (unpack_trees__trace2(1, &t, &opts, "commit/create_base_index/unpack_trees"))
 		exit(128); /* We've already reported the error, finish dying */
 }
 

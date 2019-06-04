@@ -3202,7 +3202,7 @@ static int do_reset(struct repository *r,
 		return -1;
 	}
 
-	if (unpack_trees(1, &desc, &unpack_tree_opts)) {
+	if (unpack_trees__trace2(1, &desc, &unpack_tree_opts, "sequencer/do_reset/unpack_trees")) {
 		rollback_lock_file(&lock);
 		free((void *)desc.buffer);
 		strbuf_release(&ref_name);

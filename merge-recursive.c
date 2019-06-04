@@ -391,7 +391,7 @@ static int unpack_trees_start(struct merge_options *opt,
 	init_tree_desc_from_tree(t+1, head);
 	init_tree_desc_from_tree(t+2, merge);
 
-	rc = unpack_trees(3, t, &opt->unpack_opts);
+	rc = unpack_trees__trace2(3, t, &opt->unpack_opts, "merge-recursive/unpack_trees_start/unpack_trees");
 	cache_tree_free(&opt->repo->index->cache_tree);
 
 	/*

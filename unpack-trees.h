@@ -88,6 +88,9 @@ struct unpack_trees_options {
 
 int unpack_trees(unsigned n, struct tree_desc *t,
 		 struct unpack_trees_options *options);
+int unpack_trees__trace2(unsigned n, struct tree_desc *t,
+			 struct unpack_trees_options *options,
+			 const char *label);
 
 int verify_uptodate(const struct cache_entry *ce,
 		    struct unpack_trees_options *o);

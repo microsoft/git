@@ -766,7 +766,7 @@ static int checkout(int submodule_progress)
 	tree = parse_tree_indirect(&oid);
 	parse_tree(tree);
 	init_tree_desc(&t, tree->buffer, tree->size);
-	if (unpack_trees(1, &t, &opts) < 0)
+	if (unpack_trees__trace2(1, &t, &opts, "clone/checkout/unpack_trees") < 0)
 		die(_("unable to checkout working tree"));
 
 	if (write_locked_index(&the_index, &lock_file, COMMIT_LOCK))
