@@ -1334,6 +1334,8 @@ static int clear_ce_flags_1(struct index_state *istate,
 			    struct exclude_list *el, int defval)
 {
 	struct cache_entry **cache_end = cache + nr;
+	int debug_masked = 0;
+	int debug_virtual = 0;
 
 	/*
 	 * Process all entries that have the given prefix and meet
@@ -1346,6 +1348,7 @@ static int clear_ce_flags_1(struct index_state *istate,
 
 		if (select_mask && !(ce->ce_flags & select_mask)) {
 			cache++;
+			debug_masked++;
 			continue;
 		}
 
@@ -1354,6 +1357,7 @@ static int clear_ce_flags_1(struct index_state *istate,
 			if (is_included_in_virtualfilesystem(ce->name, ce->ce_namelen) > 0)
 				ce->ce_flags &= ~clear_mask;
 			cache++;
+			debug_virtual++;
 			continue;
 		}
 
@@ -1401,6 +1405,10 @@ static int clear_ce_flags_1(struct index_state *istate,
 			ce->ce_flags &= ~clear_mask;
 		cache++;
 	}
+
+	trace2_data_intmax("skip_worktree", NULL, "debug_masked", debug_masked);
+	trace2_data_intmax("skip_worktree", NULL, "debug_virtual", debug_virtual);
+
 	return nr - (cache_end - cache);
 }
 
@@ -1437,6 +1445,8 @@ static void mark_new_skip_worktree(struct exclude_list *el,
 {
 	int i;
 
+	trace2_region_enter("skip_worktree", "mark_new_skip_worktree", NULL);
+
 	/*
 	 * 1. Pretend the narrowest worktree: only unmerged entries
 	 * are checked out
@@ -1458,6 +1468,8 @@ static void mark_new_skip_worktree(struct exclude_list *el,
 	 * Matched entries will have skip_wt_flag cleared (i.e. "in")
 	 */
 	clear_ce_flags(istate, select_flag, skip_wt_flag, el);
+
+	trace2_region_leave("skip_worktree", "mark_new_skip_worktree", NULL);
 }
 
 static int verify_absent(const struct cache_entry *,
