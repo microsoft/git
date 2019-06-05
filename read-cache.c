@@ -1935,6 +1935,11 @@ static void *load_index_extensions(void *_data)
 	struct load_index_extensions *p = _data;
 	unsigned long src_offset = p->src_offset;
 
+	if (HAVE_THREADS)
+		trace2_thread_start("load_index_extensions");
+	else
+		trace2_region_enter("index", "load_index_extensions", NULL);
+
 	while (src_offset <= p->mmap_size - the_hash_algo->rawsz - 8) {
 		/* After an array of active_nr index entries,
 		 * there can be arbitrary number of extended
@@ -1953,6 +1958,11 @@ static void *load_index_extensions(void *_data)
 		src_offset += 8;
 		src_offset += extsize;
 	}
+
+	if (HAVE_THREADS)
+		trace2_thread_exit();
+	else
+		trace2_region_leave("index", "load_index_extensions", NULL);
 
 	return NULL;
 }
@@ -2032,12 +2042,17 @@ static void *load_cache_entries_thread(void *_data)
 	struct load_cache_entries_thread_data *p = _data;
 	int i;
 
+	trace2_thread_start("load_cache_entries");
+
 	/* iterate across all ieot blocks assigned to this thread */
 	for (i = p->ieot_start; i < p->ieot_start + p->ieot_blocks; i++) {
 		p->consumed += load_cache_entry_block(p->istate, p->ce_mem_pool,
 			p->offset, p->ieot->entries[i].nr, p->mmap, p->ieot->entries[i].offset, NULL);
 		p->offset += p->ieot->entries[i].nr;
 	}
+
+	trace2_thread_exit();
+
 	return NULL;
 }
 
@@ -2202,12 +2217,16 @@ int do_read_index(struct index_state *istate, const char *path, int must_exist)
 	if (extension_offset && nr_threads > 1)
 		ieot = read_ieot_extension(mmap, mmap_size, extension_offset);
 
+	trace2_region_enter("index", "load_cache_entries", NULL);
+
 	if (ieot) {
 		src_offset += load_cache_entries_threaded(istate, mmap, mmap_size, src_offset, nr_threads, ieot);
 		free(ieot);
 	} else {
 		src_offset += load_all_cache_entries(istate, mmap, mmap_size, src_offset);
 	}
+
+	trace2_region_leave("index", "load_cache_entries", NULL);
 
 	istate->timestamp.sec = st.st_mtime;
 	istate->timestamp.nsec = ST_MTIME_NSEC(st);
