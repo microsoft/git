@@ -1335,7 +1335,10 @@ static int clear_ce_flags_1(struct index_state *istate,
 {
 	struct cache_entry **cache_end = cache + nr;
 	int debug_masked = 0;
-	int debug_virtual = 0;
+	int debug_vfs_not_included = 0;
+	int debug_vfs_included = 0;
+	int debug_vfs_assumed = 0;
+	int debug_vfs_computed = 0;
 
 	/*
 	 * Process all entries that have the given prefix and meet
@@ -1354,10 +1357,34 @@ static int clear_ce_flags_1(struct index_state *istate,
 
 		/* if it's not in the virtual file system, exit early */
 		if (core_virtualfilesystem) {
-			if (is_included_in_virtualfilesystem(ce->name, ce->ce_namelen) > 0)
+			int is_included;
+			if (ce->HACK_vfs_flags & HACK_VFS__CE_PRESENT_DURING_APPLY) {
+				/*
+				 * This cache-entry was present when "apply_virtualfilesystem()
+				 * was called.  So we've already computed whether this CE's
+				 * pathname should be tracked by Git or should be marked as
+				 * skipped.
+				 *
+				 * TODO Think about a move/rename of this CE and/or of a
+				 * parent directory (that would invalidate the result of that
+				 * calculation).
+				 */
+				is_included = ce->HACK_vfs_flags & HACK_VFS__CE_IS_TRACKED_BY_GIT;
+				debug_vfs_assumed++;
+			}
+			else {
+				is_included = is_included_in_virtualfilesystem(ce->name, ce->ce_namelen);
+				debug_vfs_computed++;
+			}
+
+			if (is_included > 0) {
 				ce->ce_flags &= ~clear_mask;
+				debug_vfs_included++;
+			}
+			else {
+				debug_vfs_not_included++;
+			}
 			cache++;
-			debug_virtual++;
 			continue;
 		}
 
@@ -1407,7 +1434,10 @@ static int clear_ce_flags_1(struct index_state *istate,
 	}
 
 	trace2_data_intmax("skip_worktree", NULL, "debug_masked", debug_masked);
-	trace2_data_intmax("skip_worktree", NULL, "debug_virtual", debug_virtual);
+	trace2_data_intmax("skip_worktree", NULL, "debug_vfs_included", debug_vfs_included);
+	trace2_data_intmax("skip_worktree", NULL, "debug_vfs_not_included", debug_vfs_not_included);
+	trace2_data_intmax("skip_worktree", NULL, "debug_vfs_assumed", debug_vfs_assumed);
+	trace2_data_intmax("skip_worktree", NULL, "debug_vfs_computed", debug_vfs_computed);
 
 	return nr - (cache_end - cache);
 }

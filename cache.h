@@ -163,11 +163,15 @@ struct stat_data {
 	unsigned int sd_size;
 };
 
+#define HACK_VFS__CE_PRESENT_DURING_APPLY  (1<<0)
+#define HACK_VFS__CE_IS_TRACKED_BY_GIT     (1<<1)
+
 struct cache_entry {
 	struct hashmap_entry ent;
 	struct stat_data ce_stat_data;
 	unsigned int ce_mode;
 	unsigned int ce_flags;
+	unsigned int HACK_vfs_flags;
 	unsigned int mem_pool_allocated;
 	unsigned int ce_namelen;
 	unsigned int index;	/* for link extension */

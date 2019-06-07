@@ -263,8 +263,10 @@ void apply_virtualfilesystem(struct index_state *istate)
 		get_virtual_filesystem_data(&virtual_filesystem_data);
 
 	/* set CE_SKIP_WORKTREE bit on all entries */
-	for (i = 0; i < istate->cache_nr; i++)
+	for (i = 0; i < istate->cache_nr; i++) {
 		istate->cache[i]->ce_flags |= CE_SKIP_WORKTREE;
+		istate->cache[i]->HACK_vfs_flags = HACK_VFS__CE_PRESENT_DURING_APPLY;
+	}
 
 	/* clear CE_SKIP_WORKTREE bit for everything in the virtual file system */
 	entry = buf = virtual_filesystem_data.buf;
@@ -288,6 +290,7 @@ void apply_virtualfilesystem(struct index_state *istate)
 						if (istate->cache[pos]->ce_flags & CE_SKIP_WORKTREE)
 							nr_bulk_skip++;
 						istate->cache[pos]->ce_flags &= ~CE_SKIP_WORKTREE;
+						istate->cache[pos]->HACK_vfs_flags |= HACK_VFS__CE_IS_TRACKED_BY_GIT;
 						pos++;
 					}
 				}
@@ -298,6 +301,7 @@ void apply_virtualfilesystem(struct index_state *istate)
 						if (ce->ce_flags & CE_SKIP_WORKTREE)
 							nr_explicit_skip++;
 						ce->ce_flags &= ~CE_SKIP_WORKTREE;
+						ce->HACK_vfs_flags |= HACK_VFS__CE_IS_TRACKED_BY_GIT;
 					}
 					else {
 						nr_unknown++;
@@ -308,6 +312,7 @@ void apply_virtualfilesystem(struct index_state *istate)
 						if (istate->cache[pos]->ce_flags & CE_SKIP_WORKTREE)
 							nr_explicit_skip++;
 						istate->cache[pos]->ce_flags &= ~CE_SKIP_WORKTREE;
+						istate->cache[pos]->HACK_vfs_flags |= HACK_VFS__CE_IS_TRACKED_BY_GIT;
 					}
 					else {
 						nr_unknown++;
