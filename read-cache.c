@@ -2936,8 +2936,12 @@ static int do_write_index(struct index_state *istate, struct tempfile *tempfile,
 		struct strbuf sb = STRBUF_INIT;
 
 		cache_tree_write(&sb, istate->cache_tree);
+
+		trace2_region_enter("cache_tree", "extension/write", NULL);
 		err = write_index_ext_header(&c, &eoie_c, newfd, CACHE_EXT_TREE, sb.len) < 0
 			|| ce_write(&c, newfd, sb.buf, sb.len) < 0;
+		trace2_region_leave("cache_tree", "extension/write", NULL);
+
 		strbuf_release(&sb);
 		if (err)
 			return -1;

@@ -526,7 +526,12 @@ static void write_one(struct strbuf *buffer, struct cache_tree *it,
 
 void cache_tree_write(struct strbuf *sb, struct cache_tree *root)
 {
+	trace2_region_enter("cache_tree", "write_one", NULL);
+
 	write_one(sb, root, "", 0);
+
+	trace2_data_intmax("cache_tree", NULL, "write_size", (intmax_t)sb->len);
+	trace2_region_leave("cache_tree", "write_one", NULL);
 }
 
 static struct cache_tree *read_one(const char **buffer, unsigned long *size_p)
@@ -615,9 +620,20 @@ static struct cache_tree *read_one(const char **buffer, unsigned long *size_p)
 
 struct cache_tree *cache_tree_read(const char *buffer, unsigned long size)
 {
+	struct cache_tree *p;
+
 	if (buffer[0])
 		return NULL; /* not the whole tree */
-	return read_one(&buffer, &size);
+
+	trace2_region_enter("cache_tree", "read_one", NULL);
+	trace2_data_intmax("cache_tree", NULL, "read_size", (intmax_t)size);
+
+	p = read_one(&buffer, &size);
+
+	trace2_region_leave("cache_tree", "read_one", NULL);
+
+	return p;
+	
 }
 
 static struct cache_tree *cache_tree_find(struct cache_tree *it, const char *path)
