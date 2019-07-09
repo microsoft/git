@@ -1738,7 +1738,10 @@ static int read_index_extension(struct index_state *istate,
 {
 	switch (CACHE_EXT(ext)) {
 	case CACHE_EXT_TREE:
+		trace2_region_enter("index", "read/extension/cache_tree", NULL);
 		istate->cache_tree = cache_tree_read(data, sz);
+		trace2_data_intmax("index", NULL, "read/extension/cache_tree/bytes", (intmax_t)sz);
+		trace2_region_leave("index", "read/extension/cache_tree", NULL);
 		break;
 	case CACHE_EXT_RESOLVE_UNDO:
 		istate->resolve_undo = resolve_undo_read(data, sz);
@@ -2990,9 +2993,13 @@ static int do_write_index(struct index_state *istate, struct tempfile *tempfile,
 	if (!strip_extensions && !drop_cache_tree && istate->cache_tree) {
 		struct strbuf sb = STRBUF_INIT;
 
+		trace2_region_enter("index", "write/extension/cache_tree", NULL);
 		cache_tree_write(&sb, istate->cache_tree);
 		err = write_index_ext_header(&c, &eoie_c, newfd, CACHE_EXT_TREE, sb.len) < 0
 			|| ce_write(&c, newfd, sb.buf, sb.len) < 0;
+		trace2_data_intmax("index", NULL, "write/extension/cache_tree/bytes", (intmax_t)sb.len);
+		trace2_region_leave("index", "write/extension/cache_tree", NULL);
+
 		strbuf_release(&sb);
 		if (err)
 			return -1;
