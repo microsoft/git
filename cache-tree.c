@@ -275,8 +275,8 @@ static void discard_unused_subtrees(struct cache_tree *it)
 	}
 }
 
-static int cache_tree_fully_valid_recursive(struct object_database *odb,
-					    struct cache_tree *it)
+static int cache_tree_fully_valid_recursive_1(struct object_database *odb,
+					      struct cache_tree *it)
 {
 	int i;
 	if (!it)
@@ -286,10 +286,22 @@ static int cache_tree_fully_valid_recursive(struct object_database *odb,
 			    ODB_HAS_OBJECT_RECHECK_PACKED | ODB_HAS_OBJECT_FETCH_PROMISOR))
 		return 0;
 	for (i = 0; i < it->subtree_nr; i++) {
-		if (!cache_tree_fully_valid_recursive(odb, it->down[i]->cache_tree))
+		if (!cache_tree_fully_valid_recursive_1(odb, it->down[i]->cache_tree))
 			return 0;
 	}
 	return 1;
+}
+
+static int cache_tree_fully_valid_recursive(struct object_database *odb,
+					    struct cache_tree *it)
+{
+	int result;
+
+	trace2_region_enter("cache_tree", "fully_valid", NULL);
+	result = cache_tree_fully_valid_recursive_1(odb, it);
+	trace2_region_leave("cache_tree", "fully_valid", NULL);
+
+	return result;
 }
 
 int cache_tree_fully_valid(struct index_state *istate)
