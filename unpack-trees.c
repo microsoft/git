@@ -1886,6 +1886,8 @@ int unpack_trees(unsigned len, struct tree_desc *t, struct unpack_trees_options 
 	if (o->dir)
 		BUG("o->dir is for internal use only");
 
+	trace2_region_enter("exp", "unpack_trees", NULL);
+
 	trace_performance_enter();
 	trace2_region_enter("unpack_trees", "unpack_trees", the_repository);
 
@@ -2085,6 +2087,7 @@ done:
 	}
 	trace2_region_leave("unpack_trees", "unpack_trees", the_repository);
 	trace_performance_leave("unpack_trees");
+	trace2_region_leave("exp", "unpack_trees", NULL);
 	return ret;
 
 return_failed:
