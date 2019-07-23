@@ -1,3 +1,5 @@
+THIS IS A TEST.
+
 How to Contribute to Git for Windows
 ====================================
 
