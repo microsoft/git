@@ -401,8 +401,12 @@ static int check_updates(struct unpack_trees_options *o,
 	struct progress *progress;
 	struct checkout state = CHECKOUT_INIT;
 	int i;
+	intmax_t sum_unlink = 0;
+	intmax_t sum_prefetch = 0;
+	intmax_t sum_checkout = 0;
 
 	trace_performance_enter();
+	trace2_region_enter("unpack_trees", "check_updates", NULL);
 	state.force = 1;
 	state.quiet = 1;
 	state.refresh_cache = 1;
@@ -431,6 +435,7 @@ static int check_updates(struct unpack_trees_options *o,
 		if (ce->ce_flags & CE_WT_REMOVE) {
 			display_progress(progress, ++cnt);
 			unlink_entry(ce);
+			sum_unlink++;
 		}
 	}
 
@@ -461,6 +466,7 @@ static int check_updates(struct unpack_trees_options *o,
 		}
 		promisor_remote_get_direct(the_repository,
 					   to_fetch.oid, to_fetch.nr);
+		sum_prefetch = to_fetch.nr;
 		oid_array_clear(&to_fetch);
 	}
 	for (i = 0; i < index->cache_nr; i++) {
@@ -473,6 +479,7 @@ static int check_updates(struct unpack_trees_options *o,
 			display_progress(progress, ++cnt);
 			ce->ce_flags &= ~CE_UPDATE;
 			errs |= checkout_entry(ce, &state, NULL, NULL);
+			sum_checkout++;
 		}
 	}
 	stop_progress(&progress);
@@ -481,6 +488,14 @@ static int check_updates(struct unpack_trees_options *o,
 
 	if (o->clone)
 		report_collided_checkout(index);
+
+	if (sum_unlink > 0)
+		trace2_data_intmax("unpack_trees", NULL, "check_updates/nr_unlink", sum_unlink);
+	if (sum_prefetch > 0)
+		trace2_data_intmax("unpack_trees", NULL, "check_updates/nr_prefetch", sum_prefetch);
+	if (sum_checkout > 0)
+		trace2_data_intmax("unpack_trees", NULL, "check_updates/nr_write", sum_checkout);
+	trace2_region_leave("unpack_trees", "check_updates", NULL);
 
 	trace_performance_leave("check_updates");
 	return errs != 0;
@@ -1511,10 +1526,9 @@ static int clear_ce_flags(struct index_state *istate,
 					_("Updating index flags"),
 					istate->cache_nr);
 
-	xsnprintf(label, sizeof(label), "clear_ce_flags(0x%08lx,0x%08lx)",
+	xsnprintf(label, sizeof(label), "clear_ce_flags/0x%08lx_0x%08lx",
 		  (unsigned long)select_mask, (unsigned long)clear_mask);
 	trace2_region_enter("unpack_trees", label, the_repository);
-
 	rval = clear_ce_flags_1(istate,
 				istate->cache,
 				istate->cache_nr,
@@ -1596,7 +1610,7 @@ int unpack_trees(unsigned len, struct tree_desc *t, struct unpack_trees_options 
 	if (len > MAX_UNPACK_TREES)
 		die("unpack_trees takes at most %d trees", MAX_UNPACK_TREES);
 
-	trace2_region_enter("exp", "unpack_trees", NULL);
+	trace2_region_enter("unpack_trees", "unpack_trees", NULL);
 	nr_unpack_entry_at_start = get_nr_unpack_entry();
 
 	trace_performance_enter();
@@ -1676,9 +1690,9 @@ int unpack_trees(unsigned len, struct tree_desc *t, struct unpack_trees_options 
 		}
 
 		trace_performance_enter();
-		trace2_region_enter("exp", "traverse_trees", the_repository);
+		trace2_region_enter("unpack_trees", "traverse_trees", the_repository);
 		ret = traverse_trees(o->src_index, len, t, &info);
-		trace2_region_leave("exp", "traverse_trees", the_repository);
+		trace2_region_leave("unpack_trees", "traverse_trees", the_repository);
 		trace_performance_leave("traverse_trees");
 		if (ret < 0)
 			goto return_failed;
@@ -1769,7 +1783,7 @@ done:
 	trace_performance_leave("unpack_trees");
 	trace2_data_intmax("unpack_trees", NULL, "unpack_trees/nr_unpack_entries",
 			   (intmax_t)(get_nr_unpack_entry() - nr_unpack_entry_at_start));
-	trace2_region_leave("exp", "unpack_trees", NULL);
+	trace2_region_leave("unpack_trees", "unpack_trees", NULL);
 	return ret;
 
 return_failed:
