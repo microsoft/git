@@ -33,7 +33,7 @@ static struct tr2_dst tr2dst_event = { TR2_SYSENV_EVENT, 0, 0, 0, 0 };
  * event target.  Use the TR2_SYSENV_EVENT_NESTING setting to increase
  * region details in the event target.
  */
-static int tr2env_event_max_nesting_levels = 2;
+static int tr2env_event_max_nesting_levels = 4;
 
 /*
  * Use the TR2_SYSENV_EVENT_BRIEF to omit the <time>, <file>, and
