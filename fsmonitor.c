@@ -3,6 +3,7 @@
 #include "dir.h"
 #include "ewah/ewok.h"
 #include "fsmonitor.h"
+#include "fsmonitor-ipc.h"
 #include "run-command.h"
 #include "strbuf.h"
 
@@ -154,6 +155,17 @@ static int query_fsmonitor(int version, const char *last_update, struct strbuf *
 
 	if (!core_fsmonitor)
 		return -1;
+
+	if (!strcmp(core_fsmonitor, ":internal:")) {
+#ifdef HAVE_FSMONITOR_DAEMON_BACKEND
+		return fsmonitor_ipc__send_query(last_update, query_result);
+#else
+		/* Fake a trivial response. */
+		warning(_("fsmonitor--daemon unavailable; falling back"));
+		strbuf_add(query_result, "/", 2);
+		return 0;
+#endif
+	}
 
 	strvec_push(&cp.args, core_fsmonitor);
 	strvec_pushf(&cp.args, "%d", version);
