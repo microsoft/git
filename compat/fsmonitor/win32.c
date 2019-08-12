@@ -69,7 +69,9 @@ struct fsmonitor_daemon_state *fsmonitor_listen(struct fsmonitor_daemon_state *s
 			normalize_path(info, &path);
 
 			special = fsmonitor_special_path(state, path.buf,
-							 path.len);
+							 path.len,
+							 info->Action ==
+							 FILE_ACTION_REMOVED);
 
 			if (!special &&
 			    fsmonitor_queue_path(state, &queue, path.buf,
@@ -79,6 +81,10 @@ struct fsmonitor_daemon_state *fsmonitor_listen(struct fsmonitor_daemon_state *s
 				error("could not queue '%s'; exiting",
 				      path.buf);
 				return state;
+			} else if (special == FSMONITOR_DAEMON_QUIT) {
+				CloseHandle(dir);
+				/* force-quit */
+				exit(0);
 			} else if (special < 0)
 				return state;
 
