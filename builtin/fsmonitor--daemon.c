@@ -145,10 +145,13 @@ static int paths_cmp(const void *data, const struct hashmap_entry *he1,
 }
 
 int fsmonitor_special_path(struct fsmonitor_daemon_state *state,
-			   const char *path, size_t len)
+			   const char *path, size_t len, int was_deleted)
 {
 	if (len < 4 || fspathncmp(path, ".git", 4) || (path[4] && path[4] != '/'))
 		return 0;
+
+	if (was_deleted && (len == 4 || len == 5))
+		return FSMONITOR_DAEMON_QUIT;
 
 	return 1;
 }
