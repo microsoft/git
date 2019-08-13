@@ -1390,6 +1390,7 @@ static int check_exist_and_connected(struct ref *ref_map)
 {
 	struct ref *rm = ref_map;
 	struct check_connected_options opt = CHECK_CONNECTED_INIT;
+	enum odb_has_object_flags flags = ODB_HAS_OBJECT_RECHECK_PACKED;
 	struct ref *r;
 
 	/*
@@ -1411,11 +1412,15 @@ static int check_exist_and_connected(struct ref *ref_map)
 
 	/*
 	 * check_connected() allows objects to merely be promised, but
-	 * we need all direct targets to exist.
+	 * we need all direct targets to exist. A virtualized object store
+	 * may need to fetch those targets through its object providers.
 	 */
+	if (gvfs_virtualize_objects(the_repository))
+		flags |= ODB_HAS_OBJECT_FETCH_PROMISOR;
+
 	for (r = rm; r; r = r->next) {
 		if (!odb_has_object(the_repository->objects, &r->old_oid,
-				    ODB_HAS_OBJECT_RECHECK_PACKED))
+				    flags))
 			return -1;
 	}
 

@@ -6,6 +6,7 @@
 #include "gettext.h"
 #include "gvfs.h"
 #include "hashmap.h"
+#include "gvfs-helper-client.h"
 #include "hex.h"
 #include "hook.h"
 #include "lockfile.h"
@@ -676,6 +677,7 @@ static enum odb_read_status do_oid_object_info_extended(struct object_database *
 	int already_retried = 0;
 	bool corrupt = false;
 	int tried_hook = 0;
+	int tried_gvfs_helper = 0;
 
 	if (flags & OBJECT_INFO_LOOKUP_REPLACE)
 		real = lookup_replace_object(odb->repo, oid);
@@ -688,6 +690,7 @@ retry:
 		return 0;
 
 	while (1) {
+		extern int core_use_gvfs_helper;
 		struct odb_source *source;
 
 		for (source = odb->sources; source; source = source->next) {
@@ -697,6 +700,28 @@ retry:
 				goto out;
 			if (ret != ODB_READ_NOT_FOUND)
 				corrupt = true;
+		}
+
+		if (core_use_gvfs_helper && !tried_gvfs_helper &&
+		    !(flags & OBJECT_INFO_SKIP_FETCH_OBJECT)) {
+			enum gh_client__created ghc;
+
+			gh_client__get_immediate(real, &ghc);
+			tried_gvfs_helper = 1;
+
+			/*
+			 * Retry the lookup IIF `gvfs-helper` created one
+			 * or more new packfiles or loose objects.
+			 */
+			if (ghc != GHC__CREATED__NOTHING)
+				continue;
+
+			/*
+			 * If `gvfs-helper` fails, we just want to return -1.
+			 * But allow the other providers to have a shot at it.
+			 * (At least until we have a chance to consolidate
+			 * them.)
+			 */
 		}
 
 		/*
@@ -714,8 +739,13 @@ retry:
 				if (ret != ODB_READ_NOT_FOUND)
 					corrupt = true;
 			}
-			if (gvfs_virtualize_objects(odb->repo) && !tried_hook) {
+			if (gvfs_virtualize_objects(odb->repo) && !tried_hook &&
+			    !(flags & OBJECT_INFO_SKIP_FETCH_OBJECT)) {
+				// TODO Assert or at least trace2 if gvfs-helper
+				// TODO was tried and failed and then read-object-hook
+				// TODO is successful at getting this object.
 				tried_hook = 1;
+				// TODO BUG? Should 'oid' be 'real' ?
 				if (!read_object_process(odb->repo, oid))
 					goto retry;
 			}
