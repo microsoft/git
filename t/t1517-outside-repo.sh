@@ -124,7 +124,7 @@ do
 	daemon | \
 	difftool--helper | filter-branch | format-rev | fsck-objects | \
 	get-tar-commit-id | \
-	gui | gui--askpass | \
+	gui | gui--askpass | gvfs-helper | \
 	http-backend | http-fetch | http-push | init-db | \
 	merge-octopus | merge-one-file | merge-resolve | mergetool | \
 	mktag | p4 | p4.py | pickaxe | remote-ftp | remote-ftps | \
