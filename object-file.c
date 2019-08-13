@@ -37,6 +37,7 @@
 #include "sigchain.h"
 #include "sub-process.h"
 #include "pkt-line.h"
+#include "gvfs-helper-client.h"
 
 /* The maximum size for an object header. */
 #define MAX_HEADER_LEN 32
@@ -1678,7 +1679,7 @@ static int do_oid_object_info_extended(struct repository *r,
 	const struct object_id *real = oid;
 	int already_retried = 0;
 	int tried_hook = 0;
-
+	int tried_gvfs_helper = 0;
 
 	if (flags & OBJECT_INFO_LOOKUP_REPLACE)
 		real = lookup_replace_object(r, oid);
@@ -1719,13 +1720,41 @@ retry:
 		if (!loose_object_info(r, real, oi, flags))
 			return 0;
 
+		if (core_use_gvfs_helper && !tried_gvfs_helper) {
+			enum gh_client__created ghc;
+
+			if (flags & OBJECT_INFO_SKIP_FETCH_OBJECT)
+				return -1;
+
+			gh_client__get_immediate(real, &ghc);
+			tried_gvfs_helper = 1;
+
+			/*
+			 * Retry the lookup IIF `gvfs-helper` created one
+			 * or more new packfiles or loose objects.
+			 */
+			if (ghc != GHC__CREATED__NOTHING)
+				continue;
+
+			/*
+			 * If `gvfs-helper` fails, we just want to return -1.
+			 * But allow the other providers to have a shot at it.
+			 * (At least until we have a chance to consolidate
+			 * them.)
+			 */
+		}
+
 		/* Not a loose object; someone else may have just packed it. */
 		if (!(flags & OBJECT_INFO_QUICK)) {
 			reprepare_packed_git(r);
 			if (find_pack_entry(r, real, &e))
 				break;
 			if (core_virtualize_objects && !tried_hook) {
+				// TODO Assert or at least trace2 if gvfs-helper
+				// TODO was tried and failed and then read-object-hook
+				// TODO is successful at getting this object.
 				tried_hook = 1;
+				// TODO BUG? Should 'oid' be 'real' ?
 				if (!read_object_process(oid))
 					goto retry;
 			}
