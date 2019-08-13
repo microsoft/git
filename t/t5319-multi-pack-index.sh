@@ -1418,18 +1418,21 @@ test_expect_success 'lookup recovers object whose midx-owning pack was removed' 
 		git add dup &&
 		git commit -m dup &&
 		dup_oid=$(git rev-parse HEAD:dup) &&
+		dup_commit=$(git rev-parse HEAD) &&
 
 		# Roll every object, including dup, into a single big pack.
 		git repack -adq &&
 
 		# Build a second, "moderate" pack that also contains dup, so dup
 		# now lives in two packs that the midx will cover.
-		moderate=$(echo "$dup_oid" |
+		moderate=$(printf "%s\n" "$dup_oid" "$dup_commit" |
 			git pack-objects --quiet $objdir/pack/pack) &&
 
 		# Attribute dup to the moderate pack in the midx.
 		git multi-pack-index write \
 			--preferred-pack="pack-$moderate.idx" &&
+		test_commit child &&
+		git rev-list HEAD >expect-commits &&
 
 		# Simulate a concurrent "git repack" retiring the moderate pack:
 		# its files disappear, but the now-stale midx still names it as
@@ -1441,7 +1444,13 @@ test_expect_success 'lookup recovers object whose midx-owning pack was removed' 
 		# would appear missing even though it is physically present.
 		echo blob >expect &&
 		git cat-file -t "$dup_oid" >actual &&
-		test_cmp expect actual
+		test_cmp expect actual &&
+		GIT_TRACE2_EVENT="$PWD/no-fetch.trace" \
+		git -c core.gvfs=0 -c core.commitGraph=false \
+			-c core.multiPackIndex=true -c core.useGVFSHelper=true \
+			rev-list --missing=print HEAD >actual &&
+		test_cmp expect-commits actual &&
+		test_grep ! child_start no-fetch.trace
 	)
 '
 

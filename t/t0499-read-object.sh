@@ -34,4 +34,95 @@ test_expect_success 'read-object-hook is bypassed when writing objects' '
 	 test_grep ! "$hash" .git/read-object-hook.log)
 '
 
+test_expect_success 'setup no-fetch commit lookups' '
+	git init no-fetch &&
+	test_commit -C no-fetch --no-tag parent &&
+	parent=$(git -C no-fetch rev-parse HEAD) &&
+	test_commit -C no-fetch --no-tag tip &&
+	tip=$(git -C no-fetch rev-parse HEAD) &&
+	parent_path=no-fetch/.git/objects/$(test_oid_to_path "$parent") &&
+	mv "$parent_path" parent-object &&
+	mkdir -p no-fetch/.git/hooks &&
+	write_script no-fetch/.git/hooks/read-object <<-\EOF
+	echo invoked >hook-called
+	exit 1
+	EOF
+'
+
+test_expect_success 'no-fetch commit lookups skip object acquisition' '
+	test_write_lines "$tip" "?$parent" >expect &&
+	for helper in false true
+	do
+		env GIT_TEST_COMMIT_GRAPH=0 \
+			GIT_TRACE2_EVENT="$PWD/no-fetch-$helper.trace" \
+			git -C no-fetch -c core.gvfs=0 -c core.commitGraph=false \
+			-c core.useGVFSHelper=$helper \
+			-c core.virtualizeObjects=true \
+			rev-list --missing=print HEAD >actual &&
+		test_cmp expect actual &&
+		test_path_is_missing no-fetch/hook-called &&
+		test_grep ! child_start "no-fetch-$helper.trace" ||
+		return 1
+	done
+'
+
+test_expect_success 'no-fetch commit lookups still report corruption' '
+	: >"$parent_path" &&
+	for helper in false true
+	do
+		test_must_fail \
+			env GIT_TEST_COMMIT_GRAPH=0 \
+			GIT_TRACE2_EVENT="$PWD/corrupt-$helper.trace" \
+			git -C no-fetch \
+			-c core.gvfs=0 -c core.commitGraph=false \
+			-c core.useGVFSHelper=$helper \
+			-c core.virtualizeObjects=true \
+			rev-list --missing=print HEAD >actual 2>err &&
+		test_grep "fatal: loose object .* is corrupt" err &&
+		test_path_is_missing no-fetch/hook-called &&
+		test_grep ! child_start "corrupt-$helper.trace" ||
+		return 1
+	done
+'
+
+test_expect_success PERL_TEST_HELPERS 'setup fetch with a virtualized ref tip' '
+	git init -b main fetch-server &&
+	git -C fetch-server commit --allow-empty -m only &&
+	server_tip=$(git -C fetch-server rev-parse HEAD) &&
+	server_odb="$(pwd)/fetch-server/.git" &&
+
+	git init -b main fetch-client &&
+	mkdir -p fetch-client/.git/hooks &&
+	sed "1s|/usr/bin/perl|$PERL_PATH|" \
+	   <$TEST_DIRECTORY/t0410/read-object-all \
+	   >fetch-client/.git/hooks/read-object &&
+	chmod +x fetch-client/.git/hooks/read-object &&
+	git -C fetch-client config core.virtualizeobjects true
+'
+
+# The ref tip is not in the client object store and is newer than any
+# pack a GVFS cache server has published. The fetch existence check must
+# allow object acquisition in a virtualized repository so that the
+# read-object hook supplies the tip without a fetch-pack exchange.
+test_expect_success PERL_TEST_HELPERS 'read-object hook runs for missing tip' '
+	test_path_is_missing fetch-client/.git/read-object-hook.log &&
+
+	READ_OBJECT_DIR="$server_odb" \
+	GIT_TRACE2_EVENT="$PWD/fetch.trace" \
+		git -C fetch-client fetch "$(pwd)/fetch-server" \
+		+refs/heads/main:refs/remotes/server/main &&
+
+	echo "$server_tip" >expect &&
+	git -C fetch-client rev-parse refs/remotes/server/main >actual &&
+	test_cmp expect actual &&
+
+	test_grep ! "\"label\":\"fetch_refs\"" fetch.trace &&
+
+	find fetch-client/.git/objects/pack -name "*.pack" >packs &&
+	test_must_be_empty packs &&
+
+	test_path_is_file fetch-client/.git/read-object-hook.log &&
+	test_grep "$server_tip" fetch-client/.git/read-object-hook.log
+'
+
 test_done
