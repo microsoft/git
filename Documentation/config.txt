@@ -380,6 +380,8 @@ include::config/gui.txt[]
 
 include::config/guitool.txt[]
 
+include::config/gvfs.txt[]
+
 include::config/help.txt[]
 
 include::config/http.txt[]
