@@ -22,6 +22,9 @@ struct credential {
 void credential_init(struct credential *);
 void credential_clear(struct credential *);
 
+void credential_init_min_creds(struct credential *,
+			       const struct credential *src);
+
 void credential_fill(struct credential *);
 void credential_approve(struct credential *);
 void credential_reject(struct credential *);

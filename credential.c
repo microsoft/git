@@ -372,3 +372,33 @@ void credential_from_url(struct credential *c, const char *url)
 			*p-- = '\0';
 	}
 }
+
+void credential_init_min_creds(struct credential *c,
+			       const struct credential *src)
+{
+	credential_clear(c);
+
+	/*
+	 * Set flags in a contrived way to:
+	 * () prevent "store" and "erase" calls to credential manager.
+	 * () prevent the config from being scanned.
+	 * () prevent the helpers string-list from being loaded.
+	 */
+	c->approved = 1;
+	c->configured = 1;
+
+	// TODO what to do about use_http_path?
+
+#define CP(f) do {					\
+		if (src->f && *src->f)			\
+			c->f = xstrdup(src->f);		\
+	} while (0)
+
+	CP(username);
+	CP(password);
+	CP(protocol);
+	CP(host);
+	CP(path);
+
+#undef CP
+}

@@ -187,6 +187,11 @@ struct http_get_options {
 	 * request has completed.
 	 */
 	struct string_list *extra_headers;
+
+	/*
+	 * TODO
+	 */
+	struct credential *force_vfs_creds;
 };
 
 /* Return values for http_get_*() */

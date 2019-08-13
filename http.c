@@ -475,6 +475,8 @@ static void init_curl_http_auth(CURL *result)
 	credential_fill(&http_auth);
 
 #if LIBCURL_VERSION_NUM >= 0x071301
+	trace2_printf("u:p %s %s",
+		      http_auth.username, http_auth.password);
 	curl_easy_setopt(result, CURLOPT_USERNAME, http_auth.username);
 	curl_easy_setopt(result, CURLOPT_PASSWORD, http_auth.password);
 #else
@@ -1842,7 +1844,7 @@ static void http_opt_request_remainder(CURL *curl, off_t pos)
 /* http_request() targets */
 #define HTTP_REQUEST_STRBUF	0
 #define HTTP_REQUEST_FILE	1
-
+			 
 static int http_request(const char *url,
 			void *result, int target,
 			const struct http_get_options *options)
@@ -1977,7 +1979,30 @@ static int http_request_reauth(const char *url,
 			       void *result, int target,
 			       struct http_get_options *options)
 {
-	int ret = http_request(url, result, target, options);
+	int ret;
+
+	if (options->force_vfs_creds) {
+		credential_init_min_creds(&http_auth, options->force_vfs_creds);
+
+#ifdef LIBCURL_CAN_HANDLE_AUTH_ANY
+		/*
+		 * Turn off CURLAUTH_ANY when talking to the cache-server.
+		 * It causes the initial request to NOT send creds in order
+		 * to force the 401 and negotiate the best scheme and then
+		 * actually send the creds on the retry.
+		 *
+		 * This is problematic when talking to the cache-servers
+		 * because they send a 400 (with a "A valid Basic Auth..."
+		 * message) rather than a 401 and so the automatic retry
+		 * will never happen (and even if we do force a retry, CURL
+		 * still won't send the creds).
+		 */
+		http_auth_methods = CURLAUTH_BASIC;
+		http_auth_methods_restricted = 1;
+#endif
+	}
+
+	ret = http_request(url, result, target, options);
 
 	if (ret != HTTP_OK && ret != HTTP_REAUTH)
 		return ret;
