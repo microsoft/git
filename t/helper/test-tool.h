@@ -47,6 +47,7 @@ int cmd__sha1(int argc, const char **argv);
 int cmd__sha1_array(int argc, const char **argv);
 int cmd__sha256(int argc, const char **argv);
 int cmd__sigchain(int argc, const char **argv);
+int cmd__quote_buf_pretty(int argc, const char **argv);
 int cmd__strcmp_offset(int argc, const char **argv);
 int cmd__string_list(int argc, const char **argv);
 int cmd__submodule_config(int argc, const char **argv);

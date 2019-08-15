@@ -57,6 +57,7 @@ static struct test_cmd cmds[] = {
 	{ "sha1-array", cmd__sha1_array },
 	{ "sha256", cmd__sha256 },
 	{ "sigchain", cmd__sigchain },
+	{ "quote-buf-pretty", cmd__quote_buf_pretty },
 	{ "strcmp-offset", cmd__strcmp_offset },
 	{ "string-list", cmd__string_list },
 	{ "submodule-config", cmd__submodule_config },
