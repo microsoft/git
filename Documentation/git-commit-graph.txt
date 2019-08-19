@@ -10,7 +10,7 @@ SYNOPSIS
 --------
 [verse]
 'git commit-graph read' [--object-dir <dir>]
-'git commit-graph verify' [--object-dir <dir>] [--shallow]
+'git commit-graph verify' [--object-dir <dir>] [--shallow] [--[no-]progress]
 'git commit-graph write' <options> [--object-dir <dir>]
 
 
@@ -29,6 +29,8 @@ OPTIONS
 	commit-graph file is expected to be in the `<dir>/info` directory and
 	the packfiles are expected to be in `<dir>/pack`.
 
+--[no-]progress::
+	Toggle whether to show progress or not.
 
 COMMANDS
 --------

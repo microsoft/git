@@ -1980,14 +1980,18 @@ int verify_commit_graph(struct repository *r, struct commit_graph *g, int flags)
 	if (verify_commit_graph_error & ~VERIFY_COMMIT_GRAPH_ERROR_HASH)
 		return verify_commit_graph_error;
 
-	progress = start_progress(_("Verifying commits in commit graph"),
-				  g->num_commits);
+	if (flags & COMMIT_GRAPH_PROGRESS)
+		progress = start_progress(_("Verifying commits in commit graph"),
+					g->num_commits);
+
 	for (i = 0; i < g->num_commits; i++) {
 		struct commit *graph_commit, *odb_commit;
 		struct commit_list *graph_parents, *odb_parents;
 		uint32_t max_generation = 0;
 
-		display_progress(progress, i + 1);
+		if (flags & COMMIT_GRAPH_PROGRESS)
+			display_progress(progress, i + 1);
+
 		hashcpy(cur_oid.hash, g->chunk_oid_lookup + g->hash_len * i);
 
 		graph_commit = lookup_commit(r, &cur_oid);
@@ -2067,7 +2071,8 @@ int verify_commit_graph(struct repository *r, struct commit_graph *g, int flags)
 				     graph_commit->date,
 				     odb_commit->date);
 	}
-	stop_progress(&progress);
+	if (flags & COMMIT_GRAPH_PROGRESS)
+		stop_progress(&progress);
 
 	local_error = verify_commit_graph_error;
 

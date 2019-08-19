@@ -116,6 +116,44 @@ test_expect_success 'Add more commits' '
 	git repack
 '
 
+test_expect_success 'commit-graph write displays progress by default i.e. without any progress option' '
+	cd "$TRASH_DIRECTORY/full" &&
+	git commit-graph write 2>progress &&
+	test_file_not_empty progress
+'
+
+test_expect_success 'commit-graph write displays progress with the --progress option' '
+	cd "$TRASH_DIRECTORY/full" &&
+	git commit-graph write --progress 2>progress &&
+	test_file_not_empty progress
+'
+
+test_expect_success 'commit-graph write does not display progress with the --no-progress option' '
+	cd "$TRASH_DIRECTORY/full" &&
+	git commit-graph write --no-progress 2>progress &&
+	test_line_count = 0 progress
+'
+
+test_expect_success 'commit-graph verify displays progress by default i.e. without any progress option' '
+	cd "$TRASH_DIRECTORY/full" &&
+	git commit-graph verify 2>progress &&
+	test_file_not_empty progress
+'
+
+test_expect_success 'commit-graph verify displays progress with the --progress option' '
+	cd "$TRASH_DIRECTORY/full" &&
+	git commit-graph verify --progress 2>progress &&
+	test_file_not_empty progress
+'
+
+test_expect_success 'commit-graph verify does not display progress with the --no-progress option' '
+	cd "$TRASH_DIRECTORY/full" &&
+	git commit-graph verify --no-progress 2>progress &&
+	test_line_count = 0 progress
+'
+
+test_done
+
 # Current graph structure:
 #
 #   __M3___
