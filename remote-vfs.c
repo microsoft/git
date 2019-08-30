@@ -270,10 +270,6 @@ static void choose_mode(void)
 		rv_data.chosen_mode = rv_opts.param__mode;
 		break;
 	}
-
-	// TODO remove this
-	trace2_printf("Mode [param %d] -> [chosen %d]",
-		      rv_opts.param__mode, rv_data.chosen_mode);
 }
 
 //////////////////////////////////////////////////////////////////
@@ -334,17 +330,9 @@ static void lookup_main_url(void)
 	if (!rv_opts.param__remote_name || !*rv_opts.param__remote_name)
 		rv_opts.param__remote_name = "origin";
 
-	// TODO remove this
-	trace2_data_string("remote-vfs", NULL, "remote/name",
-			   rv_opts.param__remote_name);
-
 	rv_data.remote = remote_get(rv_opts.param__remote_name);
 	if (!rv_data.remote->url[0] || !*rv_data.remote->url[0])
 		die("unknown remote '%s'", rv_opts.param__remote_name);
-
-	// TODO remove this
-	trace2_data_string("remote-vfs", NULL, "remote/raw_url",
-			   rv_data.remote->url[0]);
 
 	strbuf_init(&rv_data.buf_main_url, 0);
 
@@ -477,7 +465,6 @@ static void select_cache_server(void)
 	 */
 	strip_auth_from_url(&rv_data.buf_cache_server_url, p_url);
 
-	// TODO remove this
 	trace2_data_string("remote-vfs", NULL, "cache/url",
 			   rv_data.buf_cache_server_url.buf);
 }
@@ -558,9 +545,6 @@ static void build_json_payload__gvfs_objects(struct json_writer *jw_req,
 		jw_array_string(jw_req, oid_to_hex(oid));
 	jw_end(jw_req);
 	jw_end(jw_req);
-
-	// TODO remote this
-	trace2_printf("hello: %s", jw_req->json.buf);
 }
 
 //////////////////////////////////////////////////////////////////
@@ -697,8 +681,6 @@ static void select_odb(void)
 	}
 
 	strbuf_addstr(&rv_data.buf_odb_path, p_odb);
-
-	trace2_printf("assuming ODB '%s'", rv_data.buf_odb_path.buf);
 }
 
 /*
@@ -813,8 +795,8 @@ static void install_packfile(struct tempfile **pp_tempfile,
 
 	strbuf_addstr(&pack_name_tmp, ".pack.temp");
 	strbuf_addstr(&pack_name_dst, ".pack");
-	strbuf_addstr(&idx_name_tmp, "idx.temp");
-	strbuf_addstr(&idx_name_dst, "idx");
+	strbuf_addstr(&idx_name_tmp, ".idx.temp");
+	strbuf_addstr(&idx_name_dst, ".idx");
 
 	// TODO if either pack_name_dst or idx_name_dst already
 	// TODO exists in the ODB, create alternate names so that
@@ -1077,10 +1059,10 @@ static int do_get__into_file(const char *url_base,
 	curl_easy_getinfo(slot->curl, CURLINFO_RESPONSE_CODE,
 			  http_response_code);
 
-	trace2_printf("GET: [ret %d] [http %ld] [curl %d '%s'] [res %ld]",
-		      ret, results.http_connectcode, results.curl_result,
-		      curl_easy_strerror(results.curl_result),
-		      *http_response_code);
+//	trace2_printf("GET: [ret %d] [http %ld] [curl %d '%s'] [res %ld]",
+//		      ret, results.http_connectcode, results.curl_result,
+//		      curl_easy_strerror(results.curl_result),
+//		      *http_response_code);
 
 	strbuf_setlen(error_message, 0);
 	strbuf_addstr(error_message, curl_easy_strerror(results.curl_result));
@@ -1380,11 +1362,11 @@ static int do_post(const char *url_base,
 	curl_easy_getinfo(slot->curl, CURLINFO_RESPONSE_CODE,
 			  http_response_code);
 
-	trace2_printf(
-		"POST: [ret %d] [http %ld] [curl %d '%s'] [ct '%s'] [res %ld]",
-		ret, results.http_connectcode, results.curl_result,
-		curl_easy_strerror(results.curl_result),
-		received_content_type->buf, *http_response_code);
+//	trace2_printf(
+//		"POST: [ret %d] [http %ld] [curl %d '%s'] [ct '%s'] [res %ld]",
+//		ret, results.http_connectcode, results.curl_result,
+//		curl_easy_strerror(results.curl_result),
+//		received_content_type->buf, *http_response_code);
 
 	strbuf_setlen(error_message, 0);
 	strbuf_addstr(error_message, curl_easy_strerror(results.curl_result));
@@ -1559,9 +1541,9 @@ static int rest__post__gvfs_objects(const struct strbuf *post_payload,
 	ret = do_post__with_fallback("gvfs/objects", post_payload, tempfile,
 				     received_content_type, error_message);
 	trace2_data_intmax("remote-vfs", NULL, "POST/result", ret);
-	if (ret == HTTP_OK)
-		trace2_data_string("remote-vfs", NULL, "POST/content-type",
-				   received_content_type->buf);
+//	if (ret == HTTP_OK)
+//		trace2_data_string("remote-vfs", NULL, "POST/content-type",
+//				   received_content_type->buf);
 	trace2_region_leave("remote-vfs", "POST/gvfs/objects", NULL);
 
 	rv_http_cleanup();
@@ -1654,6 +1636,8 @@ static int do_sub_cmd__config(int argc, const char **argv)
 	struct strbuf config_data = STRBUF_INIT;
 	int ret = HTTP_OK;
 
+	trace2_cmd_mode("config");
+
 	finish_init(0);
 
 	trace2_region_enter("remote-vfs", "config", NULL);
@@ -1696,6 +1680,8 @@ static int do_sub_cmd__get_missing(int argc, const char **argv)
 	struct strbuf output_pathname = STRBUF_INIT;
 	int count;
 	int ret = HTTP_OK;
+
+	trace2_cmd_mode("get-missing");
 
 	if (argc > 1 && !strcmp(argv[1], "-h"))
 		usage_with_options(get_missing_usage, get_missing_options);
