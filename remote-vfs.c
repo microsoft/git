@@ -1,3 +1,99 @@
+// TODO Write a man page.  Here are some notes for dogfooding.
+// TODO
+//
+// Usage: git remote-vfs [<main_options>] <sub-command> [<sub-command-options>]
+//
+// <main_options>:
+//
+//     --remote=<remote-name>         // defaults to "origin"
+//
+//     --mode=<mode>                  // defaults to "auto"
+//
+//            auto    := auto-detect whether repo is VFS4G or Scalar mode.
+//            vfs     := force VFS4G mode.
+//            scalar  := force Scalar mode.
+//            none    := assume neither mode.
+//
+//            The <mode> is used to look for mode-specific config settings:
+//            "<mode>.cache-server" and "core.<mode>".
+//
+//            The <mode> is also used to find the mode-specific ODB:
+//            <home-or-root-dir>/.<mode>Cache".
+//
+//            When <mode> is "auto", we look for the above for both products
+//            and select whichever one we find.  If both products have values
+//            defined, we complain.
+//
+//            When <mode> is "none", we assume no cache-server and use the
+//            ".git/objects" ODB.
+//
+//     --fallback                     // boolean. defaults to off
+//
+//            When a fetch from the cache-server fails, automatically
+//            fallback to the main Git server.  This option has no effect
+//            if no cache-server is defined.
+//
+// <sub-command>:
+//
+//     config
+//
+//            Fetch the "gvfs/config" string from the main Git server.
+//
+//     get-missing
+//
+//            Fetch 1 or more "missing" objects.  If a cache-server is
+//            configured, try it first.  Optionally fallback to the main
+//            Git server.
+//
+//            The set of objects is given on stdin and is assumed to be
+//            in rev-list format with the "--missing=print" option that
+//            causes missing objects to print as "?<oid>"; other objects
+//            in the rev-list output are ignored.  [I'll have another
+//            verb later that takes a positive list of objects.]
+//
+//            [Currently] these objects will be requested in a single
+//            batch fetch to the "gvfs/objects" endpoint.  If more than
+//            one object is requested, a packfile will be created in the
+//            chosen ODB with a "vfs-<date>.{pack|idx}" style name.
+//            If only one object is requested, a loose object will be
+//            created (this is a limitation of the GVFS Protocol).
+//
+//            [Currently] no progress is printed.
+//            [Currently] no chunking is done.
+//
+//            <get-missing-options>:
+//
+//                 --depth=<depth>       // defaults to "1"
+//
+//                 --cache-server=<use>  // defaults to "verify"
+//
+//                       verify   := lookup the set of defined cache-servers
+//                                   using "gvfs/config" and confirm that the
+//                                   selected cache-server is well-known.
+//                                   Silently disable the cache-server if not.
+//                                   (See security notes later.)
+//
+//                       error    := verify cache-server and abort if not
+//                                   well-known.
+//
+//                       allow    := do not verify cache-server.  just use it.
+//
+//                       disable  := disable the cache-server and always use
+//                                   the main Git server.
+//
+// Example:
+//
+// $ git -c core.virtualizeobjects=false rev-list --objects --missing=print HEAD~1 >objects.list
+// $ git remote-vfs get-missing <objects.list
+//
+// TODO In this version, we need to turn off "core.virtualizeobjects"
+// TODO when building the list of objects to prevent rev-list from
+// TODO automatically using read-object-hook on them individually
+// TODO (and defeating the whole purpose of this transport).
+//
+// TODO [Currently] we get more credential dialogs than we should.
+//////////////////////////////////////////////////////////////////
+
 #include "cache.h"
 #include "config.h"
 #include "remote.h"
