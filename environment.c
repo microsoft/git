@@ -68,7 +68,7 @@ enum push_default_type push_default = PUSH_DEFAULT_UNSPECIFIED;
 enum object_creation_mode object_creation_mode = OBJECT_CREATION_MODE;
 char *notes_ref_name;
 int grafts_replace_parents = 1;
-int core_apply_sparse_checkout;
+enum sparse_checkout_mode core_sparse_checkout;
 int core_gvfs;
 const char *core_virtualfilesystem;
 int merge_log_config = -1;

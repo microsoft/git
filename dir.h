@@ -4,6 +4,7 @@
 /* See Documentation/technical/api-directory-listing.txt */
 
 #include "cache.h"
+#include "hashmap.h"
 #include "strbuf.h"
 
 struct dir_entry {
@@ -37,6 +38,13 @@ struct exclude {
 	int srcpos;
 };
 
+/* used for hashmaps for cone patterns */
+struct exclude_entry {
+	struct hashmap_entry ent;
+	char *pattern;
+	size_t patternlen;
+};
+
 /*
  * Each excludes file will be parsed into a fresh exclude_list which
  * is appended to the relevant exclude_list_group (either EXC_DIRS or
@@ -55,6 +63,25 @@ struct exclude_list {
 	const char *src;
 
 	struct exclude **excludes;
+
+	/*
+	 * While scanning the excludes, we attempt to match the patterns
+	 * with a more restricted set that allows us to use hashsets for
+	 * matching logic, which is faster than the linear lookup in the
+	 * excludes array above. If non-zero, that check succeeded.
+	 */
+	unsigned use_cone_patterns;
+
+	/*
+	 * Stores paths where everything starting with those paths
+	 * is included.
+	 */
+	struct hashmap recursive_hashmap;
+
+	/*
+	 * Used to check single-level parents of blobs.
+	 */
+	struct hashmap parent_hashmap;
 };
 
 /*
@@ -230,6 +257,10 @@ int read_directory(struct dir_struct *, struct index_state *istate,
 		   const char *path, int len,
 		   const struct pathspec *pathspec);
 
+#define IS_EXCLUDED_UNKNOWN -1
+#define IS_EXCLUDED_NOT_CONTAINS 0
+#define IS_EXCLUDED_CONTAINS_PARENT 1
+#define IS_EXCLUDED_CONTAINS_RECURSIVE 2
 int is_excluded_from_list(const char *pathname, int pathlen,
 			  const char *basename, int *dtype,
 			  struct exclude_list *el,

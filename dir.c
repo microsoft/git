@@ -600,6 +600,99 @@ void parse_exclude_pattern(const char **pattern,
 	*patternlen = len;
 }
 
+static int el_hashmap_cmp(const void *unused_cmp_data,
+			  const void *a, const void *b, const void *key)
+{
+	const struct exclude_entry *ee1 = a;
+	const struct exclude_entry *ee2 = b;
+
+	return strncmp(ee1->pattern, ee2->pattern, ee1->patternlen);
+}
+
+static void add_exclude_to_hashsets(struct exclude_list *el, struct exclude *x)
+{
+	struct exclude_entry *e;
+	char *truncated;
+	char *data = NULL;
+
+	if (!el->use_cone_patterns)
+		return;
+
+	if (x->patternlen >= 4 &&
+	    !strcmp(x->pattern + x->patternlen - 4, "/*/*")) {
+		if (!(x->flags & EXC_FLAG_NEGATIVE)) {
+			/* Not a cone pattern. */
+			el->use_cone_patterns = 0;
+			warning(_("unrecognized pattern: '%s'"), x->pattern);
+			goto clear_hashmaps;
+		}
+
+		truncated = xstrdup(x->pattern);
+		truncated[x->patternlen - 4] = 0;
+
+		e = xmalloc(sizeof(struct exclude_entry));
+		e->pattern = truncated;
+		e->patternlen = x->patternlen - 4;
+		hashmap_entry_init(e, memhash(e->pattern, e->patternlen));
+
+		if (!hashmap_get(&el->recursive_hashmap, e, NULL)) {
+			/* We did not see the "parent" included */
+			warning(_("unrecognized negative pattern: '%s'"), x->pattern);
+			free(truncated);
+			goto clear_hashmaps;
+		}
+
+		hashmap_add(&el->parent_hashmap, e);
+		hashmap_remove(&el->recursive_hashmap, e, &data);
+		free(data);
+		return;
+	}
+
+	if (x->patternlen >= 2 &&
+	    !strcmp(x->pattern + x->patternlen - 2, "/*")) {
+		if (x->flags & EXC_FLAG_NEGATIVE) {
+			warning(_("unrecognized negative pattern: '%s'"), x->pattern);
+			goto clear_hashmaps;
+		}
+
+		e = xmalloc(sizeof(struct exclude_entry));
+
+		truncated = xstrdup(x->pattern);
+		truncated[x->patternlen - 2] = 0;
+		e->pattern = truncated;
+		e->patternlen = x->patternlen - 2;
+		hashmap_entry_init(e, memhash(e->pattern, e->patternlen));
+
+		hashmap_add(&el->recursive_hashmap, e);
+
+		if (hashmap_get(&el->parent_hashmap, e, NULL)) {
+			/* we already included this at the parent level */
+			warning(_("your sparse-checkout file may have issues: pattern '%s' is repeated"),
+				x->pattern);
+			hashmap_remove(&el->parent_hashmap, e, &data);
+			free(data);
+		}
+		return;
+	}
+
+clear_hashmaps:
+	hashmap_free(&el->parent_hashmap, 1);
+	hashmap_free(&el->recursive_hashmap, 1);
+	el->use_cone_patterns = 0;
+}
+
+static int hashmap_contains_path(struct hashmap *map,
+				 struct strbuf *pattern)
+{
+	struct exclude_entry e;
+
+	/* Check straight mapping */
+	e.pattern = pattern->buf;
+	e.patternlen = pattern->len;
+	hashmap_entry_init(&e, memhash(e.pattern, e.patternlen));
+	return !!hashmap_get(map, &e, NULL);
+}
+
 void add_exclude(const char *string, const char *base,
 		 int baselen, struct exclude_list *el, int srcpos)
 {
@@ -624,6 +717,8 @@ void add_exclude(const char *string, const char *base,
 	ALLOC_GROW(el->excludes, el->nr + 1, el->alloc);
 	el->excludes[el->nr++] = x;
 	x->el = el;
+
+	add_exclude_to_hashsets(el, x);
 }
 
 static int read_skip_worktree_file_from_index(const struct index_state *istate,
@@ -892,6 +987,10 @@ static int add_excludes_from_buffer(char *buf, size_t size,
 	int i, lineno = 1;
 	char *entry;
 
+	el->use_cone_patterns = core_sparse_checkout == SPARSE_CHECKOUT_CONE ? 1 : 0;
+	hashmap_init(&el->recursive_hashmap, el_hashmap_cmp, NULL, 0);
+	hashmap_init(&el->parent_hashmap, el_hashmap_cmp, NULL, 0);
+
 	el->filebuf = buf;
 
 	if (skip_utf8_bom(&buf, size))
@@ -1114,13 +1213,16 @@ static struct exclude *last_exclude_matching_from_list(const char *pathname,
 
 /*
  * Scan the list and let the last match determine the fate.
- * Return 1 for exclude, 0 for include and -1 for undecided.
+ * Return 0 for exclude, 1 for include and -1 for undecided.
  */
 int is_excluded_from_list(const char *pathname,
 			  int pathlen, const char *basename, int *dtype,
 			  struct exclude_list *el, struct index_state *istate)
 {
 	struct exclude *exclude;
+	struct strbuf parent_pathname = STRBUF_INIT;
+	int result = IS_EXCLUDED_NOT_CONTAINS;
+	const char *slash_pos;
 
 	/*
 	 * The virtual file system data is used to prevent git from traversing
@@ -1131,13 +1233,54 @@ int is_excluded_from_list(const char *pathname,
 	if (*dtype == DT_UNKNOWN)
 		*dtype = get_dtype(NULL, istate, pathname, pathlen);
 	if (is_excluded_from_virtualfilesystem(pathname, pathlen, *dtype) > 0)
-		return 1;
+		return IS_EXCLUDED_CONTAINS_PARENT;
 
-	exclude = last_exclude_matching_from_list(pathname, pathlen, basename,
-						  dtype, el, istate);
-	if (exclude)
-		return exclude->flags & EXC_FLAG_NEGATIVE ? 0 : 1;
-	return -1; /* undecided */
+	if (!el->use_cone_patterns) {
+		exclude = last_exclude_matching_from_list(pathname, pathlen, basename,
+								dtype, el, istate);
+
+		if (exclude)
+			return exclude->flags & EXC_FLAG_NEGATIVE
+			       ? IS_EXCLUDED_NOT_CONTAINS
+			       : IS_EXCLUDED_CONTAINS_PARENT;
+
+		return IS_EXCLUDED_UNKNOWN; /* undecided */
+	}
+
+	strbuf_addch(&parent_pathname, '/');
+	strbuf_add(&parent_pathname, pathname, pathlen);
+	slash_pos = strrchr(parent_pathname.buf, '/');
+
+	if (slash_pos == parent_pathname.buf) {
+		/* include every file in root */
+		result = IS_EXCLUDED_CONTAINS_PARENT;
+		goto done;
+	}
+
+	strbuf_setlen(&parent_pathname, slash_pos - parent_pathname.buf);
+
+	if (hashmap_contains_path(&el->parent_hashmap, &parent_pathname)) {
+		result = IS_EXCLUDED_CONTAINS_PARENT;
+		goto done;
+	}
+
+	while (parent_pathname.len) {
+		if (hashmap_contains_path(&el->recursive_hashmap,
+					  &parent_pathname)) {
+			result = IS_EXCLUDED_CONTAINS_RECURSIVE;
+			goto done;
+		}
+
+		slash_pos = strrchr(parent_pathname.buf, '/');
+		if (slash_pos == parent_pathname.buf)
+			break;
+
+		strbuf_setlen(&parent_pathname, slash_pos - parent_pathname.buf);
+	}
+
+done:
+	strbuf_release(&parent_pathname);
+	return result;
 }
 
 static struct exclude *last_exclude_matching_from_lists(struct dir_struct *dir,

@@ -1298,15 +1298,18 @@ static int clear_ce_flags_dir(struct index_state *istate,
 {
 	struct cache_entry **cache_end;
 	int dtype = DT_DIR;
-	int ret = is_excluded_from_list(prefix->buf, prefix->len,
-					basename, &dtype, el, istate);
+	int ret;
+	int orig_ret = is_excluded_from_list(prefix->buf, prefix->len,
+					     basename, &dtype, el, istate);
 	int rc;
 
 	strbuf_addch(prefix, '/');
 
 	/* If undecided, use matching result of parent dir in defval */
-	if (ret < 0)
+	if (orig_ret < 0)
 		ret = defval;
+	else
+		ret = orig_ret;
 
 	for (cache_end = cache; cache_end != cache + nr; cache_end++) {
 		struct cache_entry *ce = *cache_end;
@@ -1314,17 +1317,22 @@ static int clear_ce_flags_dir(struct index_state *istate,
 			break;
 	}
 
-	/*
-	 * TODO: check el, if there are no patterns that may conflict
-	 * with ret (iow, we know in advance the incl/excl
-	 * decision for the entire directory), clear flag here without
-	 * calling clear_ce_flags_1(). That function will call
-	 * the expensive is_excluded_from_list() on every entry.
-	 */
-	rc = clear_ce_flags_1(istate, cache, cache_end - cache,
-			      prefix,
-			      select_mask, clear_mask,
-			      el, ret);
+	if (el->use_cone_patterns && orig_ret == IS_EXCLUDED_CONTAINS_RECURSIVE) {
+		struct cache_entry **ce = cache;
+		rc = (cache_end - cache) / sizeof(struct cache_entry *);
+
+		while (ce < cache_end) {
+			(*ce)->ce_flags &= ~clear_mask;
+			ce++;
+		}
+	} else if (el->use_cone_patterns && orig_ret == IS_EXCLUDED_NOT_CONTAINS)
+		rc = (cache_end - cache) / sizeof(struct cache_entry *);
+	else
+		rc = clear_ce_flags_1(istate, cache, cache_end - cache,
+				      prefix,
+				      select_mask, clear_mask,
+				      el, ret);
+
 	strbuf_setlen(prefix, prefix->len - 1);
 	return rc;
 }
@@ -1434,6 +1442,7 @@ static int clear_ce_flags(struct index_state *istate,
 	xsnprintf(label, sizeof(label), "clear_ce_flags/0x%08lx_0x%08lx",
 		  (unsigned long)select_mask, (unsigned long)clear_mask);
 	trace2_region_enter("unpack_trees", label, the_repository);
+
 	rval = clear_ce_flags_1(istate,
 				istate->cache,
 				istate->cache_nr,
@@ -1503,7 +1512,7 @@ int unpack_trees(unsigned len, struct tree_desc *t, struct unpack_trees_options 
 
 	trace_performance_enter();
 	memset(&el, 0, sizeof(el));
-	if (!core_apply_sparse_checkout || !o->update)
+	if (!core_sparse_checkout || !o->update)
 		o->skip_sparse_checkout = 1;
 	if (!o->skip_sparse_checkout) {
 		if (core_virtualfilesystem) {

@@ -660,8 +660,11 @@ core.gvfs::
 --
 
 core.sparseCheckout::
-	Enable "sparse checkout" feature. See section "Sparse checkout" in
-	linkgit:git-read-tree[1] for more information.
+	Enable "sparse checkout" feature. If "false", then sparse-checkout
+	is disabled. If "true", then sparse-checkout is enabled with the full
+	.gitignore pattern set. If "cone", then sparse-checkout is enabled with
+	a restricted pattern set. See linkgit:git-sparse-checkout[1] for more
+	information.
 
 core.abbrev::
 	Set the length object names are abbreviated to.  If

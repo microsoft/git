@@ -151,7 +151,7 @@ static void update_index_from_diff(struct diff_queue_struct *q,
 		 * directory so that they will have the right content and the next
 		 * status call will show modified or untracked files correctly.
 		 */
-		if (core_apply_sparse_checkout && !file_exists(two->path))
+		if (core_sparse_checkout && !file_exists(two->path))
 		{
 			pos = cache_name_pos(two->path, strlen(two->path));
 			if ((pos >= 0 && ce_skip_worktree(active_cache[pos])) && (is_missing || !was_missing))

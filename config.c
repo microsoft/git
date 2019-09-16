@@ -1366,11 +1366,22 @@ static int git_default_core_config(const char *var, const char *value, void *cb)
 	}
 
 	if (!strcmp(var, "core.sparsecheckout")) {
+		int result = git_parse_maybe_bool(value);
+
 		/* virtual file system relies on the sparse checkout logic so force it on */
-		if (core_virtualfilesystem)
-			core_apply_sparse_checkout = 1;
-		else
-			core_apply_sparse_checkout = git_config_bool(var, value);
+		if (core_virtualfilesystem) {
+			core_sparse_checkout = SPARSE_CHECKOUT_FULL;
+			return 0;
+		}
+
+		if (result < 0) {
+			core_sparse_checkout = SPARSE_CHECKOUT_NONE;
+
+			if (!strcasecmp(value, "cone"))
+				core_sparse_checkout = SPARSE_CHECKOUT_CONE;
+		} else
+			core_sparse_checkout = result;
+
 		return 0;
 	}
 
@@ -2393,7 +2404,7 @@ int git_config_get_virtualfilesystem(void)
 		free(default_index_file);
 		if (should_run_hook) {
 			/* virtual file system relies on the sparse checkout logic so force it on */
-			core_apply_sparse_checkout = 1;
+			core_sparse_checkout = SPARSE_CHECKOUT_FULL;
 			return 1;
 		} 
 		core_virtualfilesystem = NULL;

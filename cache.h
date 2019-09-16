@@ -865,13 +865,19 @@ extern char *git_replace_ref_base;
 
 extern int fsync_object_files;
 extern int core_preload_index;
-extern int core_apply_sparse_checkout;
 extern const char *core_virtualfilesystem;
 extern int core_gvfs;
 extern int precomposed_unicode;
 extern int protect_hfs;
 extern int protect_ntfs;
 extern const char *core_fsmonitor;
+
+enum sparse_checkout_mode {
+	SPARSE_CHECKOUT_NONE = 0,
+	SPARSE_CHECKOUT_FULL = 1,
+	SPARSE_CHECKOUT_CONE = 2,
+};
+enum sparse_checkout_mode core_sparse_checkout;
 
 /*
  * Include broken refs in all ref iterations, which will
