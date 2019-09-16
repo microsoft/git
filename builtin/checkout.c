@@ -1144,7 +1144,6 @@ static int switch_branches(const struct checkout_opts *opts,
 	void *path_to_free;
 	struct object_id rev;
 	int flag, writeout_error = 0;
-	int do_merge = 1;
 
 	trace2_cmd_mode("branch");
 
@@ -1171,20 +1170,15 @@ static int switch_branches(const struct checkout_opts *opts,
 		if (!new_branch_info->commit)
 			die(_("You are on a branch yet to be born"));
 		parse_commit_or_die(new_branch_info->commit);
-
-		if (opts->only_merge_on_switching_branches)
-			do_merge = 0;
 	}
 
 	/* optimize the "checkout -b <new_branch> path */
-	if (!do_merge || skip_merge_working_tree(opts, &old_branch_info, new_branch_info)) {
+	if (skip_merge_working_tree(opts, &old_branch_info, new_branch_info)) {
 		if (!checkout_optimize_new_branch && !opts->quiet) {
 			if (read_cache_preload(NULL) < 0)
 				return error(_("index file corrupt"));
 			show_local_changes(&new_branch_info->commit->object, &opts->diff_options);
 		}
-		if (!opts->only_merge_on_switching_branches)
-			warning(_("'git checkout -b <new-branch>' is being deprecated in favor of 'git switch -c <new-branch>'. Please adjust your workflow accordingly."));
 	} else {
 		ret = merge_working_tree(opts, &old_branch_info, new_branch_info, &writeout_error);
 		if (ret) {
@@ -1884,7 +1878,6 @@ int cmd_switch(int argc, const char **argv, const char *prefix)
 	opts.accept_ref = 1;
 	opts.accept_pathspec = 0;
 	opts.switch_branch_doing_nothing_is_ok = 0;
-	opts.only_merge_on_switching_branches = 1;
 	opts.implicit_detach = 0;
 	opts.can_switch_when_in_progress = 0;
 	opts.orphan_from_empty_tree = 1;
