@@ -436,6 +436,7 @@ int cmd_add(int argc, const char **argv, const char *prefix)
 	char *seen = NULL;
 	struct lock_file lock_file = LOCK_INIT;
 
+    trace2_region_enter("add", "reading_config_and_options", NULL);
 	git_config(add_config, NULL);
 
 	argc = parse_options(argc, argv, prefix, builtin_add_options,
@@ -444,6 +445,7 @@ int cmd_add(int argc, const char **argv, const char *prefix)
 		add_interactive = 1;
 	if (add_interactive)
 		exit(interactive_add(argc - 1, argv + 1, prefix, patch_interactive));
+ 	trace2_region_enter("add", "reading_config_and_options", NULL);
 
 	if (edit_interactive)
 		return(edit_patch(argc, argv, prefix));
@@ -504,7 +506,9 @@ int cmd_add(int argc, const char **argv, const char *prefix)
 
 	enable_fscache(0);
 	/* We do not really re-read the index but update the up-to-date flags */
+	trace2_region_enter("add", "preload_index", NULL);
 	preload_index(&the_index, &pathspec, 0);
+	trace2_region_leave("add", "preload_index", NULL);
 
 	if (add_new_files) {
 		int baselen;

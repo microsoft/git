@@ -203,7 +203,9 @@ int fill_directory(struct dir_struct *dir,
 	prefix = prefix_len ? pathspec->items[0].match : "";
 
 	/* Read the directory and prune it */
+	trace2_region_enter("fill_directory", "read_directory", NULL);
 	read_directory(dir, istate, prefix, prefix_len, pathspec);
+	trace2_region_enter("fill_directory", "read_directory", NULL);
 
 	return prefix_len;
 }

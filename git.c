@@ -509,7 +509,9 @@ static int run_builtin(struct cmd_struct *p, int argc, const char **argv)
 	trace2_cmd_list_config();
 
 	validate_cache_entries(the_repository->index);
+	trace2_region_enter("git", "calling_command", the_repository);
 	exit_code = status = p->fn(argc, argv, prefix);
+	trace2_region_leave("git", "calling_command", the_repository);
 	validate_cache_entries(the_repository->index);
 
 	if (status)
