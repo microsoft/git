@@ -2863,6 +2863,13 @@ struct oidtree *odb_loose_cache(struct object_directory *odb,
 	return odb->loose_objects_cache;
 }
 
+void odb_loose_cache_add_new_oid(struct object_directory *odb,
+				 const struct object_id *oid)
+{
+	struct oidtree *cache = odb_loose_cache(odb, oid);
+	append_loose_object(oid, NULL, cache);
+}
+
 void odb_clear_loose_cache(struct object_directory *odb)
 {
 	oidtree_clear(odb->loose_objects_cache);
