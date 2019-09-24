@@ -82,6 +82,14 @@ struct oidtree *odb_source_loose_cache(struct odb_source *source,
 				       const struct object_id *oid);
 
 /*
+ * Add a new object to the loose object cache (possibly after the
+ * cache was populated).  This might be used after dynamically
+ * fetching a missing object.
+ */
+void odb_source_loose_cache_add_new_oid(struct odb_source *source,
+				 const struct object_id *oid);
+
+/*
  * Put in `buf` the name of the file in the local object database that
  * would be used to store a loose object with the specified oid.
  */
