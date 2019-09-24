@@ -2557,6 +2557,39 @@ struct oid_array *odb_loose_cache(struct object_directory *odb,
 	return &odb->loose_objects_cache[subdir_nr];
 }
 
+void odb_loose_cache_add_new_oid(struct object_directory *odb,
+				 const struct object_id *oid)
+{
+	int subdir_nr = oid->hash[0];
+
+	if (subdir_nr < 0 ||
+	    subdir_nr >= ARRAY_SIZE(odb->loose_objects_subdir_seen))
+		BUG("subdir_nr out of range");
+
+	/*
+	 * If the looose object cache already has an oid_array covering
+	 * cell [xx], we assume that the cache was loaded *before* the
+	 * new object was created, so we just need to append our new one
+	 * to the existing array.
+	 *
+	 * Otherwise, cause the [xx] cell to be created by scanning the
+	 * directory.  And since this happens *after* our caller created
+	 * the loose object, we don't need to explicitly add it to the
+	 * array.
+	 *
+	 * TODO If the subdir has not been seen, we don't technically
+	 * TODO need to force load it now.  We could wait and let our
+	 * TODO caller (or whoever requested the missing object) cause
+	 * TODO try to read the xx/ object and fill the cache.
+	 * TODO Not sure it matters either way.
+	 */
+	if (odb->loose_objects_subdir_seen[subdir_nr])
+		append_loose_object(oid, NULL,
+				    &odb->loose_objects_cache[subdir_nr]);
+	else
+		odb_loose_cache(odb, oid);
+}
+
 void odb_clear_loose_cache(struct object_directory *odb)
 {
 	int i;
