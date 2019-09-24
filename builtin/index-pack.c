@@ -812,7 +812,7 @@ static void sha1_object(const void *data, struct object_entry *obj_entry,
 		read_lock();
 		collision_test_needed =
 			repo_has_object_file_with_flags(the_repository, oid,
-							OBJECT_INFO_QUICK);
+							OBJECT_INFO_FOR_PREFETCH);
 		read_unlock();
 	}
 
