@@ -762,6 +762,12 @@ void install_packed_git(struct repository *r, struct packed_git *pack)
 	hashmap_add(&r->objects->pack_map, &pack->packmap_ent);
 }
 
+void install_packed_git_and_mru(struct repository *r, struct packed_git *pack)
+{
+	install_packed_git(r, pack);
+	list_add(&pack->mru, &r->objects->packed_git_mru);
+}
+
 void (*report_garbage)(unsigned seen_bits, const char *path);
 
 static void report_helper(const struct string_list *list,
