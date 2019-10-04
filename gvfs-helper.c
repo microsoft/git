@@ -1049,7 +1049,9 @@ static void create_tempfile_for_loose(
 	strbuf_complete(&buf_path, '/');
 	strbuf_add(&buf_path, hex, 2);
 
-	if (!file_exists(buf_path.buf) && mkdir(buf_path.buf, 0777) == -1) {
+	if (!file_exists(buf_path.buf) &&
+	    mkdir(buf_path.buf, 0777) == -1 &&
+		!file_exists(buf_path.buf)) {
 		strbuf_addf(&status->error_message,
 			    "cannot create directory for loose object '%s'",
 			    buf_path.buf);
