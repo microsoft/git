@@ -89,7 +89,7 @@ int protect_ntfs = PROTECT_NTFS_DEFAULT;
 const char *core_fsmonitor;
 int core_use_gvfs_helper;
 const char *gvfs_cache_server_url;
-const char *gvfs_shared_cache_pathname;
+struct strbuf gvfs_shared_cache_pathname = STRBUF_INIT;
 
 /*
  * The character that begins a commented line in user-editable file
