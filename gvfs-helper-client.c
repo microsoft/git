@@ -205,13 +205,32 @@ static int gh_client__get__receive_response(
 	return err;
 }
 
+/*
+ * Select the preferred ODB for fetching missing objects.
+ * This should be the alternate with the same directory
+ * name as set in `gvfs.sharedCache`.
+ *
+ * Fallback to .git/objects if necessary.
+ */
 static void gh_client__choose_odb(void)
 {
+	struct object_directory *odb;
+
 	if (gh_client__chosen_odb)
 		return;
 
 	prepare_alt_odb(the_repository);
 	gh_client__chosen_odb = the_repository->objects->odb;
+
+	if (!gvfs_shared_cache_pathname.len)
+		return;
+
+	for (odb = the_repository->objects->odb->next; odb; odb = odb->next) {
+		if (!strcmp(odb->path, gvfs_shared_cache_pathname.buf)) {
+			gh_client__chosen_odb = odb;
+			return;
+		}
+	}
 }
 
 static int gh_client__get(enum gh_client__created *p_ghc)
