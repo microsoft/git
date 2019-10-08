@@ -13,6 +13,7 @@
 #include "pkt-line.h"
 #include "quote.h"
 #include "packfile.h"
+#include "hex.h"
 
 static struct oidset gh_client__oidset_queued = OIDSET_INIT;
 static unsigned long gh_client__oidset_count;
@@ -92,6 +93,9 @@ static void gh_client__update_loose_cache(const char *line)
 	struct object_id oid;
 
 	if (!skip_prefix(line, "loose ", &v1_oid))
+		BUG("update_loose_cache: invalid line '%s'", line);
+
+	if (get_oid_hex(v1_oid, &oid))
 		BUG("update_loose_cache: invalid line '%s'", line);
 
 	odb_loose_cache_add_new_oid(gh_client__chosen_odb, &oid);
