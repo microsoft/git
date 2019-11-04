@@ -3,6 +3,7 @@
 
 struct repository;
 struct commit;
+struct object_id;
 
 enum gh_client__created {
 	/*
