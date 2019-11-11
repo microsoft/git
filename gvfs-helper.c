@@ -1131,7 +1131,9 @@ static void gh__run_one_slot(struct active_request_slot *slot,
 		stop_progress(&params->progress);
 
 	if (status->ec == GH__ERROR_CODE__OK && params->b_write_to_file) {
-		if (params->b_is_post && params->object_count > 1)
+		if (params->b_is_post &&
+		    !strcmp(status->content_type.buf,
+			    "application/x-git-packfile"))
 			install_packfile(params, status);
 		else
 			install_loose(params, status);
@@ -2295,10 +2297,10 @@ static void do_req(const char *url_base,
 		if (params->tempfile)
 			delete_tempfile(&params->tempfile);
 
-		if (params->b_is_post && params->object_count > 1)
+		if (params->b_is_post)
 			create_tempfile_for_packfile(params, status, the_repository);
-		else
-			create_tempfile_for_loose(params, status, the_repository);
+
+		create_tempfile_for_loose(params, status, the_repository);
 
 		if (!params->tempfile || status->ec != GH__ERROR_CODE__OK)
 			return;
