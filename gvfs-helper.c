@@ -451,6 +451,8 @@ struct gh__request_params {
 	struct progress *progress;
 
 	struct strbuf e2eid;
+
+	struct string_list *result_list; /* we do not own this */
 };
 
 #define GH__REQUEST_PARAMS_INIT { \
@@ -479,6 +481,7 @@ struct gh__request_params {
 	.progress_msg = STRBUF_INIT, \
 	.progress = NULL, \
 	.e2eid = STRBUF_INIT, \
+	.result_list = NULL, \
 	}
 
 static void gh__request_params__release(struct gh__request_params *params)
@@ -511,6 +514,8 @@ static void gh__request_params__release(struct gh__request_params *params)
 	params->progress = NULL;
 
 	strbuf_release(&params->e2eid);
+
+	params->result_list = NULL; /* we do not own this */
 }
 
 /*
@@ -1871,6 +1876,16 @@ static void install_packfile(struct gh__request_params *params,
 		goto cleanup;
 	}
 
+
+	if (params->result_list) {
+		struct strbuf result_msg = STRBUF_INIT;
+
+		strbuf_addf(&result_msg, "packfile %s",
+			    params->final_packfile_filename.buf);
+		string_list_append(params->result_list, result_msg.buf);
+		strbuf_release(&result_msg);
+	}
+
 cleanup:
 	child_process_clear(&ip);
 }
@@ -1927,8 +1942,19 @@ static void install_loose(struct gh__request_params *params,
 			    "could not install loose object '%s'",
 			    params->loose_path.buf);
 		status->ec = GH__ERROR_CODE__COULD_NOT_INSTALL_LOOSE;
+		goto cleanup;
 	}
 
+	if (params->result_list) {
+		struct strbuf result_msg = STRBUF_INIT;
+
+		strbuf_addf(&result_msg, "loose %s",
+			    oid_to_hex(&params->loose_oid));
+		string_list_append(params->result_list, result_msg.buf);
+		strbuf_release(&result_msg);
+	}
+
+cleanup:
 	strbuf_release(&tmp_path);
 }
 
@@ -2597,7 +2623,7 @@ static void setup_gvfs_objects_progress(struct gh__request_params *params,
 	if (!gh__cmd_opts.show_progress)
 		return;
 
-	if (params->b_is_post && params->object_count > 1) {
+	if (params->b_is_post) {
 		strbuf_addf(&params->progress_base_phase3_msg,
 			    "Receiving packfile %ld/%ld with %ld objects",
 			    num, den, params->object_count);
@@ -2629,6 +2655,8 @@ static void do__http_get__gvfs_object(struct gh__response_status *status,
 
 	params.object_count = 1;
 
+	params.result_list = result_list;
+
 	params.headers = http_copy_default_headers();
 	params.headers = curl_slist_append(params.headers,
 					   "X-TFS-FedAuthRedirect: Suppress");
@@ -2641,16 +2669,6 @@ static void do__http_get__gvfs_object(struct gh__response_status *status,
 
 	do_req__with_fallback(component_url.buf, &params, status);
 
-	if (status->ec == GH__ERROR_CODE__OK) {
-		struct strbuf msg = STRBUF_INIT;
-
-		strbuf_addf(&msg, "loose %s",
-			    oid_to_hex(&params.loose_oid));
-
-		string_list_append(result_list, msg.buf);
-		strbuf_release(&msg);
-	}
-
 	gh__request_params__release(&params);
 	strbuf_release(&component_url);
 }
@@ -2662,7 +2680,7 @@ static void do__http_get__gvfs_object(struct gh__response_status *status,
  * consumed (along with the filename of the resulting packfile).
  *
  * However, if we only have 1 oid (remaining) in the OIDSET, the
- * server will respond to our POST with a loose object rather than
+ * server *MAY* respond to our POST with a loose object rather than
  * a packfile with 1 object.
  *
  * Append a message to the result_list describing the result.
@@ -2693,6 +2711,8 @@ static void do__http_post__gvfs_objects(struct gh__response_status *status,
 
 	params.post_payload = &jw_req.json;
 
+	params.result_list = result_list;
+
 	params.headers = http_copy_default_headers();
 	params.headers = curl_slist_append(params.headers,
 					   "X-TFS-FedAuthRedirect: Suppress");
@@ -2719,20 +2739,6 @@ static void do__http_post__gvfs_objects(struct gh__response_status *status,
 	setup_gvfs_objects_progress(&params, j_pack_num, j_pack_den);
 
 	do_req__with_fallback("gvfs/objects", &params, status);
-
-	if (status->ec == GH__ERROR_CODE__OK) {
-		struct strbuf msg = STRBUF_INIT;
-
-		if (params.object_count > 1)
-			strbuf_addf(&msg, "packfile %s",
-				    params.final_packfile_filename.buf);
-		else
-			strbuf_addf(&msg, "loose %s",
-				    oid_to_hex(&params.loose_oid));
-
-		string_list_append(result_list, msg.buf);
-		strbuf_release(&msg);
-	}
 
 	gh__request_params__release(&params);
 	jw_release(&jw_req);
