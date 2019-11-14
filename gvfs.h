@@ -34,4 +34,8 @@ struct repository;
 int gvfs_config_is_set(struct repository *r, int mask);
 int gvfs_virtualize_objects(struct repository *r);
 
+struct object_database;
+struct odb_source *add_gvfs_shared_cache_to_alternates(struct object_database *odb,
+						       const char *dir);
+
 #endif /* GVFS_H */
