@@ -674,6 +674,14 @@ static int odb_source_loose_write_alternate(struct odb_source *source UNUSED,
 	return error("loose source does not support alternates");
 }
 
+void odb_source_loose_cache_add_new_oid(struct odb_source *source,
+					const struct object_id *oid)
+{
+	struct odb_source_loose *loose = odb_source_loose_downcast(source);
+	struct oidtree *cache = odb_source_loose_cache(loose, oid);
+	append_loose_object(oid, NULL, cache);
+}
+
 static void odb_source_loose_clear_cache(struct odb_source_loose *loose)
 {
 	oidtree_clear(loose->cache);
