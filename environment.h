@@ -236,6 +236,9 @@ extern int assume_unchanged;
 extern unsigned long pack_size_limit_cfg;
 
 extern char *core_virtualfilesystem;
+extern int core_use_gvfs_helper;
+extern char *gvfs_cache_server_url;
+extern struct strbuf gvfs_shared_cache_pathname;
 
 extern int grafts_keep_true_parents;
 
