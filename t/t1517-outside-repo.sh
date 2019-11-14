@@ -130,7 +130,7 @@ do
 	credential-osxkeychain | cvsexportcommit | cvsimport | cvsserver | \
 	daemon | \
 	difftool--helper | format-rev | fsck-objects |  get-tar-commit-id | \
-	gui | gui--askpass | \
+	gui | gui--askpass | gvfs-helper | \
 	http-backend | http-fetch | http-push | init-db | \
 	mktag | p4 | p4.py | pickaxe | remote-ftp | remote-ftps | \
 	remote-http | remote-https | replay | send-email | \
