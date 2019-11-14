@@ -53,6 +53,7 @@ extern void (*report_garbage)(unsigned seen_bits, const char *path);
 
 void reprepare_packed_git(struct repository *r);
 void install_packed_git(struct repository *r, struct packed_git *pack);
+void install_packed_git_and_mru(struct repository *r, struct packed_git *pack);
 
 struct packed_git *get_packed_git(struct repository *r);
 struct list_head *get_packed_git_mru(struct repository *r);
