@@ -35,6 +35,7 @@
 #include "trace2.h"
 #include "wildmatch.h"
 #include "write-or-die.h"
+#include "transport.h"
 
 struct config_source {
 	struct config_source *prev;
