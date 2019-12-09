@@ -21,12 +21,15 @@ my ($version, $time) = @ARGV;
 # Check the hook interface version
 
 if ($version == 1) {
-	# convert nanoseconds to seconds
-	# subtract one second to make sure watchman will return all changes
-	$time = int ($time / 1000000000) - 1;
+	if ($time eq "") {
+		$time = time() - 1;
+	} else {
+		# convert nanoseconds to seconds
+		# subtract one second to make sure watchman will return all changes
+		$time = int ($time / 1000000000) - 1;
+	}
 } else {
-	die "Unsupported query-fsmonitor hook version '$version'.\n" .
-	    "Falling back to scanning...\n";
+	exit 1;
 }
 
 my $git_work_tree;
