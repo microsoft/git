@@ -363,3 +363,21 @@ void tweak_fsmonitor(struct index_state *istate)
 		break;
 	}
 }
+
+#ifdef HAVE_FSMONITOR_DAEMON_BACKEND
+#include "simple-ipc.h"
+
+GIT_PATH_FUNC(git_path_fsmonitor, "fsmonitor")
+
+int fsmonitor_query_daemon(const char *since, struct strbuf *answer)
+{
+	struct strbuf command = STRBUF_INIT;
+	int ret = 0;
+
+	strbuf_addf(&command, "%ld %s", FSMONITOR_VERSION, since);
+	ret = ipc_send_command(git_path_fsmonitor(),
+				command.buf, answer);
+	strbuf_release(&command);
+	return ret;
+}
+#endif
