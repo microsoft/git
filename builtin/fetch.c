@@ -18,6 +18,8 @@
 #include "string-list.h"
 #include "remote.h"
 #include "transport.h"
+#include "gvfs.h"
+#include "gvfs-helper-client.h"
 #include "run-command.h"
 #include "parse-options.h"
 #include "sigchain.h"
@@ -1145,6 +1147,13 @@ static int store_updated_refs(struct display_state *display_state,
 
 		opt.exclude_hidden_refs_section = "fetch";
 		rm = ref_map;
+
+		/*
+		 * Before checking connectivity, be really sure we have the
+		 * latest pack-files loaded into memory.
+		 */
+		reprepare_packed_git(the_repository);
+
 		if (check_connected(iterate_ref_map, &rm, &opt)) {
 			rc = error(_("%s did not send all necessary objects\n"),
 				   display_state->url);
@@ -2368,6 +2377,9 @@ int cmd_fetch(int argc, const char **argv, const char *prefix)
 		}
 	}
 	string_list_remove_duplicates(&list, 0);
+
+	if (core_gvfs & GVFS_PREFETCH_DURING_FETCH)
+		gh_client__prefetch(0, NULL);
 
 	if (negotiate_only) {
 		struct oidset acked_commits = OIDSET_INIT;
