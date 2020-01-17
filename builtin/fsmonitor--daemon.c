@@ -31,6 +31,12 @@ static int fsmonitor_run_daemon(void)
 {
 	die(_("no native fsmonitor daemon available"));
 }
+
+static int fsmonitor_daemon_is_running(void)
+{
+	warning(_("no native fsmonitor daemon available"));
+	return 0;
+}
 #else
 #define FSMONITOR_DAEMON_IS_SUPPORTED 1
 
@@ -164,10 +170,15 @@ static int fsmonitor_run_daemon(void)
 
 int cmd_fsmonitor__daemon(int argc, const char **argv, const char *prefix)
 {
-	enum daemon_mode { QUERY = 0, RUN, IS_SUPPORTED } mode = QUERY;
+	enum daemon_mode {
+		QUERY = 0, RUN, IS_RUNNING, IS_SUPPORTED
+	} mode = QUERY;
 	struct option options[] = {
 		OPT_CMDMODE(0, "query", &mode, N_("query the daemon"), QUERY),
 		OPT_CMDMODE(0, "run", &mode, N_("run the daemon"), RUN),
+		OPT_CMDMODE('t', "is-running", &mode,
+			    N_("test whether the daemon is running"),
+			    IS_RUNNING),
 		OPT_CMDMODE(0, "is-supported", &mode,
 			    N_("determine internal fsmonitor on this platform"),
 			    IS_SUPPORTED),
@@ -208,6 +219,9 @@ int cmd_fsmonitor__daemon(int argc, const char **argv, const char *prefix)
 
 	if (mode == IS_SUPPORTED)
 		return !FSMONITOR_DAEMON_IS_SUPPORTED;
+
+	if (mode == IS_RUNNING)
+		return !fsmonitor_daemon_is_running();
 
 	return !!fsmonitor_run_daemon();
 }
