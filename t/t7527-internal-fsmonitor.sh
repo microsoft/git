@@ -15,7 +15,7 @@ test_expect_success 'can start and stop the daemon' '
 	git init test &&
 	(
 		cd test &&
-		git fsmonitor--daemon --start &&
+		: start the daemon implicitly by querying it &&
 		git fsmonitor--daemon --query 1 0 >actual &&
 		git fsmonitor--daemon --is-running &&
 		nul_to_q <actual >actual.filtered &&
