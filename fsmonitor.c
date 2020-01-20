@@ -385,4 +385,53 @@ int fsmonitor_daemon_is_running(void)
 {
 	return ipc_is_active(git_path_fsmonitor());
 }
+
+/* Let's spin up a new server, returning when it is listening */
+int fsmonitor_spawn_daemon(void)
+{
+#ifndef GIT_WINDOWS_NATIVE
+	const char *args[] = { "fsmonitor--daemon", "--start", NULL };
+
+	return run_command_v_opt_tr2(args, RUN_COMMAND_NO_STDIN | RUN_GIT_CMD,
+				    "fsmonitor");
+#else
+	const char *args[] = { "git", "fsmonitor--daemon", "--run", NULL };
+	int in = open("/dev/null", O_RDONLY);
+	int out = open("/dev/null", O_WRONLY);
+	int ret = 0;
+	pid_t pid = mingw_spawnvpe("git", args, NULL, NULL, in, out, out);
+	HANDLE process;
+
+	if (pid < 0)
+		ret = error(_("could not spawn the fsmonitor daemon"));
+
+	close(in);
+	close(out);
+
+	process = OpenProcess(PROCESS_QUERY_INFORMATION, FALSE, pid);
+	if (!process)
+		return error(_("could not spawn fsmonitor--daemon"));
+
+	/* poll is_running() */
+	while (!ret && !fsmonitor_daemon_is_running()) {
+		DWORD exit_code;
+
+		if (!GetExitCodeProcess(process, &exit_code)) {
+			CloseHandle(process);
+			return error(_("could not query status of spawned "
+				       "fsmonitor--daemon"));
+		}
+
+		if (exit_code != STILL_ACTIVE) {
+			CloseHandle(process);
+			return error(_("fsmonitor--daemon --run stopped; "
+				       "exit code: %ld"), exit_code);
+		}
+
+		sleep_millisec(50);
+	}
+
+	return ret;
+#endif
+}
 #endif
