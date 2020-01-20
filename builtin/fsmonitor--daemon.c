@@ -37,6 +37,12 @@ static int fsmonitor_daemon_is_running(void)
 	warning(_("no native fsmonitor daemon available"));
 	return 0;
 }
+
+static int fsmonitor_stop_daemon(void)
+{
+	warning(_("no native fsmonitor daemon available"));
+	return 0;
+}
 #else
 #define FSMONITOR_DAEMON_IS_SUPPORTED 1
 
@@ -54,6 +60,10 @@ static int handle_client(struct ipc_command_listener *data, const char *command,
 	char *p;
 	struct fsmonitor_queue_item *queue;
 	struct strbuf token = STRBUF_INIT;
+
+	if (!strcmp(command, "quit")) {
+		return SIMPLE_IPC_QUIT;
+	}
 
 	version = strtoul(command, &p, 10);
 	if (version != FSMONITOR_VERSION) {
@@ -174,13 +184,15 @@ static int fsmonitor_run_daemon(int background)
 int cmd_fsmonitor__daemon(int argc, const char **argv, const char *prefix)
 {
 	enum daemon_mode {
-		QUERY = 0, RUN, START, IS_RUNNING, IS_SUPPORTED
+		QUERY = 0, RUN, START, STOP, IS_RUNNING, IS_SUPPORTED
 	} mode = QUERY;
 	struct option options[] = {
 		OPT_CMDMODE(0, "query", &mode, N_("query the daemon"), QUERY),
 		OPT_CMDMODE(0, "run", &mode, N_("run the daemon"), RUN),
 		OPT_CMDMODE(0, "start", &mode, N_("run in the background"),
 			    START),
+		OPT_CMDMODE(0, "stop", &mode, N_("stop the running daemon"),
+			    STOP),
 		OPT_CMDMODE('t', "is-running", &mode,
 			    N_("test whether the daemon is running"),
 			    IS_RUNNING),
@@ -227,6 +239,14 @@ int cmd_fsmonitor__daemon(int argc, const char **argv, const char *prefix)
 
 	if (mode == IS_RUNNING)
 		return !fsmonitor_daemon_is_running();
+
+	if (mode == STOP) {
+		if (fsmonitor_stop_daemon() < 0)
+			die("could not stop daemon");
+		while (fsmonitor_daemon_is_running())
+			sleep_millisec(50);
+		return 0;
+	}
 
 #ifdef GIT_WINDOWS_NATIVE
 	/* Windows cannot daemonize(); emulate it */
