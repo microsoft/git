@@ -12,12 +12,20 @@
 #include "simple-ipc.h"
 
 static const char * const builtin_fsmonitor__daemon_usage[] = {
-	N_("git fsmonitor--daemon [<options>]"),
+	N_("git fsmonitor--daemon [--query] <version> <timestamp>"),
+	N_("git fsmonitor--daemon <command-mode> [<options>...]"),
 	NULL
 };
 
 #ifndef HAVE_FSMONITOR_DAEMON_BACKEND
 #define FSMONITOR_DAEMON_IS_SUPPORTED 0
+#define FSMONITOR_VERSION 0l
+
+static int fsmonitor_query_daemon(const char *unused_since,
+				  struct strbuf *unused_answer)
+{
+	die(_("no native fsmonitor daemon available"));
+}
 
 static int fsmonitor_run_daemon(void)
 {
@@ -156,8 +164,10 @@ static int fsmonitor_run_daemon(void)
 
 int cmd_fsmonitor__daemon(int argc, const char **argv, const char *prefix)
 {
-	enum daemon_mode { IS_SUPPORTED = 0 } mode = IS_SUPPORTED;
+	enum daemon_mode { QUERY = 0, RUN, IS_SUPPORTED } mode = QUERY;
 	struct option options[] = {
+		OPT_CMDMODE(0, "query", &mode, N_("query the daemon"), QUERY),
+		OPT_CMDMODE(0, "run", &mode, N_("run the daemon"), RUN),
 		OPT_CMDMODE(0, "is-supported", &mode,
 			    N_("determine internal fsmonitor on this platform"),
 			    IS_SUPPORTED),
@@ -169,6 +179,30 @@ int cmd_fsmonitor__daemon(int argc, const char **argv, const char *prefix)
 
 	argc = parse_options(argc, argv, prefix, options,
 			     builtin_fsmonitor__daemon_usage, 0);
+
+	if (mode == QUERY) {
+		struct strbuf answer = STRBUF_INIT;
+		int ret;
+		unsigned long version;
+
+		if (argc != 2)
+			usage_with_options(builtin_fsmonitor__daemon_usage,
+					   options);
+
+		version = strtoul(argv[0], NULL, 10);
+		if (version != FSMONITOR_VERSION)
+			die(_("unhandled fsmonitor version %ld (!= %ld)"),
+			      version, FSMONITOR_VERSION);
+
+		ret = fsmonitor_query_daemon(argv[1], &answer);
+		if (ret < 0)
+			die(_("could not query fsmonitor daemon"));
+		write_in_full(1, answer.buf, answer.len);
+		strbuf_release(&answer);
+
+		return 0;
+	}
+
 	if (argc != 0)
 		usage_with_options(builtin_fsmonitor__daemon_usage, options);
 
