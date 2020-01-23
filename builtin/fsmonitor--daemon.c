@@ -70,6 +70,9 @@ static int handle_client(struct ipc_command_listener *data, const char *command,
 	trace2_data_string("fsmonitor", the_repository, "command", command);
 
 	if (!strcmp(command, "quit")) {
+		if (fsmonitor_listen_stop(state))
+			error("Could not terminate watcher thread");
+		sleep_millisec(50);
 		return SIMPLE_IPC_QUIT;
 	}
 
@@ -189,7 +192,6 @@ int fsmonitor_queue_path(struct fsmonitor_daemon_state *state,
 
 static int fsmonitor_run_daemon(int background)
 {
-	pthread_t thread;
 	struct fsmonitor_daemon_state state = { { 0 } };
 	struct ipc_data ipc_data = {
 		.data = {
@@ -208,7 +210,7 @@ static int fsmonitor_run_daemon(int background)
 	pthread_cond_init(&state.initial_cond, NULL);
 
 	pthread_mutex_lock(&state.initial_mutex);
-	if (pthread_create(&thread, NULL,
+	if (pthread_create(&state.watcher_thread, NULL,
 			   (void *(*)(void *)) fsmonitor_listen, &state) < 0)
 		return error(_("could not start fsmonitor listener thread"));
 
