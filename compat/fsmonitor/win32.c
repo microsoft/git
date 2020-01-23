@@ -21,6 +21,14 @@ static int normalize_path(FILE_NOTIFY_INFORMATION *info, struct strbuf *normaliz
 	return strbuf_normalize_path(normalized_path);
 }
 
+int fsmonitor_listen_stop(struct fsmonitor_daemon_state *state)
+{
+	if (!TerminateThread(state->watcher_thread.handle, 1))
+		return -1;
+
+	return 0;
+}
+
 struct fsmonitor_daemon_state *fsmonitor_listen(struct fsmonitor_daemon_state *state)
 {
 	HANDLE dir;

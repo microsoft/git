@@ -111,6 +111,7 @@ struct fsmonitor_daemon_state {
 	struct fsmonitor_queue_item *first;
 	struct fsmonitor_queue_item *last;
 	uint64_t latest_update;
+	pthread_t watcher_thread;
 	pthread_mutex_t queue_update_lock, initial_mutex;
 	pthread_cond_t initial_cond;
 	int initialized;
@@ -141,6 +142,7 @@ int fsmonitor_queue_path(struct fsmonitor_daemon_state *state,
 
 /* This needs to be implemented by the backend */
 struct fsmonitor_daemon_state *fsmonitor_listen(struct fsmonitor_daemon_state *state);
+int fsmonitor_listen_stop(struct fsmonitor_daemon_state *state);
 #endif
 
 #endif
