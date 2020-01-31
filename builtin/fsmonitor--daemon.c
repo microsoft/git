@@ -290,6 +290,9 @@ int cmd_fsmonitor__daemon(int argc, const char **argv, const char *prefix)
 		return 0;
 	}
 
+	if (fsmonitor_daemon_is_running())
+		die("fsmonitor daemon is already running.");
+
 #ifdef GIT_WINDOWS_NATIVE
 	/* Windows cannot daemonize(); emulate it */
 	if (mode == START)
