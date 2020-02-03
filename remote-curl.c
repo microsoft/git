@@ -1169,6 +1169,9 @@ static int fetch_git(struct discovery *heads,
 	struct strvec args = STRVEC_INIT;
 	struct strbuf rpc_result = STRBUF_INIT;
 
+	if (core_use_gvfs_helper)
+		return 0;
+
 	strvec_pushl(&args, "fetch-pack", "--stateless-rpc",
 		     "--stdin", "--lock-pack", NULL);
 	if (options.followtags)
