@@ -36,4 +36,11 @@ test_expect_success 'test gc --auto succeeds when disabled via config' '
 	git gc --auto
 '
 
+test_expect_success 'update-git-for-windows disabled' '
+	test_must_fail git update 2>out &&
+	test_i18ngrep VFS out &&
+	test_must_fail git update-git-for-windows 2>out &&
+	test_i18ngrep VFS out
+'
+
 test_done
