@@ -33,7 +33,8 @@ void packet_buf_write_len(struct strbuf *buf, const char *data, size_t len);
 int packet_flush_gently(int fd);
 int packet_write_fmt_gently(int fd, const char *fmt, ...) __attribute__((format (printf, 2, 3)));
 int write_packetized_from_fd(int fd_in, int fd_out);
-int write_packetized_from_buf(const char *src_in, size_t len, int fd_out);
+int write_packetized_from_buf(const char *src_in, size_t len, int fd_out,
+			      int flush_at_end);
 
 /*
  * Read a packetized line into the buffer, which must be at least size bytes
