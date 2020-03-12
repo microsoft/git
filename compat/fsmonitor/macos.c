@@ -147,6 +147,12 @@ static void fsevent_callback(ConstFSEventStreamRef streamRef,
 		state->latest_update = time;
 		pthread_mutex_unlock(&state->queue_update_lock);
 	}
+
+	for (i = 0; i < state->cookie_list.nr; i++) {
+		fsmonitor_cookie_seen_trigger(state, state->cookie_list.items[i].string);
+	}
+
+	string_list_clear(&state->cookie_list, 0);
 }
 
 struct fsmonitor_daemon_state *fsmonitor_listen(struct fsmonitor_daemon_state *state)

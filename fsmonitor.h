@@ -106,17 +106,32 @@ struct fsmonitor_queue_item {
 	struct fsmonitor_queue_item *previous, *next;
 };
 
+struct fsmonitor_cookie_item {
+	struct hashmap_entry entry;
+	const char *name;
+	pthread_mutex_t seen_lock;
+	pthread_cond_t seen_cond;
+	int seen;
+};
+
+#define FSMONITOR_COOKIE_PREFIX ".watchman-cookie-git-"
+
 struct fsmonitor_daemon_state {
 	struct hashmap paths;
 	struct fsmonitor_queue_item *first;
 	struct fsmonitor_queue_item *last;
 	uint64_t latest_update;
 	pthread_t watcher_thread;
-	pthread_mutex_t queue_update_lock, initial_mutex;
+	pthread_mutex_t queue_update_lock, initial_mutex, cookies_lock;
 	pthread_cond_t initial_cond;
-	int initialized;
+	int initialized, cookie_seq;
+	struct hashmap cookies;
+	struct string_list cookie_list;
 	int error_code;
 };
+
+void fsmonitor_cookie_seen_trigger(struct fsmonitor_daemon_state *state,
+				   const char *cookie_name);
 
 /*
  * Handle special paths. Returns
