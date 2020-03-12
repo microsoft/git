@@ -1134,6 +1134,13 @@ static int store_updated_refs(const char *raw_url, const char *remote_name,
 		struct check_connected_options opt = CHECK_CONNECTED_INIT;
 
 		rm = ref_map;
+
+		/*
+		 * Before checking connectivity, be really sure we have the
+		 * latest pack-files loaded into memory.
+		 */
+		reprepare_packed_git(the_repository);
+
 		if (check_connected(iterate_ref_map, &rm, &opt)) {
 			rc = error(_("%s did not send all necessary objects\n"), url);
 			goto abort;
