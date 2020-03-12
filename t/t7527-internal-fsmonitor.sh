@@ -51,7 +51,6 @@ test_expect_success 'cannot start multiple daemons' '
 clean_repo () {
 	git reset --hard HEAD &&
 	git clean -fd &&
-	sleep 1 &&
 	>.git/trace
 }
 
@@ -77,7 +76,7 @@ test_expect_success 'setup' '
 	test_tick &&
 	git -c core.fsmonitor= commit -m initial &&
 	git config core.fsmonitor :internal: &&
-	git update-index --fsmonitor &&
+	GIT_TRACE2_EVENT="$PWD/.git/trace" git update-index --fsmonitor &&
 	cat >.gitignore <<-\EOF &&
 	.gitignore
 	expect*
@@ -132,8 +131,7 @@ verify_status() {
 	GIT_TRACE2_EVENT="$PWD/.git/trace" git status >actual &&
 	GIT_INDEX=.git/fresh-index git read-tree master &&
 	GIT_INDEX=.git/fresh-index git -c core.fsmonitor= status >expect &&
-	test_cmp expect actual &&
-	sleep 1
+	test_cmp expect actual
 }
 
 test_expect_success 'internal fsmonitor works' '
@@ -210,7 +208,6 @@ test_expect_success 'can stop internal fsmonitor' '
 	then
 		git fsmonitor--daemon --stop
 	fi &&
-	sleep 1 &&
 	test_must_fail git fsmonitor--daemon --is-running
 '
 
