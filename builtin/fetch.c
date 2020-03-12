@@ -1147,6 +1147,13 @@ static int store_updated_refs(struct display_state *display_state,
 
 		opt.exclude_hidden_refs_section = "fetch";
 		rm = ref_map;
+
+		/*
+		 * Before checking connectivity, be really sure we have the
+		 * latest pack-files loaded into memory.
+		 */
+		reprepare_packed_git(the_repository);
+
 		if (check_connected(iterate_ref_map, &rm, &opt)) {
 			rc = error(_("%s did not send all necessary objects\n"),
 				   display_state->url);
