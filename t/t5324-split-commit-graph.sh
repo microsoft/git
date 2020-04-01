@@ -210,8 +210,10 @@ test_expect_success 'test merge stragety constants' '
 		git config core.commitGraph true &&
 		test_line_count = 2 $graphdir/commit-graph-chain &&
 		test_commit 15 &&
-		git commit-graph write --reachable --split --size-multiple=10 --expire-time=1980-01-01 &&
+		touch -m -t 201801010000.00 $graphdir/extra.graph &&
+		git commit-graph write --reachable --split --size-multiple=10 --expire-time=2019-01-01 &&
 		test_line_count = 1 $graphdir/commit-graph-chain &&
+		test_path_is_missing $graphdir/extra.graph &&
 		ls $graphdir/graph-*.graph >graph-files &&
 		test_line_count = 3 graph-files
 	) &&

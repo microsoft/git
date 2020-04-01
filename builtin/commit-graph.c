@@ -140,7 +140,7 @@ static int graph_write(int argc, const char **argv)
 		OPT_INTEGER(0, "size-multiple", &split_opts.size_multiple,
 			N_("maximum ratio between two levels of a split commit-graph")),
 		OPT_EXPIRY_DATE(0, "expire-time", &split_opts.expire_time,
-			N_("maximum number of commits in a non-base split commit-graph")),
+			N_("do not expire files newer than a number of seconds before now")),
 		OPT_END(),
 	};
 
