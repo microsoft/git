@@ -649,6 +649,7 @@ static int wt_deserialize_fd(const struct wt_status *cmd_s, struct wt_status *de
 	/*
 	 * Copy over display-related fields from the current command.
 	 */
+	des_s->repo = cmd_s->repo;
 	des_s->verbose = cmd_s->verbose;
 	/* amend */
 	/* whence */
