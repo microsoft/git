@@ -380,7 +380,8 @@ static struct commit_graph *load_commit_graph_chain(struct repository *r,
 	fp = fopen(chain_name, "r");
 	stat_res = stat(chain_name, &st);
 	free(chain_name);
-	if (!fp) return NULL;
+	if (!fp) 
+		return NULL;
 	if (stat_res ||
 	    st.st_size <= the_hash_algo->hexsz){
 		fclose(fp);
