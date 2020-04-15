@@ -14,9 +14,6 @@ static int early_core_gvfs_config(const char *var, const char *value, void *data
 
 void gvfs_load_config_value(const char *value)
 {
-	if (gvfs_config_loaded)
-		return;
-
 	if (value)
 		core_gvfs = git_config_bool_or_int("core.gvfs", value, &core_gvfs_is_bool);
 	else if (startup_info->have_repository == 0)
@@ -27,12 +24,13 @@ void gvfs_load_config_value(const char *value)
 	/* Turn on all bits if a bool was set in the settings */
 	if (core_gvfs_is_bool && core_gvfs)
 		core_gvfs = -1;
-
-	gvfs_config_loaded = 1;
 }
 
 int gvfs_config_is_set(int mask)
 {
-	gvfs_load_config_value(NULL);
+	if (!gvfs_config_loaded)
+		gvfs_load_config_value(NULL);
+
+	gvfs_config_loaded = 1;
 	return (core_gvfs & mask) == mask;
 }
