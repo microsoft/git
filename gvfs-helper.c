@@ -2820,10 +2820,13 @@ static void do_req(const char *url_base,
 		 * with the main Git server (because the cache-server
 		 * doesn't handle 401s).
 		 *
-		 * TODO Think about if we really need to handle this case.
-		 * TODO Guard with "if (params->sever_type == __MAIN)"
+		 * Set an empty u/p to get CURL to automatically negotiate
+		 * for us.  This is necessary to get NTLM negotiation to work.
+		 * TODO We might want to only do this for the __MAIN server
+		 * (because the cache-server doesn't support it).
 		 */
 		curl_easy_setopt(slot->curl, CURLOPT_HTTPAUTH, CURLAUTH_ANY);
+		curl_easy_setopt(slot->curl, CURLOPT_USERPWD, ":");
 	}
 
 	if (params->progress_base_phase2_msg.len ||
