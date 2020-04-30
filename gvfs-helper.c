@@ -2729,6 +2729,84 @@ static void do_throttle_wait(struct gh__request_params *params,
 	}
 }
 
+static void set_main_creds_on_slot(struct active_request_slot *slot,
+				   const struct credential *creds)
+{
+	assert(creds == &gh__global.main_creds);
+
+	/*
+	 * When talking to the main/origin server, we have 3 modes
+	 * of operation:
+	 *
+	 * [1] The initial request is sent without loading creds
+	 *     and with ANY-AUTH set.  (And the `":"` is a magic
+	 *     value.)
+	 *
+	 *     This allows libcurl to negotiate for us if it can.
+	 *     For example, this allows NTLM to work by magic and
+	 *     we get 200s without ever seeing a 401.  If libcurl
+	 *     cannot negotiate for us, it gives us a 401 (and all
+	 *     of the 401 code in this file responds to that).
+	 *
+	 * [2] A 401 retry will load the main creds and try again.
+	 *     This causes `creds->username`to be non-NULL (even
+	 *     if refers to a zero-length string).  And we assume
+	 *     BASIC Authentication.  (And a zero-length username
+	 *     is a convention for PATs, but then sometimes users
+	 *     put the PAT in their `username` field and leave the
+	 *     `password` field blank.  And that works too.)
+	 *
+	 * [3] Subsequent requests on the same connection use
+	 *     whatever worked before.
+	 */
+	if (creds && creds->username) {
+		curl_easy_setopt(slot->curl, CURLOPT_HTTPAUTH, CURLAUTH_BASIC);
+		curl_easy_setopt(slot->curl, CURLOPT_USERNAME, creds->username);
+		curl_easy_setopt(slot->curl, CURLOPT_PASSWORD, creds->password);
+	} else {
+		curl_easy_setopt(slot->curl, CURLOPT_HTTPAUTH, CURLAUTH_ANY);
+		curl_easy_setopt(slot->curl, CURLOPT_USERPWD, ":");
+	}
+}
+
+static void set_cache_server_creds_on_slot(struct active_request_slot *slot,
+					   const struct credential *creds)
+{
+	assert(creds == &gh__global.cache_creds);
+	assert(creds->username);
+
+	/*
+	 * Things are weird when talking to a cache-server:
+	 *
+	 * [1] They don't send 401s on an auth error, rather they send
+	 *     a 400 (with a nice human-readable string in the html body).
+	 *     This prevents libcurl from doing any negotiation for us.
+	 *
+	 * [2] Cache-servers don't manage their own passwords, but
+	 *     rather require us to send the Basic Authentication
+	 *     username & password that we would send to the main
+	 *     server.  (So yes, we have to get creds validated
+	 *     against the main server creds and substitute them when
+	 *     talking to the cache-server.)
+	 *
+	 * This means that:
+	 *
+	 * [a] We cannot support cache-servers that want to use NTLM.
+	 *
+	 * [b] If we want to talk to a cache-server, we have get the
+	 *     Basic Auth creds for the main server.  And this may be
+	 *     problematic if the libcurl and/or the credential manager
+	 *     insists on using NTML and prevents us from getting them.
+	 *
+	 * So we never try AUTH-ANY and force Basic Auth (if possible).
+	 */
+	if (creds && creds->username) {
+		curl_easy_setopt(slot->curl, CURLOPT_HTTPAUTH, CURLAUTH_BASIC);
+		curl_easy_setopt(slot->curl, CURLOPT_USERNAME, creds->username);
+		curl_easy_setopt(slot->curl, CURLOPT_PASSWORD, creds->password);
+	}
+}
+
 /*
  * Do a single HTTP request WITHOUT robust-retry, auth-retry or fallback.
  */
@@ -2794,40 +2872,10 @@ static void do_req(const char *url_base,
 	curl_easy_setopt(slot->curl, CURLOPT_HEADERFUNCTION, parse_resp_hdr);
 	curl_easy_setopt(slot->curl, CURLOPT_HEADERDATA, params);
 
-	if (creds && creds->username) {
-		/*
-		 * Force CURL to respect the username/password we provide by
-		 * turning off the AUTH-ANY negotiation stuff.
-		 *
-		 * That is, CURLAUTH_ANY causes CURL to NOT send the creds
-		 * on an initial request in order to force a 401 and let it
-		 * negotiate the best auth scheme and then retry.
-		 *
-		 * This is problematic when talking to the cache-servers
-		 * because they send a 400 (with a "A valid Basic Auth..."
-		 * message body) rather than a 401.  This means that the
-		 * the automatic retry will never happen.  And even if we
-		 * do force a retry, CURL still won't send the creds.
-		 *
-		 * So we turn it off and force it use our creds.
-		 */
-		curl_easy_setopt(slot->curl, CURLOPT_HTTPAUTH, CURLAUTH_BASIC);
-		curl_easy_setopt(slot->curl, CURLOPT_USERNAME, creds->username);
-		curl_easy_setopt(slot->curl, CURLOPT_PASSWORD, creds->password);
-	} else {
-		/*
-		 * Turn on the AUTH-ANY negotiation.  This only works
-		 * with the main Git server (because the cache-server
-		 * doesn't handle 401s).
-		 *
-		 * Set an empty u/p to get CURL to automatically negotiate
-		 * for us.  This is necessary to get NTLM negotiation to work.
-		 * TODO We might want to only do this for the __MAIN server
-		 * (because the cache-server doesn't support it).
-		 */
-		curl_easy_setopt(slot->curl, CURLOPT_HTTPAUTH, CURLAUTH_ANY);
-		curl_easy_setopt(slot->curl, CURLOPT_USERPWD, ":");
-	}
+	if (params->server_type == GH__SERVER_TYPE__MAIN)
+		set_main_creds_on_slot(slot, creds);
+	else
+		set_cache_server_creds_on_slot(slot, creds);
 
 	if (params->progress_base_phase2_msg.len ||
 	    params->progress_base_phase3_msg.len) {
@@ -2926,27 +2974,8 @@ static void do_req__to_main(const char *url_component,
 	params->server_type = GH__SERVER_TYPE__MAIN;
 
 	/*
-	 * When talking to the main Git server, we do allow non-auth'd
-	 * initial requests (mainly for testing, since production servers
-	 * will usually always want creds), so we DO NOT force load the
-	 * user's creds here and let the normal 401 mechanism handle things.
-	 * This has a slight perf penalty -- if we're bulk fetching 4000
-	 * objects from a production server, we're going to do a 100K+ byte
-	 * POST just to get a 401 and then repeat the 100K+ byte POST
-	 * with the creds.
-	 *
-	 * TODO Consider making a test or runtime flag to alter this.
-	 * TODO If set/not-set, add a call here to pre-populate the creds.
-	 * TODO
-	 * TODO     lookup_main_creds();
-	 * TODO
-	 *
-	 * TODO Testing with GIT_TRACE_CURL shows that curl will *SOMETIME*
-	 * TODO send an "Expect: 100-continue" and silently handle/eat the
-	 * TODO "HTTP/1.1 100 Continue" before the POST-body is sent,
-	 * TODO so maybe this isn't an issue.  (Other than the extra
-	 * TODO roundtrip for the first set of headers.)  More testing here
-	 * TODO should be performed.
+	 * When talking to the main Git server, we DO NOT preload the
+	 * creds before the first request.
 	 */
 
 	do_req__with_robust_retry(gh__global.main_url, url_component,
@@ -2971,6 +3000,10 @@ static void do_req__to_cache_server(const char *url_component,
 {
 	params->server_type = GH__SERVER_TYPE__CACHE;
 
+	/*
+	 * When talking to a cache-server, DO force load the creds.
+	 * This implicitly preloads the creds to the main server.
+	 */
 	synthesize_cache_server_creds();
 
 	do_req__with_robust_retry(gh__global.cache_server_url, url_component,
