@@ -23,7 +23,9 @@ while (@ARGV) {
 	    # before any "-l*" flags.
 	    $is_debug = 1;
 	}
-	if ("$arg" =~ /^-[DIMGOZ]/) {
+	if ("$arg" =~ /^-I\/mingw(32|64)/) {
+		# eat
+	} elsif ("$arg" =~ /^-[DIMGOZ]/) {
 		push(@cflags, $arg);
 	} elsif ("$arg" eq "-o") {
 		my $file_out = shift @ARGV;
@@ -54,7 +56,8 @@ while (@ARGV) {
 		# need to use that instead?
 		foreach my $flag (@lflags) {
 			if ($flag =~ /^-LIBPATH:(.*)/) {
-				foreach my $l ("libcurl_imp.lib", "libcurl.lib") {
+				my $libcurl = $is_debug ? "libcurl-d.lib" : "libcurl.lib";
+				foreach my $l ("libcurl_imp.lib", $libcurl) {
 					if (-f "$1/$l") {
 						$lib = $l;
 						last;

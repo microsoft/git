@@ -148,6 +148,122 @@ static int opt_parse_porcelain(const struct option *opt, const char *arg, int un
 	return 0;
 }
 
+static int do_serialize = 0;
+static char *serialize_path = NULL;
+
+static int reject_implicit = 0;
+static int do_implicit_deserialize = 0;
+static int do_explicit_deserialize = 0;
+static char *deserialize_path = NULL;
+
+static enum wt_status_deserialize_wait implicit_deserialize_wait = DESERIALIZE_WAIT__UNSET;
+static enum wt_status_deserialize_wait explicit_deserialize_wait = DESERIALIZE_WAIT__UNSET;
+
+/*
+ * --serialize | --serialize=<path>
+ *
+ * Request that we serialize status output rather than or in addition to
+ * printing in any of the established formats.
+ *
+ * Without a path, we write binary serialization data to stdout (and omit
+ * the normal status output).
+ *
+ * With a path, we write binary serialization data to the <path> and then
+ * write normal status output.
+ */
+static int opt_parse_serialize(const struct option *opt, const char *arg, int unset)
+{
+	enum wt_status_format *value = (enum wt_status_format *)opt->value;
+	if (unset || !arg)
+		*value = STATUS_FORMAT_SERIALIZE_V1;
+
+	if (arg) {
+		free(serialize_path);
+		serialize_path = xstrdup(arg);
+	}
+
+	if (do_explicit_deserialize)
+		die("cannot mix --serialize and --deserialize");
+	do_implicit_deserialize = 0;
+
+	do_serialize = 1;
+	return 0;
+}
+
+/*
+ * --deserialize | --deserialize=<path> |
+ * --no-deserialize
+ *
+ * Request that we deserialize status data from some existing resource
+ * rather than performing a status scan.
+ *
+ * The input source can come from stdin or a path given here -- or be
+ * inherited from the config settings.
+ */
+static int opt_parse_deserialize(const struct option *opt, const char *arg, int unset)
+{
+	if (unset) {
+		do_implicit_deserialize = 0;
+		do_explicit_deserialize = 0;
+	} else {
+		if (do_serialize)
+			die("cannot mix --serialize and --deserialize");
+		if (arg) {
+			/* override config or stdin */
+			free(deserialize_path);
+			deserialize_path = xstrdup(arg);
+		}
+		if (!deserialize_path || !*deserialize_path)
+			do_explicit_deserialize = 1; /* read stdin */
+		else if (wt_status_deserialize_access(deserialize_path, R_OK) == 0)
+			do_explicit_deserialize = 1; /* can read from this file */
+		else {
+			/*
+			 * otherwise, silently fallback to the normal
+			 * collection scan
+			 */
+			do_implicit_deserialize = 0;
+			do_explicit_deserialize = 0;
+		}
+	}
+
+	return 0;
+}
+
+static enum wt_status_deserialize_wait parse_dw(const char *arg)
+{
+	int tenths;
+
+	if (!strcmp(arg, "fail"))
+		return DESERIALIZE_WAIT__FAIL;
+	else if (!strcmp(arg, "block"))
+		return DESERIALIZE_WAIT__BLOCK;
+	else if (!strcmp(arg, "no"))
+		return DESERIALIZE_WAIT__NO;
+
+	/*
+	 * Otherwise, assume it is a timeout in tenths of a second.
+	 * If it contains a bogus value, atol() will return zero
+	 * which is OK.
+	 */
+	tenths = atol(arg);
+	if (tenths < 0)
+		tenths = DESERIALIZE_WAIT__NO;
+	return tenths;
+}
+
+static int opt_parse_deserialize_wait(const struct option *opt,
+				      const char *arg,
+				      int unset)
+{
+	if (unset)
+		explicit_deserialize_wait = DESERIALIZE_WAIT__UNSET;
+	else
+		explicit_deserialize_wait = parse_dw(arg);
+
+	return 0;
+}
+
 static int opt_parse_m(const struct option *opt, const char *arg, int unset)
 {
 	struct strbuf *buf = opt->value;
@@ -1081,6 +1197,8 @@ static void handle_untracked_files_arg(struct wt_status *s)
 		s->show_untracked_files = SHOW_NORMAL_UNTRACKED_FILES;
 	else if (!strcmp(untracked_files_arg, "all"))
 		s->show_untracked_files = SHOW_ALL_UNTRACKED_FILES;
+	else if (!strcmp(untracked_files_arg,"complete"))
+		s->show_untracked_files = SHOW_COMPLETE_UNTRACKED_FILES;
 	/*
 	 * Please update $__git_untracked_file_modes in
 	 * git-completion.bash when you add new options
@@ -1320,6 +1438,28 @@ static int git_status_config(const char *k, const char *v, void *cb)
 		s->relative_paths = git_config_bool(k, v);
 		return 0;
 	}
+	if (!strcmp(k, "status.deserializepath")) {
+		/*
+		 * Automatically assume deserialization if this is
+		 * set in the config and the file exists.  Do not
+		 * complain if the file does not exist, because we
+		 * silently fall back to normal mode.
+		 */
+		if (v && *v && access(v, R_OK) == 0) {
+			do_implicit_deserialize = 1;
+			deserialize_path = xstrdup(v);
+		} else {
+			reject_implicit = 1;
+		}
+		return 0;
+	}
+	if (!strcmp(k, "status.deserializewait")) {
+		if (!v || !*v)
+			implicit_deserialize_wait = DESERIALIZE_WAIT__UNSET;
+		else
+			implicit_deserialize_wait = parse_dw(v);
+		return 0;
+	}
 	if (!strcmp(k, "status.showuntrackedfiles")) {
 		if (!v)
 			return config_error_nonbool(k);
@@ -1358,9 +1498,12 @@ int cmd_status(int argc, const char **argv, const char *prefix)
 {
 	static int no_renames = -1;
 	static const char *rename_score_arg = (const char *)-1;
+	static int no_lock_index = 0;
+	static int show_ignored_directory = 0;
 	static struct wt_status s;
 	unsigned int progress_flag = 0;
-	int fd;
+	int try_deserialize;
+	int fd = -1;
 	struct object_id oid;
 	static struct option builtin_status_options[] = {
 		OPT__VERBOSE(&verbose, N_("be verbose")),
@@ -1375,6 +1518,15 @@ int cmd_status(int argc, const char **argv, const char *prefix)
 		OPT_CALLBACK_F(0, "porcelain", &status_format,
 		  N_("version"), N_("machine-readable output"),
 		  PARSE_OPT_OPTARG, opt_parse_porcelain),
+		{ OPTION_CALLBACK, 0, "serialize", &status_format,
+		  N_("path"), N_("serialize raw status data to path or stdout"),
+		  PARSE_OPT_OPTARG | PARSE_OPT_NONEG, opt_parse_serialize },
+		{ OPTION_CALLBACK, 0, "deserialize", NULL,
+		  N_("path"), N_("deserialize raw status data from file"),
+		  PARSE_OPT_OPTARG, opt_parse_deserialize },
+		{ OPTION_CALLBACK, 0, "deserialize-wait", NULL,
+		  N_("fail|block|no"), N_("how to wait if status cache file is invalid"),
+		  PARSE_OPT_OPTARG, opt_parse_deserialize_wait },
 		OPT_SET_INT(0, "long", &status_format,
 			    N_("show status in long format (default)"),
 			    STATUS_FORMAT_LONG),
@@ -1396,6 +1548,13 @@ int cmd_status(int argc, const char **argv, const char *prefix)
 		OPT_CALLBACK_F('M', "find-renames", &rename_score_arg,
 		  N_("n"), N_("detect renames, optionally set similarity index"),
 		  PARSE_OPT_OPTARG | PARSE_OPT_NONEG, opt_parse_rename_score),
+		OPT_BOOL(0, "show-ignored-directory", &show_ignored_directory,
+			N_("(DEPRECATED: use --ignore=matching instead) Only "
+			   "show directories that match an ignore pattern "
+			   "name.")),
+		OPT_BOOL(0, "no-lock-index", &no_lock_index,
+			 N_("(DEPRECATED: use `git --no-optional-locks status` "
+			    "instead) Do not lock the index")),
 		OPT_END(),
 	};
 
@@ -1409,6 +1568,18 @@ int cmd_status(int argc, const char **argv, const char *prefix)
 	finalize_colopts(&s.colopts, -1);
 	finalize_deferred_config(&s);
 
+	if (no_lock_index) {
+		warning("--no-lock-index is deprecated, use --no-optional-locks"
+			" instead");
+		setenv(GIT_OPTIONAL_LOCKS_ENVIRONMENT, "false", 1);
+	}
+
+	if (show_ignored_directory) {
+		warning("--show-ignored-directory was deprecated, use "
+			"--ignored=matching instead");
+		ignored_arg = "matching";
+	}
+
 	handle_untracked_files_arg(&s);
 	handle_ignored_arg(&s);
 
@@ -1416,10 +1587,54 @@ int cmd_status(int argc, const char **argv, const char *prefix)
 	    s.show_untracked_files == SHOW_NO_UNTRACKED_FILES)
 		die(_("Unsupported combination of ignored and untracked-files arguments"));
 
+	if (s.show_untracked_files == SHOW_COMPLETE_UNTRACKED_FILES &&
+	    s.show_ignored_mode == SHOW_NO_IGNORED)
+		die(_("Complete Untracked only supported with ignored files"));
+
 	parse_pathspec(&s.pathspec, 0,
 		       PATHSPEC_PREFER_FULL,
 		       prefix, argv);
 
+	/*
+	 * If we want to try to deserialize status data from a cache file,
+	 * we need to re-order the initialization code.  The problem is that
+	 * this makes for a very nasty diff and causes merge conflicts as we
+	 * carry it forward.  And it easy to mess up the merge, so we
+	 * duplicate some code here to hopefully reduce conflicts.
+	 */
+	try_deserialize = (!do_serialize &&
+			   (do_implicit_deserialize || do_explicit_deserialize));
+
+	/*
+	 * Disable deserialize when verbose is set because it causes us to
+	 * print diffs for each modified file, but that requires us to have
+	 * the index loaded and we don't want to do that (at least not now for
+	 * this seldom used feature).  My fear is that would further tangle
+	 * the merge conflict with upstream.
+	 *
+	 * TODO Reconsider this in the future.
+	 */
+	if (try_deserialize && verbose) {
+		trace2_data_string("status", the_repository, "deserialize/reject",
+				   "args/verbose");
+		try_deserialize = 0;
+	}
+
+	if (try_deserialize)
+		goto skip_init;
+	/*
+	 * If we implicitly received a status cache pathname from the config
+	 * and the file does not exist, we silently reject it and do the normal
+	 * status "collect".  Fake up some trace2 messages to reflect this and
+	 * assist post-processors know this case is different.
+	 */
+	if (!do_serialize && reject_implicit) {
+		trace2_cmd_mode("implicit-deserialize");
+		trace2_data_string("status", the_repository, "deserialize/reject",
+				   "status-cache/access");
+	}
+
+	enable_fscache(0);
 	if (status_format != STATUS_FORMAT_PORCELAIN &&
 	    status_format != STATUS_FORMAT_PORCELAIN_V2)
 		progress_flag = REFRESH_PROGRESS;
@@ -1433,6 +1648,7 @@ int cmd_status(int argc, const char **argv, const char *prefix)
 	else
 		fd = -1;
 
+skip_init:
 	s.is_initial = get_oid(s.reference, &oid) ? 1 : 0;
 	if (!s.is_initial)
 		oidcpy(&s.oid_commit, &oid);
@@ -1449,6 +1665,36 @@ int cmd_status(int argc, const char **argv, const char *prefix)
 			s.rename_score = parse_rename_score(&rename_score_arg);
 	}
 
+	if (try_deserialize) {
+		int result;
+		enum wt_status_deserialize_wait dw = implicit_deserialize_wait;
+		if (explicit_deserialize_wait != DESERIALIZE_WAIT__UNSET)
+			dw = explicit_deserialize_wait;
+		if (dw == DESERIALIZE_WAIT__UNSET)
+			dw = DESERIALIZE_WAIT__NO;
+
+		if (s.relative_paths)
+			s.prefix = prefix;
+
+		trace2_cmd_mode("deserialize");
+		result = wt_status_deserialize(&s, deserialize_path, dw);
+		if (result == DESERIALIZE_OK)
+			return 0;
+		if (dw == DESERIALIZE_WAIT__FAIL)
+			die(_("Rejected status serialization cache"));
+
+		/* deserialize failed, so force the initialization we skipped above. */
+		enable_fscache(1);
+		read_cache_preload(&s.pathspec);
+		refresh_index(&the_index, REFRESH_QUIET|REFRESH_UNMERGED, &s.pathspec, NULL, NULL);
+
+		if (use_optional_locks())
+			fd = hold_locked_index(&index_lock, 0);
+		else
+			fd = -1;
+	}
+
+	trace2_cmd_mode("collect");
 	wt_status_collect(&s);
 
 	if (0 <= fd)
@@ -1457,9 +1703,21 @@ int cmd_status(int argc, const char **argv, const char *prefix)
 	if (s.relative_paths)
 		s.prefix = prefix;
 
+	if (serialize_path) {
+		int fd_serialize = xopen(serialize_path,
+					 O_WRONLY | O_CREAT | O_TRUNC, 0666);
+		if (fd_serialize < 0)
+			die_errno(_("could not serialize to '%s'"),
+				  serialize_path);
+		trace2_cmd_mode("serialize");
+		wt_status_serialize_v1(fd_serialize, &s);
+		close(fd_serialize);
+	}
+
 	wt_status_print(&s);
 	wt_status_collect_free_buffers(&s);
 
+	disable_fscache();
 	return 0;
 }
 

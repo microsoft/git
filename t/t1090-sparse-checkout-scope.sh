@@ -82,4 +82,41 @@ test_expect_success 'in partial clone, sparse checkout only fetches needed blobs
 	test_cmp expect actual
 '
 
+test_expect_success 'checkout does not delete items outside the sparse checkout file' '
+	git checkout master &&
+	git config core.gvfs 8 &&
+	git checkout -b outside &&
+	echo "new file1" >d &&
+	git add d &&
+	git commit -m "branch initial" &&
+	echo "new file1" >e &&
+	git add e &&
+	git commit -m "skipped worktree" &&
+	git update-index --skip-worktree e &&
+	echo "/d" >.git/info/sparse-checkout &&
+	git checkout HEAD^ &&
+	test_path_is_file d &&
+	test_path_is_file e
+'
+
+test_expect_success MINGW 'no unnecessary opendir() with fscache' '
+	git clone . fscache-test &&
+	(
+		cd fscache-test &&
+		git config core.fscache 1 &&
+		echo "/excluded/*" >.git/info/sparse-checkout &&
+		for f in $(test_seq 10)
+		do
+			sha1=$(echo $f | git hash-object -w --stdin) &&
+			git update-index --add \
+				--cacheinfo 100644,$sha1,excluded/$f || break
+		done &&
+		test_tick &&
+		git commit -m excluded &&
+		GIT_TRACE_FSCACHE=1 git status >out 2>err &&
+		grep excluded err >grep.out &&
+		test_line_count = 1 grep.out
+	)
+'
+
 test_done

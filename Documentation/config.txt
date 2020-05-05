@@ -374,6 +374,8 @@ include::config/gui.txt[]
 
 include::config/guitool.txt[]
 
+include::config/gvfs.txt[]
+
 include::config/help.txt[]
 
 include::config/http.txt[]
@@ -431,6 +433,8 @@ include::config/rerere.txt[]
 include::config/reset.txt[]
 
 include::config/sendemail.txt[]
+
+include::config/sendpack.txt[]
 
 include::config/sequencer.txt[]
 

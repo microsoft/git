@@ -16,6 +16,9 @@
 #include "fsmonitor.h"
 #include "object-store.h"
 #include "promisor-remote.h"
+#include "gvfs.h"
+#include "virtualfilesystem.h"
+#include "packfile.h"
 
 /*
  * Error messages expected by scripts out of plumbing commands such as
@@ -398,8 +401,12 @@ static int check_updates(struct unpack_trees_options *o,
 	struct progress *progress;
 	struct checkout state = CHECKOUT_INIT;
 	int i;
+	intmax_t sum_unlink = 0;
+	intmax_t sum_prefetch = 0;
+	intmax_t sum_checkout = 0;
 
 	trace_performance_enter();
+	trace2_region_enter("unpack_trees", "check_updates", NULL);
 	state.force = 1;
 	state.quiet = 1;
 	state.refresh_cache = 1;
@@ -428,6 +435,7 @@ static int check_updates(struct unpack_trees_options *o,
 		if (ce->ce_flags & CE_WT_REMOVE) {
 			display_progress(progress, ++cnt);
 			unlink_entry(ce);
+			sum_unlink++;
 		}
 	}
 
@@ -458,6 +466,7 @@ static int check_updates(struct unpack_trees_options *o,
 		}
 		promisor_remote_get_direct(the_repository,
 					   to_fetch.oid, to_fetch.nr);
+		sum_prefetch = to_fetch.nr;
 		oid_array_clear(&to_fetch);
 	}
 	for (i = 0; i < index->cache_nr; i++) {
@@ -470,6 +479,7 @@ static int check_updates(struct unpack_trees_options *o,
 			display_progress(progress, ++cnt);
 			ce->ce_flags &= ~CE_UPDATE;
 			errs |= checkout_entry(ce, &state, NULL, NULL);
+			sum_checkout++;
 		}
 	}
 	stop_progress(&progress);
@@ -478,6 +488,14 @@ static int check_updates(struct unpack_trees_options *o,
 
 	if (o->clone)
 		report_collided_checkout(index);
+
+	if (sum_unlink > 0)
+		trace2_data_intmax("unpack_trees", NULL, "check_updates/nr_unlink", sum_unlink);
+	if (sum_prefetch > 0)
+		trace2_data_intmax("unpack_trees", NULL, "check_updates/nr_prefetch", sum_prefetch);
+	if (sum_checkout > 0)
+		trace2_data_intmax("unpack_trees", NULL, "check_updates/nr_write", sum_checkout);
+	trace2_region_leave("unpack_trees", "check_updates", NULL);
 
 	trace_performance_leave("check_updates");
 	return errs != 0;
@@ -542,7 +560,9 @@ static int apply_sparse_checkout(struct index_state *istate,
 			ce->ce_flags &= ~CE_SKIP_WORKTREE;
 			return -1;
 		}
-		ce->ce_flags |= CE_WT_REMOVE;
+		if (!gvfs_config_is_set(GVFS_NO_DELETE_OUTSIDE_SPARSECHECKOUT))
+			ce->ce_flags |= CE_WT_REMOVE;
+
 		ce->ce_flags &= ~CE_UPDATE;
 	}
 	if (was_skip_worktree && !ce_skip_worktree(ce)) {
@@ -1425,6 +1445,14 @@ static int clear_ce_flags_1(struct index_state *istate,
 			continue;
 		}
 
+		/* if it's not in the virtual file system, exit early */
+		if (core_virtualfilesystem) {
+			if (is_included_in_virtualfilesystem(ce->name, ce->ce_namelen) > 0)
+				ce->ce_flags &= ~clear_mask;
+			cache++;
+			continue;
+		}
+
 		if (prefix->len && strncmp(ce->name, prefix->buf, prefix->len))
 			break;
 
@@ -1498,7 +1526,7 @@ static int clear_ce_flags(struct index_state *istate,
 					_("Updating index flags"),
 					istate->cache_nr);
 
-	xsnprintf(label, sizeof(label), "clear_ce_flags(0x%08lx,0x%08lx)",
+	xsnprintf(label, sizeof(label), "clear_ce_flags/0x%08lx_0x%08lx",
 		  (unsigned long)select_mask, (unsigned long)clear_mask);
 	trace2_region_enter("unpack_trees", label, the_repository);
 	rval = clear_ce_flags_1(istate,
@@ -1543,7 +1571,9 @@ static void mark_new_skip_worktree(struct pattern_list *pl,
 	 * 2. Widen worktree according to sparse-checkout file.
 	 * Matched entries will have skip_wt_flag cleared (i.e. "in")
 	 */
+	enable_fscache(istate->cache_nr);
 	clear_ce_flags(istate, select_flag, skip_wt_flag, pl, show_progress);
+	disable_fscache();
 }
 
 static void populate_from_existing_patterns(struct unpack_trees_options *o,
@@ -1575,9 +1605,13 @@ int unpack_trees(unsigned len, struct tree_desc *t, struct unpack_trees_options 
 	static struct cache_entry *dfc;
 	struct pattern_list pl;
 	int free_pattern_list = 0;
+	unsigned long nr_unpack_entry_at_start;
 
 	if (len > MAX_UNPACK_TREES)
 		die("unpack_trees takes at most %d trees", MAX_UNPACK_TREES);
+
+	trace2_region_enter("unpack_trees", "unpack_trees", NULL);
+	nr_unpack_entry_at_start = get_nr_unpack_entry();
 
 	trace_performance_enter();
 	if (!core_apply_sparse_checkout || !o->update)
@@ -1585,7 +1619,10 @@ int unpack_trees(unsigned len, struct tree_desc *t, struct unpack_trees_options 
 	if (!o->skip_sparse_checkout && !o->pl) {
 		memset(&pl, 0, sizeof(pl));
 		free_pattern_list = 1;
-		populate_from_existing_patterns(o, &pl);
+		if (core_virtualfilesystem)
+			o->pl = &pl;
+		else
+			populate_from_existing_patterns(o, &pl);
 	}
 
 	memset(&o->result, 0, sizeof(o->result));
@@ -1653,7 +1690,9 @@ int unpack_trees(unsigned len, struct tree_desc *t, struct unpack_trees_options 
 		}
 
 		trace_performance_enter();
+		trace2_region_enter("unpack_trees", "traverse_trees", the_repository);
 		ret = traverse_trees(o->src_index, len, t, &info);
+		trace2_region_leave("unpack_trees", "traverse_trees", the_repository);
 		trace_performance_leave("traverse_trees");
 		if (ret < 0)
 			goto return_failed;
@@ -1742,6 +1781,9 @@ done:
 	if (free_pattern_list)
 		clear_pattern_list(&pl);
 	trace_performance_leave("unpack_trees");
+	trace2_data_intmax("unpack_trees", NULL, "unpack_trees/nr_unpack_entries",
+			   (intmax_t)(get_nr_unpack_entry() - nr_unpack_entry_at_start));
+	trace2_region_leave("unpack_trees", "unpack_trees", NULL);
 	return ret;
 
 return_failed:
@@ -2238,6 +2280,27 @@ static int deleted_entry(const struct cache_entry *ce,
 	}
 	if (!(old->ce_flags & CE_CONFLICTED) && verify_uptodate(old, o))
 		return -1;
+
+	/*
+	 * When marking entries to remove from the index and the working
+	 * directory this option will take into account what the
+	 * skip-worktree bit was set to so that if the entry has the
+	 * skip-worktree bit set it will not be removed from the working
+	 * directory.  This will allow virtualized working directories to
+	 * detect the change to HEAD and use the new commit tree to show
+	 * the files that are in the working directory.
+	 *
+	 * old is the cache_entry that will have the skip-worktree bit set
+	 * which will need to be preserved when the CE_REMOVE entry is added
+	 */
+	if (gvfs_config_is_set(GVFS_NO_DELETE_OUTSIDE_SPARSECHECKOUT) &&
+		old &&
+		old->ce_flags & CE_SKIP_WORKTREE) {
+		add_entry(o, old, CE_REMOVE, 0);
+		invalidate_ce_path(old, o);
+		return 1;
+	}
+
 	add_entry(o, ce, CE_REMOVE, 0);
 	invalidate_ce_path(ce, o);
 	return 1;

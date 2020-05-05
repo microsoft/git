@@ -3346,6 +3346,24 @@ static int checkout_target(struct index_state *istate,
 {
 	struct checkout costate = CHECKOUT_INIT;
 
+	/*
+	 * Do not checkout the entry if the skipworktree bit is set
+	 *
+	 * Both callers of this method (check_preimage and load_current)
+	 * check for the existance of the file before calling this
+	 * method so we know that the file doesn't exist at this point
+	 * and we don't need to perform that check again here.
+	 * We just need to check the skip-worktree and return.
+	 *
+	 * This is to prevent git from creating a file in the
+	 * working directory that has the skip-worktree bit on,
+	 * then updating the index from the patch and not keeping
+	 * the working directory version up to date with what it
+	 * changed the index version to be.
+	 */
+	if (ce_skip_worktree(ce))
+		return 0;
+
 	costate.refresh_cache = 1;
 	costate.istate = istate;
 	if (checkout_entry(ce, &costate, NULL, NULL) ||
@@ -4343,7 +4361,7 @@ static int try_create_file(struct apply_state *state, const char *path,
 		/* Although buf:size is counted string, it also is NUL
 		 * terminated.
 		 */
-		return !!symlink(buf, path);
+		return !!create_symlink(state && state->repo ? state->repo->index : NULL, buf, path);
 
 	fd = open(path, O_CREAT | O_EXCL | O_WRONLY, (mode & 0100) ? 0777 : 0666);
 	if (fd < 0)

@@ -57,6 +57,14 @@ void add_to_alternates_memory(const char *dir);
 struct oid_array *odb_loose_cache(struct object_directory *odb,
 				  const struct object_id *oid);
 
+/*
+ * Add a new object to the loose object cache (possibly after the
+ * cache was populated).  This might be used after dynamically
+ * fetching a missing object.
+ */
+void odb_loose_cache_add_new_oid(struct object_directory *odb,
+				 const struct object_id *oid);
+
 /* Empty the loose object cache for the specified object directory. */
 void odb_clear_loose_cache(struct object_directory *odb);
 

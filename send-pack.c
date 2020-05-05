@@ -2,6 +2,7 @@
 #include "config.h"
 #include "commit.h"
 #include "refs.h"
+#include "gvfs.h"
 #include "object-store.h"
 #include "pkt-line.h"
 #include "sideband.h"
@@ -39,9 +40,19 @@ int option_parse_push_signed(const struct option *opt,
 	die("bad %s argument: %s", opt->long_name, arg);
 }
 
+static int config_use_sideband = 1;
+
+static int send_pack_config(const char *var, const char *value, void *unused)
+{
+	if (!strcmp("sendpack.sideband", var))
+		config_use_sideband = git_config_bool(var, value);
+
+	return 0;
+}
+
 static void feed_object(const struct object_id *oid, FILE *fh, int negative)
 {
-	if (negative &&
+	if (negative && !gvfs_config_is_set(GVFS_MISSING_OK) &&
 	    !has_object_file_with_flags(oid,
 					OBJECT_INFO_SKIP_FETCH_OBJECT |
 					OBJECT_INFO_QUICK))
@@ -369,6 +380,8 @@ int send_pack(struct send_pack_args *args,
 	const char *push_cert_nonce = NULL;
 	struct packet_reader reader;
 
+	git_config(send_pack_config, NULL);
+
 	/* Does the other end support the reporting? */
 	if (server_supports("report-status"))
 		status_report = 1;
@@ -376,7 +389,7 @@ int send_pack(struct send_pack_args *args,
 		allow_deleting_refs = 1;
 	if (server_supports("ofs-delta"))
 		args->use_ofs_delta = 1;
-	if (server_supports("side-band-64k"))
+	if (config_use_sideband && server_supports("side-band-64k"))
 		use_sideband = 1;
 	if (server_supports("quiet"))
 		quiet_supported = 1;

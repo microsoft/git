@@ -3,6 +3,7 @@
 #include "promisor-remote.h"
 #include "config.h"
 #include "transport.h"
+#include "gvfs-helper-client.h"
 
 static char *repository_format_partial_clone;
 static const char *core_partial_clone_filter_default;
@@ -36,6 +37,7 @@ static int fetch_objects(const char *remote_name,
 {
 	struct ref *ref = NULL;
 	int i;
+
 
 	for (i = 0; i < oid_nr; i++) {
 		struct ref *new_ref = alloc_ref(oid_to_hex(&oids[i]));
@@ -196,7 +198,7 @@ struct promisor_remote *promisor_remote_find(const char *remote_name)
 
 int has_promisor_remote(void)
 {
-	return !!promisor_remote_find(NULL);
+	return core_use_gvfs_helper || !!promisor_remote_find(NULL);
 }
 
 static int remove_fetched_oids(struct repository *repo,
@@ -243,6 +245,13 @@ int promisor_remote_get_direct(struct repository *repo,
 
 	if (oid_nr == 0)
 		return 0;
+	if (core_use_gvfs_helper) {
+		enum gh_client__created ghc = GHC__CREATED__NOTHING;
+
+		trace2_data_intmax("bug", the_repository, "fetch_objects/gvfs-helper", oid_nr);
+		gh_client__queue_oid_array(oids, oid_nr);
+		return gh_client__drain_queue(&ghc);
+	}
 
 	promisor_remote_init();
 

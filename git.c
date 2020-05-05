@@ -5,6 +5,8 @@
 #include "run-command.h"
 #include "alias.h"
 #include "shallow.h"
+#include "dir.h"
+#include "gvfs.h"
 
 #define RUN_SETUP		(1<<0)
 #define RUN_SETUP_GENTLY	(1<<1)
@@ -17,6 +19,7 @@
 #define SUPPORT_SUPER_PREFIX	(1<<4)
 #define DELAY_PAGER_CONFIG	(1<<5)
 #define NO_PARSEOPT		(1<<6) /* parse-options is not used */
+#define BLOCK_ON_GVFS_REPO	(1<<7) /* command not allowed in GVFS repos */
 
 struct cmd_struct {
 	const char *cmd;
@@ -403,6 +406,64 @@ static int handle_alias(int *argcp, const char ***argv)
 	return ret;
 }
 
+/* Runs pre/post-command hook */
+static struct argv_array sargv = ARGV_ARRAY_INIT;
+static int run_post_hook = 0;
+static int exit_code = -1;
+
+static int run_pre_command_hook(const char **argv)
+{
+	char *lock;
+	int ret = 0;
+
+	/*
+	 * Ensure the global pre/post command hook is only called for
+	 * the outer command and not when git is called recursively
+	 * or spawns multiple commands (like with the alias command)
+	 */
+	lock = getenv("COMMAND_HOOK_LOCK");
+	if (lock && !strcmp(lock, "true"))
+		return 0;
+	setenv("COMMAND_HOOK_LOCK", "true", 1);
+
+	/* call the hook proc */
+	argv_array_pushv(&sargv, argv);
+	argv_array_pushf(&sargv, "--git-pid=%"PRIuMAX, (uintmax_t)getpid());
+	ret = run_hook_argv(NULL, "pre-command", sargv.argv);
+
+	if (!ret)
+		run_post_hook = 1;
+	return ret;
+}
+
+static int run_post_command_hook(void)
+{
+	char *lock;
+	int ret = 0;
+
+	/*
+	 * Only run post_command if pre_command succeeded in this process
+	 */
+	if (!run_post_hook)
+		return 0;
+	lock = getenv("COMMAND_HOOK_LOCK");
+	if (!lock || strcmp(lock, "true"))
+		return 0;
+
+	argv_array_pushf(&sargv, "--exit_code=%u", exit_code);
+	ret = run_hook_argv(NULL, "post-command", sargv.argv);
+
+	run_post_hook = 0;
+	argv_array_clear(&sargv);
+	setenv("COMMAND_HOOK_LOCK", "false", 1);
+	return ret;
+}
+
+static void post_command_hook_atexit(void)
+{
+	run_post_command_hook();
+}
+
 static int run_builtin(struct cmd_struct *p, int argc, const char **argv)
 {
 	int status, help;
@@ -439,17 +500,25 @@ static int run_builtin(struct cmd_struct *p, int argc, const char **argv)
 	if (!help && p->option & NEED_WORK_TREE)
 		setup_work_tree();
 
+	if (!help && p->option & BLOCK_ON_GVFS_REPO && gvfs_config_is_set(GVFS_BLOCK_COMMANDS))
+		die("'git %s' is not supported on a GVFS repo", p->cmd);
+
+	if (run_pre_command_hook(argv))
+		die("pre-command hook aborted command");
+
 	trace_argv_printf(argv, "trace: built-in: git");
 	trace2_cmd_name(p->cmd);
 	trace2_cmd_list_config();
 	trace2_cmd_list_env_vars();
 
 	validate_cache_entries(the_repository->index);
-	status = p->fn(argc, argv, prefix);
+	exit_code = status = p->fn(argc, argv, prefix);
 	validate_cache_entries(the_repository->index);
 
 	if (status)
 		return status;
+
+	run_post_command_hook();
 
 	/* Somebody closed stdout? */
 	if (fstat(fileno(stdout), &st))
@@ -510,7 +579,7 @@ static struct cmd_struct commands[] = {
 	{ "fmt-merge-msg", cmd_fmt_merge_msg, RUN_SETUP },
 	{ "for-each-ref", cmd_for_each_ref, RUN_SETUP },
 	{ "format-patch", cmd_format_patch, RUN_SETUP },
-	{ "fsck", cmd_fsck, RUN_SETUP },
+	{ "fsck", cmd_fsck, RUN_SETUP | BLOCK_ON_GVFS_REPO},
 	{ "fsck-objects", cmd_fsck, RUN_SETUP },
 	{ "gc", cmd_gc, RUN_SETUP },
 	{ "get-tar-commit-id", cmd_get_tar_commit_id, NO_PARSEOPT },
@@ -548,7 +617,7 @@ static struct cmd_struct commands[] = {
 	{ "pack-refs", cmd_pack_refs, RUN_SETUP },
 	{ "patch-id", cmd_patch_id, RUN_SETUP_GENTLY | NO_PARSEOPT },
 	{ "pickaxe", cmd_blame, RUN_SETUP },
-	{ "prune", cmd_prune, RUN_SETUP },
+	{ "prune", cmd_prune, RUN_SETUP | BLOCK_ON_GVFS_REPO},
 	{ "prune-packed", cmd_prune_packed, RUN_SETUP },
 	{ "pull", cmd_pull, RUN_SETUP | NEED_WORK_TREE },
 	{ "push", cmd_push, RUN_SETUP },
@@ -561,7 +630,7 @@ static struct cmd_struct commands[] = {
 	{ "remote", cmd_remote, RUN_SETUP },
 	{ "remote-ext", cmd_remote_ext, NO_PARSEOPT },
 	{ "remote-fd", cmd_remote_fd, NO_PARSEOPT },
-	{ "repack", cmd_repack, RUN_SETUP },
+	{ "repack", cmd_repack, RUN_SETUP | BLOCK_ON_GVFS_REPO },
 	{ "replace", cmd_replace, RUN_SETUP },
 	{ "rerere", cmd_rerere, RUN_SETUP },
 	{ "reset", cmd_reset, RUN_SETUP },
@@ -581,12 +650,14 @@ static struct cmd_struct commands[] = {
 	{ "stash", cmd_stash, RUN_SETUP | NEED_WORK_TREE },
 	{ "status", cmd_status, RUN_SETUP | NEED_WORK_TREE },
 	{ "stripspace", cmd_stripspace },
-	{ "submodule--helper", cmd_submodule__helper, RUN_SETUP | SUPPORT_SUPER_PREFIX | NO_PARSEOPT },
+	{ "submodule--helper", cmd_submodule__helper, RUN_SETUP | SUPPORT_SUPER_PREFIX | NO_PARSEOPT | BLOCK_ON_GVFS_REPO },
 	{ "switch", cmd_switch, RUN_SETUP | NEED_WORK_TREE },
 	{ "symbolic-ref", cmd_symbolic_ref, RUN_SETUP },
 	{ "tag", cmd_tag, RUN_SETUP | DELAY_PAGER_CONFIG },
 	{ "unpack-file", cmd_unpack_file, RUN_SETUP | NO_PARSEOPT },
 	{ "unpack-objects", cmd_unpack_objects, RUN_SETUP | NO_PARSEOPT },
+	{ "update", cmd_update },
+	{ "update-git-for-windows", cmd_update },
 	{ "update-index", cmd_update_index, RUN_SETUP },
 	{ "update-ref", cmd_update_ref, RUN_SETUP },
 	{ "update-server-info", cmd_update_server_info, RUN_SETUP },
@@ -599,7 +670,7 @@ static struct cmd_struct commands[] = {
 	{ "verify-tag", cmd_verify_tag, RUN_SETUP },
 	{ "version", cmd_version },
 	{ "whatchanged", cmd_whatchanged, RUN_SETUP },
-	{ "worktree", cmd_worktree, RUN_SETUP | NO_PARSEOPT },
+	{ "worktree", cmd_worktree, RUN_SETUP | NO_PARSEOPT | BLOCK_ON_GVFS_REPO },
 	{ "write-tree", cmd_write_tree, RUN_SETUP },
 };
 
@@ -701,13 +772,16 @@ static void execv_dashed_external(const char **argv)
 	 */
 	trace_argv_printf(cmd.args.argv, "trace: exec:");
 
+	if (run_pre_command_hook(cmd.args.argv))
+		die("pre-command hook aborted command");
+
 	/*
 	 * If we fail because the command is not found, it is
 	 * OK to return. Otherwise, we just pass along the status code,
 	 * or our usual generic code if we were not even able to exec
 	 * the program.
 	 */
-	status = run_command(&cmd);
+	exit_code = status = run_command(&cmd);
 
 	/*
 	 * If the child process ran and we are now going to exit, emit a
@@ -718,6 +792,8 @@ static void execv_dashed_external(const char **argv)
 		exit(status);
 	else if (errno != ENOENT)
 		exit(128);
+
+	run_post_command_hook();
 }
 
 static int run_argv(int *argcp, const char ***argv)
@@ -825,6 +901,7 @@ int cmd_main(int argc, const char **argv)
 	}
 
 	trace_command_performance(argv);
+	atexit(post_command_hook_atexit);
 
 	/*
 	 * "git-xxxx" is the same as "git xxxx", but we obviously:
@@ -852,10 +929,14 @@ int cmd_main(int argc, const char **argv)
 	} else {
 		/* The user didn't specify a command; give them help */
 		commit_pager_choice();
+		if (run_pre_command_hook(argv))
+			die("pre-command hook aborted command");
 		printf(_("usage: %s\n\n"), git_usage_string);
 		list_common_cmds_help();
 		printf("\n%s\n", _(git_more_info_string));
-		exit(1);
+		exit_code = 1;
+		run_post_command_hook();
+		exit(exit_code);
 	}
 	cmd = argv[0];
 

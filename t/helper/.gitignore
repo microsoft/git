@@ -1,4 +1,5 @@
 /test-tool
 /test-fake-ssh
+/test-gvfs-protocol
 /test-line-buffer
 /test-svn-fe

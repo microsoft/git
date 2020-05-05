@@ -202,7 +202,7 @@ int credential_read(struct credential *c, FILE *fp)
 {
 	struct strbuf line = STRBUF_INIT;
 
-	while (strbuf_getline_lf(&line, fp) != EOF) {
+	while (strbuf_getline(&line, fp) != EOF) {
 		char *key = line.buf;
 		char *value = strchr(key, '=');
 
@@ -285,6 +285,8 @@ static int run_credential_helper(struct credential *c,
 		helper.out = -1;
 	else
 		helper.no_stdout = 1;
+
+	helper.trace2_child_class = "cred";
 
 	if (start_command(&helper) < 0)
 		return -1;

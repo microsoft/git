@@ -25,6 +25,9 @@
 #include "cache-tree.h"
 #include "submodule.h"
 #include "submodule-config.h"
+#include "strbuf.h"
+#include "quote.h"
+#include "dir.h"
 
 #define REFRESH_INDEX_DELAY_WARNING_IN_MS (2 * 1000)
 
@@ -33,6 +36,7 @@ static const char * const git_reset_usage[] = {
 	N_("git reset [-q] [<tree-ish>] [--] <pathspec>..."),
 	N_("git reset [-q] [--pathspec-from-file [--pathspec-file-nul]] [<tree-ish>]"),
 	N_("git reset --patch [<tree-ish>] [--] [<pathspec>...]"),
+	N_("DEPRECATED: git reset [-q] [--stdin [-z]] [<tree-ish>]"),
 	NULL
 };
 
@@ -127,12 +131,45 @@ static void update_index_from_diff(struct diff_queue_struct *q,
 		struct diff_options *opt, void *data)
 {
 	int i;
+	int pos;
 	int intent_to_add = *(int *)data;
 
 	for (i = 0; i < q->nr; i++) {
 		struct diff_filespec *one = q->queue[i]->one;
+		struct diff_filespec *two = q->queue[i]->two;
 		int is_missing = !(one->mode && !is_null_oid(&one->oid));
+		int was_missing = !two->mode && is_null_oid(&two->oid);
 		struct cache_entry *ce;
+		struct cache_entry *ceBefore;
+		struct checkout state = CHECKOUT_INIT;
+
+		/*
+		 * When using the sparse-checkout feature the cache entries that are
+		 * added here will not have the skip-worktree bit set.
+		 * Without this code there is data that is lost because the files that
+		 * would normally be in the working directory are not there and show as
+		 * deleted for the next status or in the case of added files just disappear.
+		 * We need to create the previous version of the files in the working
+		 * directory so that they will have the right content and the next
+		 * status call will show modified or untracked files correctly.
+		 */
+		if (core_apply_sparse_checkout && !file_exists(two->path))
+		{
+			pos = cache_name_pos(two->path, strlen(two->path));
+			if ((pos >= 0 && ce_skip_worktree(active_cache[pos])) && (is_missing || !was_missing))
+			{
+				state.force = 1;
+				state.refresh_cache = 1;
+				state.istate = &the_index;
+				ceBefore = make_cache_entry(&the_index, two->mode, &two->oid, two->path,
+					0, 0);
+				if (!ceBefore)
+					die(_("make_cache_entry failed for path '%s'"),
+						two->path);
+
+				checkout_entry(ceBefore, &state, NULL, NULL);
+			}
+		}
 
 		if (is_missing && !intent_to_add) {
 			remove_file_from_cache(one->path);
@@ -291,6 +328,7 @@ int cmd_reset(int argc, const char **argv, const char *prefix)
 	struct object_id oid;
 	struct pathspec pathspec;
 	int intent_to_add = 0;
+	int nul_term_line = 0, read_from_stdin = 0;
 	const struct option options[] = {
 		OPT__QUIET(&quiet, N_("be quiet, only report errors")),
 		OPT_SET_INT(0, "mixed", &reset_type,
@@ -310,6 +348,10 @@ int cmd_reset(int argc, const char **argv, const char *prefix)
 				N_("record only the fact that removed paths will be added later")),
 		OPT_PATHSPEC_FROM_FILE(&pathspec_from_file),
 		OPT_PATHSPEC_FILE_NUL(&pathspec_file_nul),
+		OPT_BOOL('z', NULL, &nul_term_line,
+			N_("DEPRECATED (use --pathspec-file-nul instead): paths are separated with NUL character")),
+		OPT_BOOL(0, "stdin", &read_from_stdin,
+				N_("DEPRECATED (use --pathspec-from-file=- instead): read paths from <stdin>")),
 		OPT_END()
 	};
 
@@ -319,6 +361,12 @@ int cmd_reset(int argc, const char **argv, const char *prefix)
 	argc = parse_options(argc, argv, prefix, options, git_reset_usage,
 						PARSE_OPT_KEEP_DASHDASH);
 	parse_args(&pathspec, argv, prefix, patch_mode, &rev);
+
+	if (read_from_stdin) {
+		pathspec_from_file = "-";
+		if (nul_term_line)
+			pathspec_file_nul = 1;
+	}
 
 	if (pathspec_from_file) {
 		if (patch_mode)

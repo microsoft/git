@@ -28,6 +28,7 @@
 #include "blob.h"
 #include "tree.h"
 #include "promisor-remote.h"
+#include "gvfs.h"
 
 #define FAILED_RUN "failed to run %s"
 
@@ -584,6 +585,9 @@ int cmd_gc(int argc, const char **argv, const char *prefix)
 	}
 	if (quiet)
 		argv_array_push(&repack, "-q");
+
+	if ((!auto_gc || (auto_gc && gc_auto_threshold > 0)) && gvfs_config_is_set(GVFS_BLOCK_COMMANDS))
+		die(_("'git gc' is not supported on a GVFS repo"));
 
 	if (auto_gc) {
 		/*

@@ -7,6 +7,7 @@
 #include "strbuf.h"
 #include "string-list.h"
 #include "quote.h"
+#include "config.h"
 
 void child_process_init(struct child_process *child)
 {
@@ -1308,12 +1309,69 @@ int async_with_fork(void)
 #endif
 }
 
+static int early_hooks_path_config(const char *var, const char *value, void *data)
+{
+	if (!strcmp(var, "core.hookspath"))
+		return git_config_pathname((const char **)data, var, value);
+
+	return 0;
+}
+
+/* Discover the hook before setup_git_directory() was called */
+static const char *hook_path_early(const char *name, struct strbuf *result)
+{
+	static struct strbuf hooks_dir = STRBUF_INIT;
+	static int initialized;
+
+	if (initialized < 0)
+		return NULL;
+
+	if (!initialized) {
+		struct strbuf gitdir = STRBUF_INIT, commondir = STRBUF_INIT;
+		const char *early_hooks_dir = NULL;
+
+		if (discover_git_directory(&commondir, &gitdir) < 0) {
+			initialized = -1;
+			return NULL;
+		}
+
+		read_early_config(early_hooks_path_config, &early_hooks_dir);
+		if (!early_hooks_dir)
+			strbuf_addf(&hooks_dir, "%s/hooks/", commondir.buf);
+		else {
+			strbuf_add_absolute_path(&hooks_dir, early_hooks_dir);
+			strbuf_addch(&hooks_dir, '/');
+		}
+
+		strbuf_release(&gitdir);
+		strbuf_release(&commondir);
+
+		initialized = 1;
+	}
+
+	strbuf_addf(result, "%s%s", hooks_dir.buf, name);
+	return result->buf;
+}
+
 const char *find_hook(const char *name)
 {
 	static struct strbuf path = STRBUF_INIT;
 
 	strbuf_reset(&path);
-	strbuf_git_path(&path, "hooks/%s", name);
+	if (have_git_dir()) {
+		static int forced_config;
+
+		if (!forced_config) {
+			if (!git_hooks_path)
+				git_config_get_pathname("core.hookspath",
+							&git_hooks_path);
+			forced_config = 1;
+		}
+
+		strbuf_git_path(&path, "hooks/%s", name);
+	} else if (!hook_path_early(name, &path))
+		return NULL;
+
 	if (access(path.buf, X_OK) < 0) {
 		int err = errno;
 
@@ -1342,24 +1400,49 @@ const char *find_hook(const char *name)
 	return path.buf;
 }
 
-int run_hook_ve(const char *const *env, const char *name, va_list args)
+int run_hook_argv(const char *const *env, const char *name,
+		  const char **argv)
 {
 	struct child_process hook = CHILD_PROCESS_INIT;
 	const char *p;
 
 	p = find_hook(name);
+	/*
+	 * Backwards compatibility hack in VFS for Git: when originally
+	 * introduced (and used!), it was called `post-indexchanged`, but this
+	 * name was changed during the review on the Git mailing list.
+	 *
+	 * Therefore, when the `post-index-change` hook is not found, let's
+	 * look for a hook with the old name (which would be found in case of
+	 * already-existing checkouts).
+	 */
+	if (!p && !strcmp(name, "post-index-change"))
+		p = find_hook("post-indexchanged");
 	if (!p)
 		return 0;
 
 	argv_array_push(&hook.args, p);
-	while ((p = va_arg(args, const char *)))
-		argv_array_push(&hook.args, p);
+	argv_array_pushv(&hook.args, argv);
 	hook.env = env;
 	hook.no_stdin = 1;
 	hook.stdout_to_stderr = 1;
 	hook.trace2_hook_name = name;
 
 	return run_command(&hook);
+}
+
+int run_hook_ve(const char *const *env, const char *name, va_list args)
+{
+	struct argv_array argv = ARGV_ARRAY_INIT;
+	const char *p;
+	int ret;
+
+	while ((p = va_arg(args, const char *)))
+		argv_array_push(&argv, p);
+
+	ret = run_hook_argv(env, name, argv.argv);
+	argv_array_clear(&argv);
+	return ret;
 }
 
 int run_hook_le(const char *const *env, const char *name, ...)

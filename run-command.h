@@ -217,6 +217,7 @@ const char *find_hook(const char *name);
 LAST_ARG_MUST_BE_NULL
 int run_hook_le(const char *const *env, const char *name, ...);
 int run_hook_ve(const char *const *env, const char *name, va_list args);
+int run_hook_argv(const char *const *env, const char *name, const char **argv);
 
 /*
  * Trigger an auto-gc
