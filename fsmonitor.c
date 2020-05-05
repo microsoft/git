@@ -166,13 +166,25 @@ static int query_fsmonitor(int version, const char *last_update, struct strbuf *
 	return capture_command(&cp, query_result, 1024);
 }
 
-static void fsmonitor_refresh_callback(struct index_state *istate, const char *name)
+static void fsmonitor_refresh_callback(struct index_state *istate, char *name)
 {
-	int pos = index_name_pos(istate, name, strlen(name));
+	int i, len = strlen(name);
+	if (name[len - 1] == '/') {
+		/* Mark all entries for the folder invalid */
+		for (i = 0; i < istate->cache_nr; i++) {
+			if (istate->cache[i]->ce_flags & CE_FSMONITOR_VALID &&
+			    starts_with(istate->cache[i]->name, name))
+				istate->cache[i]->ce_flags &= ~CE_FSMONITOR_VALID;
+		}
+		/* Need to remove the / from the path for the untracked cache */
+		name[len - 1] = '\0';
+	} else {
+		int pos = index_name_pos(istate, name, strlen(name));
 
-	if (pos >= 0) {
-		struct cache_entry *ce = istate->cache[pos];
-		ce->ce_flags &= ~CE_FSMONITOR_VALID;
+		if (pos >= 0) {
+			struct cache_entry *ce = istate->cache[pos];
+			ce->ce_flags &= ~CE_FSMONITOR_VALID;
+		}
 	}
 
 	/*
