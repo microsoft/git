@@ -1,0 +1,75 @@
+- Use Kevin's clock ID work, i.e. make it possible for fsmonitor to report back
+  its idea of the clock (increase the protocol version to 2)
+
+- Consider sending multiple file names per packet.
+
+- Do include the NUL in the file name, potentially stripping a trailing NUL on
+  the receiving side.
+
+- Include a test case to verify that `fsmonitor--daemon` works as a drop-in for
+  `core.fsmonitor`.
+
+- Concurrent client access should not be refused. For named pipes, achieve that
+  by being careful to ensure that there is always at least one listener open.
+
+- Set permissions on the named pipe/Unix socket correctly. No need to let
+  random users spy on worktrees' activity to which they have no read access.
+
+- Document the `core.fsmonitor=:internal:` setting.
+
+- Drop the lists older than the .git/index file (modulo fuzz). Do that by
+  updating an uint64_t in the producer, and then (under a new lock, say,
+  queue_tail_lock) cull the tail end of the queue just before serving the
+  next client.
+
+  - This requires a bit more care, as we could be in a worktree; In the main
+    worktree, .git/index is usually under the same top-level directory and
+    therefore reported by ReadDirectoryChangesW(), but in worktrees that is
+    not necessarily the case.
+
+- Report via Trace2 to see whether it is healthy:
+  - How many files were reported in one go (and how much the buffer was
+    filled by them)
+  - How much time was spent queuing new paths
+  - How long the clients were blocked
+  - How much time was spent serving clients
+  - If ever possible, report memory fragmentation
+
+- Skip reporting directories (meaning: make sure we know the type of a path)
+  - To do that, be smart and look whether a path refers to a file in a
+    subdirectory, then make sure that the subdirectory is marked as such
+  - Maybe over-report, and only mark known directories?
+  - Or not worry about this for now, it's okay to report directories, use
+    Trace2 to measure the impact of this
+
+- Exclude .git/
+
+- Exclude submodules somehow.
+
+- Handle when a file is removed and a directory added in its place: this needs
+  to be reported as "deleted".
+
+- Handle when a directory is renamed: only the directory name is reported, but
+  we need to report all paths.
+
+- Possibly prime the daemon's `paths` hashmap by reading the index and adding
+  all tracked files (and untracked files, if the untracked extension is
+  present)
+
+- Use the `untracked` cache to initialize the set of paths to report upon
+  startup.
+
+- Consider maybe only supporting this fsmonitor when an untracked cache is
+  present.
+
+- Use a different cookie file in worktrees (.git is not a directory there)
+
+- Consolidate `special_path()` into a non-platform-specific form, using callbacks
+
+- Document why we're not listening for `.git/index`.
+
+- Modify simple-ipc.c to server clients in individual threads, not serialized
+  in the main thread.
+
+- In thread-safe-pkt-line patches, add a test (using
+  `t/helper/test-pkt-line.c`) to verify the thread-safety of it all.
