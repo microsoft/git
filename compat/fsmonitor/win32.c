@@ -37,6 +37,7 @@ struct fsmonitor_daemon_state *fsmonitor_listen(struct fsmonitor_daemon_state *s
 	DWORD share_mode =
 		FILE_SHARE_WRITE | FILE_SHARE_READ | FILE_SHARE_DELETE;
 	DWORD count = 0;
+	int i;
 
 	dir = CreateFileW(L".", desired_access, share_mode, NULL, OPEN_EXISTING,
 			  FILE_FLAG_BACKUP_SEMANTICS, NULL);
@@ -112,6 +113,10 @@ struct fsmonitor_daemon_state *fsmonitor_listen(struct fsmonitor_daemon_state *s
 			pthread_mutex_unlock(&state->queue_update_lock);
 		}
 
+		for (i = 0; i < state->cookie_list.nr; i++)
+			fsmonitor_cookie_seen_trigger(state, state->cookie_list.items[i].string);
+
+		string_list_clear(&state->cookie_list, 0);
 		strbuf_release(&path);
 	}
 
