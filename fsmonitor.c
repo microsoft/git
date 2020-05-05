@@ -146,6 +146,17 @@ static int query_fsmonitor(int version, const char *last_update, struct strbuf *
 	if (!core_fsmonitor)
 		return -1;
 
+	if (!strcmp(core_fsmonitor, ":internal:"))
+#ifdef HAVE_FSMONITOR_DAEMON_BACKEND
+		return fsmonitor_query_daemon(last_update, query_result);
+#else
+	{
+		warning(_("internal fsmonitor unavailable; falling back"));
+		strbuf_add(query_result, "/", 2);
+		return 0;
+	}
+#endif
+
 	argv_array_push(&cp.args, core_fsmonitor);
 	argv_array_pushf(&cp.args, "%d", version);
 	argv_array_pushf(&cp.args, "%s", last_update);
