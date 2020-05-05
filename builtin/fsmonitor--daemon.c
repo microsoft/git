@@ -129,6 +129,7 @@ static int handle_client(struct ipc_command_listener *data, const char *command,
 	if (!strcmp(command, "quit")) {
 		if (fsmonitor_listen_stop(state))
 			error("Could not terminate watcher thread");
+		/* TODO: figure out whether we can do better */
 		sleep_millisec(50);
 		return SIMPLE_IPC_QUIT;
 	}
