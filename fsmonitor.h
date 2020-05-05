@@ -3,6 +3,7 @@
 
 #include "cache.h"
 #include "dir.h"
+#include "run-command.h"
 
 extern struct trace_key trace_fsmonitor;
 
@@ -73,5 +74,58 @@ static inline void mark_fsmonitor_invalid(struct index_state *istate, struct cac
 		trace_printf_key(&trace_fsmonitor, "mark_fsmonitor_invalid '%s'", ce->name);
 	}
 }
+
+#ifdef HAVE_FSMONITOR_DAEMON_BACKEND
+#include "thread-utils.h"
+
+extern const char *git_path_fsmonitor(void);
+#define FSMONITOR_VERSION 1ul
+
+int fsmonitor_stop_daemon(void);
+int fsmonitor_query_daemon(const char *since, struct strbuf *answer);
+int fsmonitor_daemon_is_running(void);
+int fsmonitor_spawn_daemon(void);
+
+/* Internal fsmonitor */
+struct fsmonitor_path {
+	struct hashmap_entry entry;
+	const char *path;
+	size_t len;
+	uint64_t time;
+	enum {
+		PATH_IS_UNSPECIFIED = -1,
+		PATH_DOES_NOT_EXIST,
+		PATH_IS_FILE,
+		PATH_IS_DIRECTORY,
+	} mode;
+};
+
+struct fsmonitor_queue_item {
+	struct fsmonitor_path *path;
+	uint64_t time;
+	struct fsmonitor_queue_item *previous, *next;
+};
+
+struct fsmonitor_daemon_state {
+	struct hashmap paths;
+	struct fsmonitor_queue_item *first;
+	struct fsmonitor_queue_item *last;
+	uint64_t latest_update;
+	pthread_mutex_t queue_update_lock, initial_mutex;
+	pthread_cond_t initial_cond;
+	int initialized;
+	int error_code;
+};
+
+/*
+ * Register a path as having been touched at a certain time.
+ */
+int fsmonitor_queue_path(struct fsmonitor_daemon_state *state,
+			 struct fsmonitor_queue_item **queue,
+			 const char *path, size_t len, uint64_t time);
+
+/* This needs to be implemented by the backend */
+struct fsmonitor_daemon_state *fsmonitor_listen(struct fsmonitor_daemon_state *state);
+#endif
 
 #endif
