@@ -10,6 +10,7 @@
 #include "parse-options.h"
 #include "fsmonitor.h"
 #include "simple-ipc.h"
+#include "khash.h"
 
 static const char * const builtin_fsmonitor__daemon_usage[] = {
 	N_("git fsmonitor--daemon [--query] <version> <timestamp>"),
@@ -51,6 +52,8 @@ struct ipc_data {
 	struct fsmonitor_daemon_state *state;
 };
 
+KHASH_INIT(str, const char *, int, 0, kh_str_hash_func, kh_str_hash_equal);
+
 static int handle_client(struct ipc_command_listener *data, const char *command,
 			 ipc_reply_fn_t reply, void *reply_data)
 {
@@ -60,10 +63,17 @@ static int handle_client(struct ipc_command_listener *data, const char *command,
 	char *p;
 	struct fsmonitor_queue_item *queue;
 	struct strbuf token = STRBUF_INIT;
+	intmax_t count = 0, duplicates = 0;
+	kh_str_t *shown;
+	int hash_ret;
+
+	trace2_data_string("fsmonitor", the_repository, "command", command);
 
 	if (!strcmp(command, "quit")) {
 		return SIMPLE_IPC_QUIT;
 	}
+
+	trace2_region_enter("fsmonitor", "serve", the_repository);
 
 	version = strtoul(command, &p, 10);
 	if (version != FSMONITOR_VERSION) {
@@ -76,6 +86,7 @@ error:
 		reply(reply_data, token.buf, token.len + 1);
 		reply(reply_data, "/", 2);
 		strbuf_release(&token);
+		trace2_region_leave("fsmonitor", "serve", the_repository);
 		return -1;
 	}
 	while (isspace(*p))
@@ -95,15 +106,30 @@ error:
 	pthread_mutex_unlock(&state->queue_update_lock);
 
 	reply(reply_data, token.buf, token.len + 1);
+	shown = kh_init_str();
 	while (queue && queue->time >= since) {
-		/* write the path, followed by a NUL */
-		if (reply(reply_data,
-			  queue->path->path, queue->path->len + 1) < 0)
-			break;
+		if (kh_get_str(shown, queue->path->path) != kh_end(shown))
+			duplicates++;
+		else {
+			kh_put_str(shown, queue->path->path, &hash_ret);
+
+			/* write the path, followed by a NUL */
+			if (reply(reply_data,
+				  queue->path->path, queue->path->len + 1) < 0)
+				break;
+			trace2_data_string("fsmonitor", the_repository,
+					   "serve.path", queue->path->path);
+			count++;
+		}
 		queue = queue->next;
 	}
 
+	kh_release_str(shown);
 	strbuf_release(&token);
+	trace2_data_intmax("fsmonitor", the_repository, "serve.count", count);
+	trace2_data_intmax("fsmonitor", the_repository, "serve.skipped-duplicates", duplicates);
+	trace2_region_leave("fsmonitor", "serve", the_repository);
+
 	return 0;
 }
 
@@ -116,6 +142,18 @@ static int paths_cmp(const void *data, const struct hashmap_entry *he1,
 		container_of(he2, const struct fsmonitor_path, entry);
 
 	return strcmp(a->path, keydata ? keydata : b->path);
+}
+
+int fsmonitor_special_path(struct fsmonitor_daemon_state *state,
+			   const char *path, size_t len, int was_deleted)
+{
+	if (len < 4 || fspathncmp(path, ".git", 4) || (path[4] && path[4] != '/'))
+		return 0;
+
+	if (was_deleted && (len == 4 || len == 5))
+		return FSMONITOR_DAEMON_QUIT;
+
+	return 1;
 }
 
 int fsmonitor_queue_path(struct fsmonitor_daemon_state *state,
@@ -135,6 +173,8 @@ int fsmonitor_queue_path(struct fsmonitor_daemon_state *state,
 		e->len = len;
 		hashmap_put(&state->paths, &e->entry);
 	}
+
+	trace2_data_string("fsmonitor", the_repository, "path", e->path);
 
 	item = xmalloc(sizeof(*item));
 	item->path = e;
