@@ -118,6 +118,21 @@ struct fsmonitor_daemon_state {
 };
 
 /*
+ * Handle special paths. Returns
+ *
+ * - 0 if the path is not special,
+ *
+ * - >0 if it should not be queued (e.g. because it is inside `.git/`),
+ *
+ * - FSMONITOR_DAEMON_QUIT if the daemon was asked to quit, and
+ *
+ * - other negative values in case of error.
+ */
+int fsmonitor_special_path(struct fsmonitor_daemon_state *state,
+			   const char *path, size_t len, int was_deleted);
+#define FSMONITOR_DAEMON_QUIT -2
+
+/*
  * Register a path as having been touched at a certain time.
  */
 int fsmonitor_queue_path(struct fsmonitor_daemon_state *state,

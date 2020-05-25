@@ -383,6 +383,12 @@ int fsmonitor_query_daemon(const char *since, struct strbuf *answer)
 	struct strbuf command = STRBUF_INIT;
 	int ret = 0;
 
+	if (!fsmonitor_daemon_is_running()) {
+		if (fsmonitor_spawn_daemon() < 0 && !fsmonitor_daemon_is_running())
+			return error(_("failed to spawn fsmonitor daemon"));
+		sleep_millisec(50);
+	}
+
 	strbuf_addf(&command, "%ld %s", FSMONITOR_VERSION, since);
 	ret = ipc_send_command(git_path_fsmonitor(),
 				command.buf, answer);
