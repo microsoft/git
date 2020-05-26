@@ -144,6 +144,15 @@ static int paths_cmp(const void *data, const struct hashmap_entry *he1,
 	return strcmp(a->path, keydata ? keydata : b->path);
 }
 
+int fsmonitor_special_path(struct fsmonitor_daemon_state *state,
+			   const char *path, size_t len)
+{
+	if (len < 4 || fspathncmp(path, ".git", 4) || (path[4] && path[4] != '/'))
+		return 0;
+
+	return 1;
+}
+
 int fsmonitor_queue_path(struct fsmonitor_daemon_state *state,
 			 struct fsmonitor_queue_item **queue,
 			 const char *path, size_t len, uint64_t time)

@@ -64,16 +64,23 @@ struct fsmonitor_daemon_state *fsmonitor_listen(struct fsmonitor_daemon_state *s
 		p = buffer;
 		for (;;) {
 			FILE_NOTIFY_INFORMATION *info = (void *)p;
+			int special;
+
 			normalize_path(info, &path);
 
-			if (fsmonitor_queue_path(state, &queue, path.buf,
+			special = fsmonitor_special_path(state, path.buf,
+							 path.len);
+
+			if (!special &&
+			    fsmonitor_queue_path(state, &queue, path.buf,
 						 path.len, time) < 0) {
 				CloseHandle(dir);
 				state->error_code = -1;
 				error("could not queue '%s'; exiting",
 				      path.buf);
 				return state;
-			}
+			} else if (special < 0)
+				return state;
 
 			if (!info->NextEntryOffset)
 				break;
