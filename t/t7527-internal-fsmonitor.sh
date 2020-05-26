@@ -19,6 +19,9 @@ test_expect_success 'can start and stop the daemon' '
 		GIT_TRACE2_EVENT="$PWD/../.git/trace" \
 		git fsmonitor--daemon --query 1 0 >actual &&
 		grep "fsmonitor.*serve" ../.git/trace &&
+		git config dummy.value 1 &&
+		sleep 0 &&
+		! grep "fsmonitor.*git/config" ../.git/trace &&
 		git fsmonitor--daemon --is-running &&
 		nul_to_q <actual >actual.filtered &&
 		grep "^[1-9][0-9]*Q/Q$" actual.filtered
