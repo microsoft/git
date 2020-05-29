@@ -128,6 +128,7 @@ struct fsmonitor_daemon_state {
 	struct hashmap cookies;
 	struct string_list cookie_list;
 	int error_code;
+	void *backend_data;
 };
 
 void fsmonitor_cookie_seen_trigger(struct fsmonitor_daemon_state *state,
