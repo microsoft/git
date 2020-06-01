@@ -1,0 +1,32 @@
+simple-ipc API
+==============
+
+The simple-ipc API is used to send an IPC message and response between
+a (presumably) foreground Git client process to a background server
+daemon process.  The server process must already be running.  Multiple
+client processes can simultaneously communicate with the server
+process.
+
+Communication occurs over a named pipe on Windows and a Unix domain
+socket on other platforms.  Clients and the server rendezvous at a
+previously agreed-to application-specific pathname (which is outside
+the scope of this design).
+
+This IPC mechanism differs from the existing `sub-process.c` model
+(Documentation/technical/long-running-process-protocol.txt) and used by
+applications like Git-LFS because the server is assumed to be very
+long running, such as a system service.  How the server is started is
+also outside the scope of the IPC mechanism.
+
+The IPC protocol consists of a single request message from the client and
+an optional request message from the server.  For simplicity, pkt-line
+format (Documentation/technical/protocol-common.txt) is used.
+Both messages are treated as a NUL terminated string.  Messages may
+contain multiple lines.  The pkt-line layer hides chunking and buffering
+details.  A flush packet marks the end of the message content.
+
+The actual format of the client and server messages is application
+specific.  The IPC layer transmits and receives an opaque string without
+any concern for the content within.
+
+TODO describe API ??

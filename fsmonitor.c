@@ -146,6 +146,17 @@ static int query_fsmonitor(int version, const char *last_update, struct strbuf *
 	if (!core_fsmonitor)
 		return -1;
 
+	if (!strcmp(core_fsmonitor, ":internal:"))
+#ifdef HAVE_FSMONITOR_DAEMON_BACKEND
+		return fsmonitor_query_daemon(last_update, query_result);
+#else
+	{
+		warning(_("internal fsmonitor unavailable; falling back"));
+		strbuf_add(query_result, "/", 2);
+		return 0;
+	}
+#endif
+
 	argv_array_push(&cp.args, core_fsmonitor);
 	argv_array_pushf(&cp.args, "%d", version);
 	argv_array_pushf(&cp.args, "%s", last_update);
@@ -155,13 +166,25 @@ static int query_fsmonitor(int version, const char *last_update, struct strbuf *
 	return capture_command(&cp, query_result, 1024);
 }
 
-static void fsmonitor_refresh_callback(struct index_state *istate, const char *name)
+static void fsmonitor_refresh_callback(struct index_state *istate, char *name)
 {
-	int pos = index_name_pos(istate, name, strlen(name));
+	int i, len = strlen(name);
+	if (name[len - 1] == '/') {
+		/* Mark all entries for the folder invalid */
+		for (i = 0; i < istate->cache_nr; i++) {
+			if (istate->cache[i]->ce_flags & CE_FSMONITOR_VALID &&
+			    starts_with(istate->cache[i]->name, name))
+				istate->cache[i]->ce_flags &= ~CE_FSMONITOR_VALID;
+		}
+		/* Need to remove the / from the path for the untracked cache */
+		name[len - 1] = '\0';
+	} else {
+		int pos = index_name_pos(istate, name, strlen(name));
 
-	if (pos >= 0) {
-		struct cache_entry *ce = istate->cache[pos];
-		ce->ce_flags &= ~CE_FSMONITOR_VALID;
+		if (pos >= 0) {
+			struct cache_entry *ce = istate->cache[pos];
+			ce->ce_flags &= ~CE_FSMONITOR_VALID;
+		}
 	}
 
 	/*
@@ -363,3 +386,90 @@ void tweak_fsmonitor(struct index_state *istate)
 		break;
 	}
 }
+
+#ifdef HAVE_FSMONITOR_DAEMON_BACKEND
+#include "simple-ipc.h"
+
+GIT_PATH_FUNC(git_path_fsmonitor, "fsmonitor")
+
+/* ask the daemon to quit */
+int fsmonitor_stop_daemon(void)
+{
+	struct strbuf answer = STRBUF_INIT;
+	int ret = ipc_send_command(git_path_fsmonitor(), "quit", &answer);
+	strbuf_release(&answer);
+	return ret;
+}
+
+int fsmonitor_query_daemon(const char *since, struct strbuf *answer)
+{
+	struct strbuf command = STRBUF_INIT;
+	int ret = 0;
+
+	if (!fsmonitor_daemon_is_running()) {
+		if (fsmonitor_spawn_daemon() < 0 && !fsmonitor_daemon_is_running())
+			return error(_("failed to spawn fsmonitor daemon"));
+		sleep_millisec(50);
+	}
+
+	strbuf_addf(&command, "%ld %s", FSMONITOR_VERSION, since);
+	ret = ipc_send_command(git_path_fsmonitor(),
+				command.buf, answer);
+	strbuf_release(&command);
+	return ret;
+}
+
+int fsmonitor_daemon_is_running(void)
+{
+	return ipc_is_active(git_path_fsmonitor());
+}
+
+/* Let's spin up a new server, returning when it is listening */
+int fsmonitor_spawn_daemon(void)
+{
+#ifndef GIT_WINDOWS_NATIVE
+	const char *args[] = { "fsmonitor--daemon", "--start", NULL };
+
+	return run_command_v_opt_tr2(args, RUN_COMMAND_NO_STDIN | RUN_GIT_CMD,
+				    "fsmonitor");
+#else
+	const char *args[] = { "git", "fsmonitor--daemon", "--run", NULL };
+	int in = open("/dev/null", O_RDONLY);
+	int out = open("/dev/null", O_WRONLY);
+	int ret = 0;
+	pid_t pid = mingw_spawnvpe("git", args, NULL, NULL, in, out, out);
+	HANDLE process;
+
+	if (pid < 0)
+		ret = error(_("could not spawn the fsmonitor daemon"));
+
+	close(in);
+	close(out);
+
+	process = OpenProcess(PROCESS_QUERY_INFORMATION, FALSE, pid);
+	if (!process)
+		return error(_("could not spawn fsmonitor--daemon"));
+
+	/* poll is_running() */
+	while (!ret && !fsmonitor_daemon_is_running()) {
+		DWORD exit_code;
+
+		if (!GetExitCodeProcess(process, &exit_code)) {
+			CloseHandle(process);
+			return error(_("could not query status of spawned "
+				       "fsmonitor--daemon"));
+		}
+
+		if (exit_code != STILL_ACTIVE) {
+			CloseHandle(process);
+			return error(_("fsmonitor--daemon --run stopped; "
+				       "exit code: %ld"), exit_code);
+		}
+
+		sleep_millisec(50);
+	}
+
+	return ret;
+#endif
+}
+#endif

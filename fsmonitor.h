@@ -3,6 +3,7 @@
 
 #include "cache.h"
 #include "dir.h"
+#include "run-command.h"
 
 extern struct trace_key trace_fsmonitor;
 
@@ -73,5 +74,91 @@ static inline void mark_fsmonitor_invalid(struct index_state *istate, struct cac
 		trace_printf_key(&trace_fsmonitor, "mark_fsmonitor_invalid '%s'", ce->name);
 	}
 }
+
+#ifdef HAVE_FSMONITOR_DAEMON_BACKEND
+#include "thread-utils.h"
+
+extern const char *git_path_fsmonitor(void);
+#define FSMONITOR_VERSION 1ul
+
+int fsmonitor_stop_daemon(void);
+int fsmonitor_query_daemon(const char *since, struct strbuf *answer);
+int fsmonitor_daemon_is_running(void);
+int fsmonitor_spawn_daemon(void);
+
+/* Internal fsmonitor */
+struct fsmonitor_path {
+	struct hashmap_entry entry;
+	const char *path;
+	size_t len;
+	uint64_t time;
+	enum {
+		PATH_IS_UNSPECIFIED = -1,
+		PATH_DOES_NOT_EXIST,
+		PATH_IS_FILE,
+		PATH_IS_DIRECTORY,
+	} mode;
+};
+
+struct fsmonitor_queue_item {
+	struct fsmonitor_path *path;
+	uint64_t time;
+	struct fsmonitor_queue_item *previous, *next;
+};
+
+struct fsmonitor_cookie_item {
+	struct hashmap_entry entry;
+	const char *name;
+	pthread_mutex_t seen_lock;
+	pthread_cond_t seen_cond;
+	int seen;
+};
+
+#define FSMONITOR_COOKIE_PREFIX ".watchman-cookie-git-"
+
+struct fsmonitor_daemon_state {
+	struct hashmap paths;
+	struct fsmonitor_queue_item *first;
+	struct fsmonitor_queue_item *last;
+	uint64_t latest_update;
+	pthread_t watcher_thread;
+	pthread_mutex_t queue_update_lock, initial_mutex, cookies_lock;
+	pthread_cond_t initial_cond;
+	int initialized, cookie_seq;
+	struct hashmap cookies;
+	struct string_list cookie_list;
+	int error_code;
+	void *backend_data;
+};
+
+void fsmonitor_cookie_seen_trigger(struct fsmonitor_daemon_state *state,
+				   const char *cookie_name);
+
+/*
+ * Handle special paths. Returns
+ *
+ * - 0 if the path is not special,
+ *
+ * - >0 if it should not be queued (e.g. because it is inside `.git/`),
+ *
+ * - FSMONITOR_DAEMON_QUIT if the daemon was asked to quit, and
+ *
+ * - other negative values in case of error.
+ */
+int fsmonitor_special_path(struct fsmonitor_daemon_state *state,
+			   const char *path, size_t len, int was_deleted);
+#define FSMONITOR_DAEMON_QUIT -2
+
+/*
+ * Register a path as having been touched at a certain time.
+ */
+int fsmonitor_queue_path(struct fsmonitor_daemon_state *state,
+			 struct fsmonitor_queue_item **queue,
+			 const char *path, size_t len, uint64_t time);
+
+/* This needs to be implemented by the backend */
+struct fsmonitor_daemon_state *fsmonitor_listen(struct fsmonitor_daemon_state *state);
+int fsmonitor_listen_stop(struct fsmonitor_daemon_state *state);
+#endif
 
 #endif
