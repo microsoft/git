@@ -1641,6 +1641,10 @@ else
 	PROGRAM_OBJS += credential-cache--daemon.o
 endif
 
+ifdef USE_WIN32_IPC
+	LIB_OBJS += simple-ipc--win32.o
+endif
+
 ifdef NO_ICONV
 	BASIC_CFLAGS += -DNO_ICONV
 endif
