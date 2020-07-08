@@ -148,5 +148,22 @@ int ipc_server_run(const char *path, int nr_threads,
 		   ipc_server_application_cb *application_cb,
 		   void *application_data);
 
+/*
+ * An IPC server can also be created in an asynchronous mode.  The server
+ * is started in a background thread of the current process.  Control
+ * immediately returns control to the caller.  Later, the caller can request
+ * the server to shutdown and wait for background threads to stop.
+ */
+
+struct ipc_server_data;
+
+int ipc_server_run_async(struct ipc_server_data **returned_server_data,
+			 const char *path, int nr_threads,
+			 ipc_server_application_cb *application_cb,
+			 void *application_data);
+int ipc_server_stop_async(struct ipc_server_data *server_data);
+int ipc_server_await(struct ipc_server_data *server_data);
+void ipc_server_free(struct ipc_server_data *server_data);
+
 #endif /* SUPPORTS_SIMPLE_IPC */
 #endif /* GIT_SIMPLE_IPC_H */
