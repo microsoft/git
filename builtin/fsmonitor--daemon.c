@@ -47,11 +47,6 @@ static int fsmonitor_stop_daemon(void)
 #else
 #define FSMONITOR_DAEMON_IS_SUPPORTED 1
 
-struct ipc_data {
-	struct ipc_command_listener data;
-	struct fsmonitor_daemon_state *state;
-};
-
 static void fsmonitor_wait_for_cookie(struct fsmonitor_daemon_state *state)
 {
 	int fd;
@@ -111,10 +106,13 @@ void fsmonitor_cookie_seen_trigger(struct fsmonitor_daemon_state *state,
 
 KHASH_INIT(str, const char *, int, 0, kh_str_hash_func, kh_str_hash_equal);
 
-static int handle_client(struct ipc_command_listener *data, const char *command,
-			 ipc_reply_fn_t reply, void *reply_data)
+static ipc_server_application_cb handle_client;
+
+static int handle_client(void *data, const char *command,
+			 ipc_server_reply_cb *reply,
+			 struct ipc_server_reply_data *reply_data)
 {
-	struct fsmonitor_daemon_state *state = ((struct ipc_data *)data)->state;
+	struct fsmonitor_daemon_state *state = data;
 	unsigned long version;
 	uintmax_t since;
 	char *p;
@@ -278,13 +276,6 @@ static int fsmonitor_run_daemon(int background)
 	struct fsmonitor_daemon_state state = {
 		.cookie_list = STRING_LIST_INIT_DUP
 	};
-	struct ipc_data ipc_data = {
-		.data = {
-			.path = git_path_fsmonitor(),
-			.handle_client = handle_client,
-		},
-		.state = &state,
-	};
 
 	if (background && daemonize())
 		BUG(_("daemonize() not supported on this platform"));
@@ -306,7 +297,7 @@ static int fsmonitor_run_daemon(int background)
 		pthread_cond_wait(&state.initial_cond, &state.initial_mutex);
 	pthread_mutex_unlock(&state.initial_mutex);
 
-	return ipc_listen_for_commands(&ipc_data.data);
+	return ipc_server_run(git_path_fsmonitor(), 8, handle_client, &state);
 }
 #endif
 
