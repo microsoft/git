@@ -311,6 +311,9 @@ static int fsmonitor_run_daemon(int background)
 		pthread_cond_wait(&state.initial_cond, &state.initial_mutex);
 	pthread_mutex_unlock(&state.initial_mutex);
 
+	// TODO I harded coded 8 threads for the IPC layer.  Should make this
+	// TODO a config setting or something.
+
 	return ipc_server_run(git_path_fsmonitor(), 8, handle_client, &state);
 }
 #endif
