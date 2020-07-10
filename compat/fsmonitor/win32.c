@@ -23,6 +23,12 @@ static int normalize_path(FILE_NOTIFY_INFORMATION *info, struct strbuf *normaliz
 
 // TODO Calling TerminateThread is very unsafe.
 // TODO We should have a way to notify the thread to exit.
+//
+// TODO For example, raise the hEvent described below.  This will let
+// TODO the listener thread start shutting down without blocking the
+// TODO response to the client in `handle_client()`.   ((I don't think
+// TODO we need to call `ipc_server_stop_async()` because the IPC
+// TODO layer will do that when `handle_client()` returns `SIMPLE_IPC_QUIT`.))
 
 int fsmonitor_listen_stop(struct fsmonitor_daemon_state *state)
 {
@@ -42,6 +48,11 @@ int fsmonitor_listen_stop(struct fsmonitor_daemon_state *state)
 // TODO in order to recover that info, but the caller probably already has
 // TODO the state (because it needs the pthread_id to call join).  So this
 // TODO is probably not needed.  That is, just return NULL.
+//
+// TODO Also WRT returning on a FS error (or special FSMONITOR_DAEMON_QUIT
+// TODO or negative):  This will effectively kill all in-progress responses
+// TODO 1 or more IPC clients.  It would be better to call ipc_server_stop_async()
+// TODO and then return from this thread.
 //
 // TODO We should open `dir` in OVERLAPPED mode and create an hEvent for
 // TODO shutdown and have the main loop here call `WaitForMultipleObjects`
@@ -71,6 +82,23 @@ struct fsmonitor_daemon_state *fsmonitor_listen(struct fsmonitor_daemon_state *s
 	pthread_mutex_unlock(&state->initial_mutex);
 
 	for (;;) {
+
+		// TODO Something about this feels dirty and dangerous:
+		// TODO borrowing a stack address to seed a doubly-linked
+		// TODO list.  I understand you can build the new list
+		// TODO fragment here unlocked and then only lock to tie
+		// TODO the new list to the existing shared list in `state`,
+		// TODO but it makes me want to pause and ask if it is
+		// TODO necessary.
+		//
+		// TODO For example, if we built a single-linked list here
+		// TODO (with a NULL terminator node) and kept track of the
+		// TODO first and last nodes, can we in `fsmonitor_queue_path()`
+		// TODO simply connect the parts under lock?
+		//
+		// TODO That is, do we actually use both directions of the
+		// TODO list other than when stitching them together?
+
 		struct fsmonitor_queue_item dummy, *queue = &dummy;
 		struct strbuf path = STRBUF_INIT;
 		uint64_t time = getnanotime();

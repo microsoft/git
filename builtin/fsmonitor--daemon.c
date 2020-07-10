@@ -315,6 +315,8 @@ static int fsmonitor_run_daemon(int background)
 	// TODO a config setting or something.
 
 	return ipc_server_run(git_path_fsmonitor(), 8, handle_client, &state);
+
+	// TODO We should join on the listener thread.
 }
 #endif
 
