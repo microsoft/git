@@ -21,6 +21,9 @@ static int normalize_path(FILE_NOTIFY_INFORMATION *info, struct strbuf *normaliz
 	return strbuf_normalize_path(normalized_path);
 }
 
+// TODO Calling TerminateThread is very unsafe.
+// TODO We should have a way to notify the thread to exit.
+
 int fsmonitor_listen_stop(struct fsmonitor_daemon_state *state)
 {
 	if (!TerminateThread(state->watcher_thread.handle, 1))
@@ -28,6 +31,26 @@ int fsmonitor_listen_stop(struct fsmonitor_daemon_state *state)
 
 	return 0;
 }
+
+// TODO This is a thread-proc, right?
+//
+// TODO Add trace2_thread_start() and _exit()
+//
+// TODO This should not call exit(), rather goto end and returning.
+//
+// TODO The `return state` statements assume that someone is going to join
+// TODO in order to recover that info, but the caller probably already has
+// TODO the state (because it needs the pthread_id to call join).  So this
+// TODO is probably not needed.  That is, just return NULL.
+//
+// TODO We should open `dir` in OVERLAPPED mode and create an hEvent for
+// TODO shutdown and have the main loop here call `WaitForMultipleObjects`
+// TODO and either get data or a shutdown signal.  See what I did in simple-ipc--win32.c
+// TODO in `queue_overlapped_connect()` and `wait_for_connection()` and the
+// TODO body of `server_thread_proc()`.
+// TODO
+// TODO Then `fsmonitor_list_stop()` would just need to do what I did in
+// TODO `ipc_server_stop_async()`.
 
 struct fsmonitor_daemon_state *fsmonitor_listen(struct fsmonitor_daemon_state *state)
 {
