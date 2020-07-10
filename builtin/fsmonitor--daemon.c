@@ -182,6 +182,20 @@ error:
 		else {
 			kh_put_str(shown, queue->path->path, &hash_ret);
 
+			// TODO This loop is writing 1 pathname at a time.
+			// TODO This causes a pkt-line write per file.
+			// TODO This will cause a context switch as the client
+			// TODO will try to do a pkt-line read.
+			// TODO We should consider sending a batch in a
+			// TODO large buffer.
+			//
+			// TODO This add a NUL to the per-line payload.
+			// TODO If the client re-assembles a multi-reply
+			// TODO response will it get the null bytes inside
+			// TODO the buffer?  The API is described as a string,
+			// TODO so I think there is an opportunity for confusion
+			// TODO and getting individual lines concatenated.
+
 			/* write the path, followed by a NUL */
 			if (reply(reply_data,
 				  queue->path->path, queue->path->len + 1) < 0)
