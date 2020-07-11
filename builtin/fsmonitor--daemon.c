@@ -47,6 +47,14 @@ static int fsmonitor_stop_daemon(void)
 #else
 #define FSMONITOR_DAEMON_IS_SUPPORTED 1
 
+// TODO Should there be a timeout on how long we wait for the
+// TODO cookie file to appear in the notification stream?
+// TODO This wait will block the `handle_client()` thread (which
+// TODO blockes the response to the client) and which is running
+// TODO in one of the IPC thread pool worker threads.  Which
+// TODO could cause the the daemon to become unresponsive (if
+// TODO several worker threads get stuck).
+
 static void fsmonitor_wait_for_cookie(struct fsmonitor_daemon_state *state)
 {
 	int fd;
@@ -62,6 +70,12 @@ static void fsmonitor_wait_for_cookie(struct fsmonitor_daemon_state *state)
 	pthread_mutex_init(&cookie.seen_lock, NULL);
 	pthread_cond_init(&cookie.seen_cond, NULL);
 
+	// TODO Putting the address of a stack variable into a global
+	// TODO hashmap feels dodgy.  Granted, the `handle_client()`
+	// TODO stack frame is in a thread that will block on this
+	// TODO returning, but do all coce paths guarantee that it is
+	// TODO removed from the hashmap before this stack frame returns?
+
 	pthread_mutex_lock(&state->cookies_lock);
 	hashmap_add(&state->cookies, &cookie.entry);
 	pthread_mutex_unlock(&state->cookies_lock);
@@ -75,10 +89,31 @@ static void fsmonitor_wait_for_cookie(struct fsmonitor_daemon_state *state)
 		cookie.seen = 0;
 		pthread_mutex_unlock(&cookie.seen_lock);
 		unlink_or_warn(cookie_path);
+
+		// TODO Here we have been signalled that the file
+		// TODO has appeared.  Shouldn't we remove the cookie
+		// TODO from the hashmap and destroy the _mutex and _cond
+		// TODO vars.  (It looks like _trigger does remove it, so
+		// TOOD maybe just destroy the vars.)
+		//
+		// TODO The unlink() will cause a second notification.
+		// TODO Is that significant?  (It looks like the was_deleted)
+		// TODO bit guards that.)
+
 	} else {
 		pthread_mutex_lock(&state->cookies_lock);
 		hashmap_remove(&state->cookies, &cookie.entry, NULL);
 		pthread_mutex_unlock(&state->cookies_lock);
+
+		// TODO What happens if we cannot create the cookie file?
+		// TODO We don't block the current thread.  The caller
+		// TODO will continue as is and maybe report an incomplete
+		// TODO snapshot ??
+		//
+		// TODO If we cannot create the file, we should remove
+		// TODO this cookie from the hashmap, right?
+		//
+		// TODO And destroy cookie.seen_lock and cookie.seen_cond.
 	}
 }
 
@@ -97,6 +132,15 @@ void fsmonitor_cookie_seen_trigger(struct fsmonitor_daemon_state *state,
 		cookie->seen = 1;
 		pthread_cond_signal(&cookie->seen_cond);
 		pthread_mutex_unlock(&cookie->seen_lock);
+
+		// TODO Here we are removing the cookie from the hashmap.
+		// TODO This requires reaching into the cookie for the key,
+		// TODO right?  The cookie was added using a stack variable
+		// TODO in the `handle_client()` thread -- the thread we just
+		// TODO woke up.  So it might be possible for that thread to
+		// TODO have returned and possibly have trashed the content
+		// TODO of this cookie.  This could make this hashmap operation
+		// TODO unsafe, right?
 
 		pthread_mutex_lock(&state->cookies_lock);
 		hashmap_remove(&state->cookies, &cookie->entry, NULL);
@@ -398,3 +442,28 @@ int cmd_fsmonitor__daemon(int argc, const char **argv, const char *prefix)
 
 	return !!fsmonitor_run_daemon(mode == START);
 }
+
+// TODO BIG PICTURE QUESTION:
+// TODO Is there an inherent race condition in this whole thing?
+// TODO The client asks for all changes since a given timestamp.
+// TODO The server creates a cookie file and blocks the response
+// TODO until it appears.
+// TODO  [1] The cookie is created at a random time (WRT the client)
+// TODO      (and considering the race for the daemon to accept()
+// TODO      the client connection).
+// TODO  [2] The fs notify code handles events in batches
+// TODO  [3] The response is everything from the requested timestamp
+// TODO      thru the end of the batch (another bit of randomness).
+// TODO
+// TODO I'm wondering if the client should create the cookie file
+// TODO and then ask for everything from a given timestamp UPTO AND
+// TODO the cookie file event.
+// TODO  [1] This would remove some of the randomness WRT the
+// TODO      client and the last event reported.
+// TODO  [2] The client would be responsible for creating and deleting
+// TODO      the cookie file -- so the daemon would not need write
+// TODO      access to the repo.
+// TODO  [3] The cookie file creation event could be arriving WHILE
+// TODO      connection is established.
+// TODO  [4] The client could decide the timeout (and just hang up).
+//

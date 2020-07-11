@@ -62,6 +62,10 @@ int fsmonitor_listen_stop(struct fsmonitor_daemon_state *state)
 // TODO
 // TODO Then `fsmonitor_list_stop()` would just need to do what I did in
 // TODO `ipc_server_stop_async()`.
+//
+// TODO This function should not cleanup the mutex and protected data
+// TODO structures because `handle_client()` in multiple IPC theads may be
+// TODO using them.  Such cleanup should be handled post-join.
 
 struct fsmonitor_daemon_state *fsmonitor_listen(struct fsmonitor_daemon_state *state)
 {
@@ -163,6 +167,16 @@ struct fsmonitor_daemon_state *fsmonitor_listen(struct fsmonitor_daemon_state *s
 			state->latest_update = time;
 			pthread_mutex_unlock(&state->queue_update_lock);
 		}
+
+		// TODO (more of a clarification actually)
+		// TODO The cookie_list is a list of the cookied observed
+		// TODO during the current FS notification event.  These
+		// TODO are used to wake up the corresponding `handle_client()`
+		// TODO threads.  Then we flush the list in preparation for
+		// TODO the next FS notification event.
+		// TODO
+		// TODO So the cookie_list is the currently observed set and
+		// TODO the hashmap is the eventually expected set.
 
 		for (i = 0; i < state->cookie_list.nr; i++)
 			fsmonitor_cookie_seen_trigger(state, state->cookie_list.items[i].string);
