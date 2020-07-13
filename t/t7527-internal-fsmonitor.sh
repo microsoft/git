@@ -39,9 +39,19 @@ test_expect_success 'can start and stop the daemon' '
 
 test_expect_success 'cannot start multiple daemons' '
 	git fsmonitor--daemon --start &&
+
+	#### HACK
+	sleep 3 &&
+	#### HACK
+
 	git fsmonitor--daemon --is-running &&
 	test_must_fail git fsmonitor--daemon --start &&
 	git fsmonitor--daemon --stop &&
+
+	#### HACK
+	sleep 3 &&
+	#### HACK
+
 	test_must_fail git fsmonitor--daemon --is-running
 '
 # Note, after "git reset --hard HEAD" no extensions exist other than 'TREE'
