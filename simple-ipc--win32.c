@@ -32,73 +32,122 @@ static int initialize_pipe_name(const char *path, wchar_t *wpath, size_t alloc)
 	return 0;
 }
 
-/*
- * TODO Would this be clearer if it was:
- * TODO    return (WaitNamedPipeW() || GetLastError() == ERROR_SEM_TIMEOUT);
- */
-static enum IPC_ACTIVE_STATE is_active(wchar_t *pipe_path)
+static enum ipc_active_state get_active_state(wchar_t *pipe_path)
 {
-	if (WaitNamedPipeW(pipe_path, 1) ||
-	    GetLastError() != ERROR_FILE_NOT_FOUND)
-		return IPC_STATE__ACTIVE;
-	else
-		return IPC_STATE__NOT_ACTIVE;
+	if (WaitNamedPipeW(pipe_path, NMPWAIT_USE_DEFAULT_WAIT))
+		return IPC_STATE__LISTENING;
+
+	if (GetLastError() == ERROR_SEM_TIMEOUT)
+		return IPC_STATE__NOT_LISTENING;
+
+	if (GetLastError() == ERROR_FILE_NOT_FOUND)
+		return IPC_STATE__PATH_NOT_FOUND;
+
+	return IPC_STATE__OTHER_ERROR;
 }
 
-enum IPC_ACTIVE_STATE ipc_is_active(const char *path)
+enum ipc_active_state ipc_get_active_state(const char *path)
 {
 	wchar_t pipe_path[MAX_PATH];
 
 	if (initialize_pipe_name(path, pipe_path, ARRAY_SIZE(pipe_path)) < 0)
 		return IPC_STATE__INVALID_PATH;
 
-	return is_active(pipe_path);
+	return get_active_state(pipe_path);
 }
 
-static int connect_to_server(const char *path, const wchar_t *wpath,
-			     DWORD timeout_ms, HANDLE *phPipe)
+#define WAIT_STEP_MS (50)
+
+static enum ipc_active_state connect_to_server(
+	const wchar_t *wpath,
+	DWORD timeout_ms,
+	const struct ipc_client_connect_options *options,
+	int *pfd)
 {
 	DWORD t_start_ms, t_waited_ms;
+	DWORD step_ms;
+	HANDLE hPipe = INVALID_HANDLE_VALUE;
+	DWORD mode = PIPE_READMODE_BYTE;
+	DWORD gle;
+
+	*pfd = -1;
 
 	while (1) {
-		*phPipe  = CreateFileW(wpath, GENERIC_READ | GENERIC_WRITE,
-				       0, NULL, OPEN_EXISTING, 0, NULL);
-		if (*phPipe != INVALID_HANDLE_VALUE)
-			return 0;
+		hPipe = CreateFileW(wpath, GENERIC_READ | GENERIC_WRITE,
+				    0, NULL, OPEN_EXISTING, 0, NULL);
+		if (hPipe != INVALID_HANDLE_VALUE)
+			break;
 
-		if (GetLastError() != ERROR_PIPE_BUSY) {
+		gle = GetLastError();
+
+		trace2_data_intmax("ipc-client", NULL, "connect/result-gle",
+				   gle);
+
+		switch (gle) {
+		case ERROR_FILE_NOT_FOUND:
+			if (!options->wait_if_not_found)
+				return IPC_STATE__PATH_NOT_FOUND;
+			if (!timeout_ms)
+				return IPC_STATE__PATH_NOT_FOUND;
+
+			step_ms = (timeout_ms < WAIT_STEP_MS) ?
+				timeout_ms : WAIT_STEP_MS;
+			sleep_millisec(step_ms);
+
+			timeout_ms -= step_ms;
+			break; /* try again */
+
+		case ERROR_PIPE_BUSY:
+			if (!options->wait_if_busy)
+				return IPC_STATE__NOT_LISTENING;
+			if (!timeout_ms)
+				return IPC_STATE__NOT_LISTENING;
+
+			t_start_ms = (DWORD)(getnanotime() / 1000000);
+
+			if (!WaitNamedPipeW(wpath, timeout_ms)) {
+				if (GetLastError() == ERROR_SEM_TIMEOUT)
+					return IPC_STATE__NOT_LISTENING;
+
+				return IPC_STATE__OTHER_ERROR;
+			}
+
 			/*
-			 * We expect ERROR_FILE_NOT_FOUND when the server is not
-			 * running, but other errors are possible here.
+			 * A pipe server instance became available.
+			 * Race other client processes to connect to
+			 * it.
+			 *
+			 * But first decrement our overall timeout so
+			 * that we don't starve if we keep losing the
+			 * race.  But also guard against special
+			 * NPMWAIT_ values (0 and -1).
 			 */
-			return error(_("could not open pipe '%s' (gle %ld)"),
-				     path, GetLastError());
+			t_waited_ms = (DWORD)(getnanotime() / 1000000) - t_start_ms;
+			if (t_waited_ms < timeout_ms)
+				timeout_ms -= t_waited_ms;
+			else
+				timeout_ms = 1;
+			break; /* try again */
+
+		default:
+			return IPC_STATE__OTHER_ERROR;
 		}
-
-		t_start_ms = (DWORD)(getnanotime() / 1000000);
-
-		if (!WaitNamedPipeW(wpath, timeout_ms)) {
-			if (GetLastError() == ERROR_SEM_TIMEOUT)
-				return error(_("pipe is busy '%s'"), path);
-
-			return error(_("could not open '%s' (gle %ld)"),
-				     path, GetLastError());
-		}
-
-		/*
-		 * A pipe server instance became available.  Race other client
-		 * processes to connect to it.
-		 *
-		 * But first decrement our overall timeout so that we don't
-		 * starve if we keep losing the race.  But also guard against
-		 * special NPMWAIT_ values (0 and -1).
-		 */
-		t_waited_ms = (DWORD)(getnanotime() / 1000000) - t_start_ms;
-
-		timeout_ms -= t_waited_ms;
-		if (timeout_ms < 1)
-			timeout_ms = 1;
 	}
+
+	if (!SetNamedPipeHandleState(hPipe, &mode, NULL, NULL)) {
+		CloseHandle(hPipe);
+		return IPC_STATE__OTHER_ERROR;
+	}
+
+	*pfd = _open_osfhandle((intptr_t)hPipe, O_RDWR|O_BINARY);
+	if (*pfd < 0) {
+		CloseHandle(hPipe);
+		return IPC_STATE__OTHER_ERROR;
+	}
+
+	/* fd now owns hPipe */
+
+	return IPC_STATE__LISTENING;
 }
 
 /*
@@ -111,54 +160,76 @@ static int connect_to_server(const char *path, const wchar_t *wpath,
  */
 #define WINDOWS_CONNECTION_TIMEOUT_MS (30000)
 
-int ipc_client_send_command(const char *path, const char *message,
-			    struct strbuf *answer)
+enum ipc_active_state ipc_client_try_connect(
+	const char *path,
+	const struct ipc_client_connect_options *options,
+	int *pfd)
 {
 	wchar_t wpath[MAX_PATH];
-	HANDLE hPipe = INVALID_HANDLE_VALUE;
-	DWORD mode = PIPE_READMODE_BYTE;
-	int fd = -1;
+	enum ipc_active_state state = IPC_STATE__OTHER_ERROR;
+
+	*pfd = -1;
+
+	trace2_region_enter("ipc-client", "try-connect", NULL);
+	trace2_data_string("ipc-client", NULL, "try-connect/path", path);
+
+	if (initialize_pipe_name(path, wpath, ARRAY_SIZE(wpath)) < 0)
+		state = IPC_STATE__INVALID_PATH;
+	else
+		state = connect_to_server(wpath, WINDOWS_CONNECTION_TIMEOUT_MS,
+					  options, pfd);
+
+	trace2_data_intmax("ipc-client", NULL, "try-connect/state",
+			   (intmax_t)state);
+	trace2_region_leave("ipc-client", "try-connect", NULL);
+	return state;
+}
+
+int ipc_client_send_command_to_fd(int fd, const char *message,
+				  struct strbuf *answer)
+{
+	int ret = 0;
 
 	strbuf_setlen(answer, 0);
 
-	if (initialize_pipe_name(path, wpath, ARRAY_SIZE(wpath)) < 0)
-		return error(
-			_("could not create normalized wchar_t path for '%s'"),
-			path);
-
-	if (connect_to_server(path, wpath, WINDOWS_CONNECTION_TIMEOUT_MS,
-			      &hPipe))
-		return -1;
-
-	if (!SetNamedPipeHandleState(hPipe, &mode, NULL, NULL)) {
-		CloseHandle(hPipe);
-		return error(_("could not switch pipe to byte mode '%s'"),
-			     path);
-	}
-
-	fd = _open_osfhandle((intptr_t)hPipe, O_RDWR|O_BINARY);
-	if (fd < 0) {
-		CloseHandle(hPipe);
-		return error(_("could not create fd for pipe handle '%s'"),
-			     path);
-	}
-
-	hPipe = INVALID_HANDLE_VALUE; /* fd owns it now */
+	trace2_region_enter("ipc-client", "send-command", NULL);
+	trace2_data_string("ipc-client", NULL, "command", message);
 
 	if (write_packetized_from_buf(message, strlen(message), fd, 1) < 0) {
-		close(fd);
-		return error(_("could not send IPC to '%s'"), path);
+		ret = error(_("could not send IPC command"));
+		goto done;
 	}
 
 	FlushFileBuffers((HANDLE)_get_osfhandle(fd));
 
 	if (read_packetized_to_strbuf(fd, answer, PACKET_READ_NEVER_DIE) < 0) {
-		close(fd);
-		return error(_("could not read IPC response from '%s'"), path);
+		ret = error(_("could not read IPC response"));
+		goto done;
 	}
 
+	trace2_data_intmax("ipc-client", NULL, "response-length", answer->len);
+
+done:
+	trace2_region_leave("ipc-client", "send-command", NULL);
+	return ret;
+}
+
+int ipc_client_send_command(const char *path,
+			    const struct ipc_client_connect_options *options,
+			    const char *message, struct strbuf *response)
+{
+	int fd;
+	int ret = -1;
+	enum ipc_active_state state;
+
+	state = ipc_client_try_connect(path, options, &fd);
+
+	if (state != IPC_STATE__LISTENING)
+		return ret;
+
+	ret = ipc_client_send_command_to_fd(fd, message, response);
 	close(fd);
-	return 0;
+	return ret;
 }
 
 /*
