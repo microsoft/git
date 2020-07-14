@@ -7,6 +7,7 @@
  */
 
 #include "builtin.h"
+#include "config.h"
 #include "parse-options.h"
 #include "fsmonitor.h"
 #include "simple-ipc.h"
@@ -46,6 +47,27 @@ static int fsmonitor_stop_daemon(void)
 }
 #else
 #define FSMONITOR_DAEMON_IS_SUPPORTED 1
+
+/*
+ * Global state loaded from config.
+ */
+#define FSMONITOR__IPC_THREADS "fsmonitor.ipcthreads"
+static int fsmonitor__ipc_threads = 8;
+
+static int fsmonitor_config(const char *var, const char *value, void *cb)
+{
+	if (!strcmp(var, FSMONITOR__IPC_THREADS)) {
+		int i = git_config_int(var, value);
+		if (i < 1)
+			return error(_("value of '%s' out of range: %d"),
+				     FSMONITOR__IPC_THREADS, i);
+		fsmonitor__ipc_threads = i;
+		return 0;
+	}
+
+	return git_default_config(var, value, cb);
+}
+
 
 // TODO Should there be a timeout on how long we wait for the
 // TODO cookie file to appear in the notification stream?
@@ -355,10 +377,10 @@ static int fsmonitor_run_daemon(int background)
 		pthread_cond_wait(&state.initial_cond, &state.initial_mutex);
 	pthread_mutex_unlock(&state.initial_mutex);
 
-	// TODO I harded coded 8 threads for the IPC layer.  Should make this
-	// TODO a config setting or something.
-
-	return ipc_server_run(git_path_fsmonitor(), 8, handle_client, &state);
+	return ipc_server_run(git_path_fsmonitor(),
+			      fsmonitor__ipc_threads,
+			      handle_client,
+			      &state);
 
 	// TODO We should join on the listener thread.
 }
@@ -382,14 +404,22 @@ int cmd_fsmonitor__daemon(int argc, const char **argv, const char *prefix)
 		OPT_CMDMODE(0, "is-supported", &mode,
 			    N_("determine internal fsmonitor on this platform"),
 			    IS_SUPPORTED),
+		OPT_INTEGER(0, "ipc-threads",
+			    &fsmonitor__ipc_threads,
+			    N_("use <n> ipc threads")),
 		OPT_END()
 	};
 
 	if (argc == 2 && !strcmp(argv[1], "-h"))
 		usage_with_options(builtin_fsmonitor__daemon_usage, options);
 
+	git_config(fsmonitor_config, NULL);
+
 	argc = parse_options(argc, argv, prefix, options,
 			     builtin_fsmonitor__daemon_usage, 0);
+	if (fsmonitor__ipc_threads < 1)
+		die(_("invalid 'ipc-threads' value (%d)"),
+		    fsmonitor__ipc_threads);
 
 	if (mode == QUERY) {
 		struct strbuf answer = STRBUF_INIT;
