@@ -66,6 +66,12 @@ int fsmonitor_listen_stop(struct fsmonitor_daemon_state *state)
 // TODO This function should not cleanup the mutex and protected data
 // TODO structures because `handle_client()` in multiple IPC theads may be
 // TODO using them.  Such cleanup should be handled post-join.
+//
+// TODO getnanotime() is broken on Windows.  The very first call in the
+// TODO process computes something in microseconds and multiplies the
+// TODO result by 1000.  Since the NTFS has 100ns resolution, we can
+// TODO accidentally under report.  We should set the initial value of
+// TODO `state->latest_update` more precisely.
 
 struct fsmonitor_daemon_state *fsmonitor_listen(struct fsmonitor_daemon_state *state)
 {
