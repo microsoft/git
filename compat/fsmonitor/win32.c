@@ -72,6 +72,13 @@ int fsmonitor_listen_stop(struct fsmonitor_daemon_state *state)
 // TODO result by 1000.  Since the NTFS has 100ns resolution, we can
 // TODO accidentally under report.  We should set the initial value of
 // TODO `state->latest_update` more precisely.
+//
+// TODO This listener thread should not release the main thread until it
+// TODO has established the `latest_update` baseline.  For example,
+// TODO register for FS notifications, create a "startup cookie" and
+// TODO wait for it to appear in the notification stream.  Mark that
+// TODO as the epoch for our queue and etc.  AND THEN release the main
+// TODO thread.
 
 struct fsmonitor_daemon_state *fsmonitor_listen(struct fsmonitor_daemon_state *state)
 {

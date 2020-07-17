@@ -84,6 +84,8 @@ static void fsmonitor_wait_for_cookie(struct fsmonitor_daemon_state *state)
 	const char *cookie_path;
 	struct strbuf cookie_filename = STRBUF_INIT;
 
+	// TODO we increment `state->cookie_seq` here.  Are we under a lock?
+
 	strbuf_addstr(&cookie_filename, FSMONITOR_COOKIE_PREFIX);
 	strbuf_addf(&cookie_filename, "%i-%i", getpid(), state->cookie_seq++);
 	cookie.name = strbuf_detach(&cookie_filename, NULL);
@@ -266,6 +268,9 @@ error:
 			if (reply(reply_data,
 				  queue->path->path, queue->path->len + 1) < 0)
 				break;
+
+			// TODO perhaps guard this with a verbose setting?
+
 			trace2_data_string("fsmonitor", the_repository,
 					   "serve.path", queue->path->path);
 			count++;
