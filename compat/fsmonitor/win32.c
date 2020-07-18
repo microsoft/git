@@ -1,6 +1,12 @@
 #include "cache.h"
 #include "fsmonitor.h"
 
+// TODO Long paths can be 32k WIDE CHARS, but that may expand into more
+// TODO than 32k BYTES if there are any UTF8 multi-byte sequences.
+// TODO But this is rather rare, try it with a fixed buffer size first
+// TODO and if returns 0 and error ERROR_INSUFFICIENT_BUFFER, do the
+// TODO do it again the right way.
+
 static int normalize_path(FILE_NOTIFY_INFORMATION *info, struct strbuf *normalized_path)
 {
 	/* Convert to UTF-8 */
