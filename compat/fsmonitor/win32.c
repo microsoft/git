@@ -79,16 +79,57 @@ int fsmonitor_listen_stop(struct fsmonitor_daemon_state *state)
 // TODO accidentally under report.  We should set the initial value of
 // TODO `state->latest_update` more precisely.
 //
+// TODO I think the subsequent calls to getnanotime() in the body of the
+// TODO loop are also suspect.  There is an inherent race here, right?
+// TODO We are getting the clock before waiting (on both the lock and then
+// TODO on the kernel notify event).  The presumption is that the clock
+// TODO value will be earlier than the mod time of the first file in the
+// TODO buffer returned from ReadDirectoryChangesW() -- but we don't know
+// TODO that -- we don't control the batching.  (As I Understand It), the
+// TODO kernel maintains an internal buffer (hanging off of our directory
+// TODO handle) to collect events between our calls to RDCW(), so after
+// TODO calling RDCW() and getting a batch of changes (and emptying the
+// TODO kernel buffer) and while we are processing them, any new events
+// TODO would be added to the kernel buffer *WHILE WE ARE PROCESSING*
+// TODO the previous batch.  So the next time we call RDCW() we will get
+// TODO events from *BEFORE* our time stamp.  Right???
+//
+// TODO Also WRT getnanotime(), it returns a value based upon the system
+// TODO clock (such as gettimeofday() or QueryPerformance*()).  If it
+// TODO unclear if the system clock is in anyway related to the filesystem
+// TODO clock.  I know this sounds odd.  For a local NTFS filesystem, they
+// TODO are probably the same, but for a network mount or samba share, the
+// TODO FS clock is that of the remote host -- which may have a non-trivial
+// TODO amount of clock skew.  I think we should lstat() the first file
+// TODO received in the batch and make that the baseline for the iteration
+// TODO of the loop.
+//
 // TODO This listener thread should not release the main thread until it
 // TODO has established the `latest_update` baseline.  For example,
 // TODO register for FS notifications, create a "startup cookie" and
 // TODO wait for it to appear in the notification stream.  Mark that
 // TODO as the epoch for our queue and etc.  AND THEN release the main
 // TODO thread.
+//
+// TODO RDCW() has a note in [1] WRT short-names.  We should understand
+// TODO what it means.
+// TODO [1] https://docs.microsoft.com/en-us/windows/win32/api/winbase/nf-winbase-readdirectorychangesw
 
 struct fsmonitor_daemon_state *fsmonitor_listen(struct fsmonitor_daemon_state *state)
 {
 	HANDLE dir;
+
+	// TODO Investigate the best buffer size.
+	// TODO
+	// TODO There is a comment in [1] about a 64k buffer limit *IF*
+	// TODO monitoring a directory over the network.  But that would
+	// TODO be `char[64k]` not `char[64k*2]`.
+	// TODO
+	// TODO [1] doesn't list a max for a local directory.
+	// TODO
+	// TODO For very heavy IO loads with deeply nested pathnames, we might
+	// TODO need a larger buffer.
+
 	char buffer[65536 * sizeof(wchar_t)], *p;
 	DWORD desired_access = FILE_LIST_DIRECTORY;
 	DWORD share_mode =
@@ -140,6 +181,19 @@ struct fsmonitor_daemon_state *fsmonitor_listen(struct fsmonitor_daemon_state *s
 					   FILE_NOTIFY_CHANGE_LAST_WRITE |
 					   FILE_NOTIFY_CHANGE_CREATION,
 					   &count, NULL, NULL)) {
+
+			// TODO If this fails because the FS doesn't support
+			// TODO notifications, we should shut everything down
+			// TODO and not waste the client's time.
+			// TODO
+			// TODO Test this on some non-NTFS filesystems and see
+			// TODO what happens.   FAT, thumb drive, VHD, WSL, and
+			// TODO etc.
+			//
+			// TODO If this fails because the kernel buffer
+			// TODO overflows, then we just lost a lot of events
+			// TODO and need to resync everything.
+			
 			error("Reading Directory Change failed");
 			continue;
 		}
