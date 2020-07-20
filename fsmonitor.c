@@ -5,6 +5,7 @@
 #include "fsmonitor.h"
 #include "run-command.h"
 #include "strbuf.h"
+#include "trace2.h"
 
 #define INDEX_EXTENSION_VERSION1	(1)
 #define INDEX_EXTENSION_VERSION2	(2)
@@ -406,16 +407,25 @@ int fsmonitor_query_daemon(const char *since, struct strbuf *answer)
 	struct strbuf command = STRBUF_INIT;
 	int ret = 0;
 
+	trace2_region_enter("fsm_client", "query-daemon", NULL);
+
 	if (!fsmonitor_daemon_is_running()) {
-		if (fsmonitor_spawn_daemon() < 0 && !fsmonitor_daemon_is_running())
-			return error(_("failed to spawn fsmonitor daemon"));
+		if (fsmonitor_spawn_daemon() < 0 && !fsmonitor_daemon_is_running()) {
+			ret = error(_("failed to spawn fsmonitor daemon"));
+			goto done;
+		}
+
 		sleep_millisec(50);
 	}
 
 	strbuf_addf(&command, "%ld %s", FSMONITOR_VERSION, since);
 	ret = ipc_client_send_command(git_path_fsmonitor(),
 				      command.buf, answer);
+
+done:
 	strbuf_release(&command);
+	trace2_region_leave("fsm_client", "query-daemon", NULL);
+
 	return ret;
 }
 
@@ -433,6 +443,10 @@ int fsmonitor_spawn_daemon(void)
 	return run_command_v_opt_tr2(args, RUN_COMMAND_NO_STDIN | RUN_GIT_CMD,
 				    "fsmonitor");
 #else
+
+	// TODO By calling mingw_spawnvpe() directly, we don't get any of the
+	// TODO Trace2 child process tracking.  Let's fix that.
+
 	const char *args[] = { "git", "fsmonitor--daemon", "--run", NULL };
 	int in = open("/dev/null", O_RDONLY);
 	int out = open("/dev/null", O_WRONLY);

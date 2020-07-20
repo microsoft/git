@@ -427,6 +427,18 @@ int cmd_fsmonitor__daemon(int argc, const char **argv, const char *prefix)
 		    fsmonitor__ipc_threads);
 
 	if (mode == QUERY) {
+
+		// TODO This could use a comment to clarify what's happening.
+		// TODO Using `fsmonitor--daemon --query` runs this .exe as a
+		// TODO client process and it either:
+		// TODO [1] connects to an *existing* daemon process
+		// TODO [2] starts a *new* daemon process in the background
+		// TODO     if it is not yet running
+		// TODO and asks it what it has cached in memory and then exits.
+		// TODO The (existing or new) daemon process presists.
+		// TODO
+		// TODO This is used by the test suite.
+
 		struct strbuf answer = STRBUF_INIT;
 		int ret;
 		unsigned long version;
