@@ -453,19 +453,27 @@ int fsmonitor_spawn_daemon(void)
 	return run_command_v_opt_tr2(args, RUN_COMMAND_NO_STDIN | RUN_GIT_CMD,
 				    "fsmonitor");
 #else
-
-	// TODO By calling mingw_spawnvpe() directly, we don't get any of the
-	// TODO Trace2 child process tracking.  Let's fix that.
-
 	const char *args[] = { "git", "fsmonitor--daemon", "--run", NULL };
 	int in = open("/dev/null", O_RDONLY);
 	int out = open("/dev/null", O_WRONLY);
 	int ret = 0;
-	pid_t pid = mingw_spawnvpe("git", args, NULL, NULL, in, out, out);
+	int exec_id;
+	pid_t pid;
 	HANDLE process;
 
-	if (pid < 0)
+	/*
+	 * Try to start the daemon as a long-running process rather than as
+	 * a child (in the Trace2 sense).  Log an exec event for the startup.
+	 * We won't have an exec-result event unless fails to start or dies
+	 * quickly.
+	 */
+	exec_id = trace2_exec("git", args);
+
+	pid = mingw_spawnvpe("git", args, NULL, NULL, in, out, out);
+	if (pid < 0) {
+		trace2_exec_result(exec_id, pid);
 		ret = error(_("could not spawn the fsmonitor daemon"));
+	}
 
 	close(in);
 	close(out);
@@ -486,12 +494,14 @@ int fsmonitor_spawn_daemon(void)
 		DWORD exit_code;
 
 		if (!GetExitCodeProcess(process, &exit_code)) {
+			trace2_exec_result(exec_id, (int)GetLastError());
 			CloseHandle(process);
 			return error(_("could not query status of spawned "
 				       "fsmonitor--daemon"));
 		}
 
 		if (exit_code != STILL_ACTIVE) {
+			trace2_exec_result(exec_id, (int)exit_code);
 			CloseHandle(process);
 			return error(_("fsmonitor--daemon --run stopped; "
 				       "exit code: %ld"), exit_code);
