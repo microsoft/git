@@ -410,6 +410,16 @@ int fsmonitor_query_daemon(const char *since, struct strbuf *answer)
 	trace2_region_enter("fsm_client", "query-daemon", NULL);
 
 	if (!fsmonitor_daemon_is_running()) {
+
+		// TODO if we implicitly start the daemon right now,
+		// TODO it will not have any information of value yet,
+		// TODO so why bother asking it.  Odds are (if it responds
+		// TODO at all), it will just say that everything should
+		// TODO be checked.
+		// TODO
+		// TODO If I understand it, we are spawning it so that
+		// TODO it might be ready for the NEXT command.
+
 		if (fsmonitor_spawn_daemon() < 0 && !fsmonitor_daemon_is_running()) {
 			ret = error(_("failed to spawn fsmonitor daemon"));
 			goto done;
@@ -460,9 +470,16 @@ int fsmonitor_spawn_daemon(void)
 	close(in);
 	close(out);
 
+	// TODO If spawnvpe fails above and pid==-1, why don't we just
+	// TODO return an error?  Do we really need to call OpenProcess() ??
+
 	process = OpenProcess(PROCESS_QUERY_INFORMATION, FALSE, pid);
 	if (!process)
 		return error(_("could not spawn fsmonitor--daemon"));
+
+	// TODO ret is not needed.
+	//
+	// TODO should there be a timeout on this spin loop ?
 
 	/* poll is_running() */
 	while (!ret && !fsmonitor_daemon_is_running()) {
