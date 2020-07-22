@@ -86,6 +86,8 @@ int fsmonitor_query_daemon(const char *since, struct strbuf *answer);
 int fsmonitor_daemon_is_running(void);
 int fsmonitor_spawn_daemon(void);
 
+enum IPC_ACTIVE_STATE fsmonitor_daemon_get_active_state(void);
+
 /* Internal fsmonitor */
 struct fsmonitor_path {
 	struct hashmap_entry entry;

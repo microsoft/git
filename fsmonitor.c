@@ -439,6 +439,11 @@ done:
 	return ret;
 }
 
+enum IPC_ACTIVE_STATE fsmonitor_daemon_get_active_state(void)
+{
+	return ipc_get_active_state(git_path_fsmonitor());
+}
+
 int fsmonitor_daemon_is_running(void)
 {
 	// TODO Finish conversion from _is_active to _get_active_state.
