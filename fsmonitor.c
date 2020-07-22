@@ -397,7 +397,8 @@ GIT_PATH_FUNC(git_path_fsmonitor, "fsmonitor")
 int fsmonitor_stop_daemon(void)
 {
 	struct strbuf answer = STRBUF_INIT;
-	int ret = ipc_client_send_command(git_path_fsmonitor(), "quit", &answer);
+	int ret = ipc_client_send_command(git_path_fsmonitor(), 0,
+					  "quit", &answer);
 	strbuf_release(&answer);
 	return ret;
 }
@@ -405,32 +406,62 @@ int fsmonitor_stop_daemon(void)
 int fsmonitor_query_daemon(const char *since, struct strbuf *answer)
 {
 	struct strbuf command = STRBUF_INIT;
-	int ret = 0;
+	int ret = -1;
+	int fd = -1;
+	int tried_to_spawn = 0;
+	enum IPC_ACTIVE_STATE state = IPC_STATE__OTHER_ERROR;
 
 	trace2_region_enter("fsm_client", "query-daemon", NULL);
 
-	if (!fsmonitor_daemon_is_running()) {
-
-		// TODO if we implicitly start the daemon right now,
-		// TODO it will not have any information of value yet,
-		// TODO so why bother asking it.  Odds are (if it responds
-		// TODO at all), it will just say that everything should
-		// TODO be checked.
-		// TODO
-		// TODO If I understand it, we are spawning it so that
-		// TODO it might be ready for the NEXT command.
-
-		if (fsmonitor_spawn_daemon() < 0 && !fsmonitor_daemon_is_running()) {
-			ret = error(_("failed to spawn fsmonitor daemon"));
-			goto done;
-		}
-
-		sleep_millisec(50);
-	}
-
 	strbuf_addf(&command, "%ld %s", FSMONITOR_VERSION, since);
-	ret = ipc_client_send_command(git_path_fsmonitor(),
-				      command.buf, answer);
+
+try_again:
+	/*
+	 * Try to connect to the daemon.  If we just spawned the daemon,
+	 * let the connect loop spin until the named pipe/socket appears
+	 * in the file system.
+	 */
+	state = ipc_client_try_connect(git_path_fsmonitor(),
+				       (tried_to_spawn > 0),
+				       &fd);
+
+	switch (state) {
+	case IPC_STATE__LISTENING:
+		ret = ipc_client_send_command_to_fd(fd, command.buf, answer);
+		close(fd);
+
+		goto done;
+
+	case IPC_STATE__NOT_LISTENING:
+		ret = error(_("query_daemon: daemon not available"));
+		goto done;
+
+	case IPC_STATE__PATH_NOT_FOUND:
+		if (tried_to_spawn)
+			goto done;
+
+		tried_to_spawn++;
+		if (fsmonitor_spawn_daemon())
+			goto done;
+
+		// TODO One could argue that if we just successfully started
+		// TODO the daemon, it can't possibly have any FS events cached
+		// TODO yet, so we'll always get a trivial answer.  But we
+		// TODO allow it in case there are other command verbs, such
+		// TODO as a startup sequence number or something.
+		goto try_again;
+
+	case IPC_STATE__INVALID_PATH:
+		ret = error(_("query_daemon: invalid path '%s'"),
+			    git_path_fsmonitor());
+		goto done;
+
+	case IPC_STATE__OTHER_ERROR:
+	default:
+		ret = error(_("query_daemon: unspecified error on '%s'"),
+			    git_path_fsmonitor());
+		goto done;
+	}
 
 done:
 	strbuf_release(&command);
@@ -466,10 +497,8 @@ int fsmonitor_spawn_daemon(void)
 	const char *args[] = { "git", "fsmonitor--daemon", "--run", NULL };
 	int in = open("/dev/null", O_RDONLY);
 	int out = open("/dev/null", O_WRONLY);
-	int ret = 0;
 	int exec_id;
 	pid_t pid;
-	HANDLE process;
 
 	/*
 	 * Try to start the daemon as a long-running process rather than as
@@ -480,47 +509,20 @@ int fsmonitor_spawn_daemon(void)
 	exec_id = trace2_exec("git", args);
 
 	pid = mingw_spawnvpe("git", args, NULL, NULL, in, out, out);
-	if (pid < 0) {
-		trace2_exec_result(exec_id, pid);
-		ret = error(_("could not spawn the fsmonitor daemon"));
-	}
-
 	close(in);
 	close(out);
 
-	// TODO If spawnvpe fails above and pid==-1, why don't we just
-	// TODO return an error?  Do we really need to call OpenProcess() ??
-
-	process = OpenProcess(PROCESS_QUERY_INFORMATION, FALSE, pid);
-	if (!process)
-		return error(_("could not spawn fsmonitor--daemon"));
-
-	// TODO ret is not needed.
-	//
-	// TODO should there be a timeout on this spin loop ?
-
-	/* poll is_running() */
-	while (!ret && !fsmonitor_daemon_is_running()) {
-		DWORD exit_code;
-
-		if (!GetExitCodeProcess(process, &exit_code)) {
-			trace2_exec_result(exec_id, (int)GetLastError());
-			CloseHandle(process);
-			return error(_("could not query status of spawned "
-				       "fsmonitor--daemon"));
-		}
-
-		if (exit_code != STILL_ACTIVE) {
-			trace2_exec_result(exec_id, (int)exit_code);
-			CloseHandle(process);
-			return error(_("fsmonitor--daemon --run stopped; "
-				       "exit code: %ld"), exit_code);
-		}
-
-		sleep_millisec(50);
+	if (pid < 0) {
+		trace2_exec_result(exec_id, pid);
+		return error(_("could not spawn the fsmonitor daemon"));
 	}
 
-	return ret;
+	/*
+	 * We assume that `ipc_client_try_connect()` contains a spin loop
+	 * to wait for the daemon to begin listening, so we don't have to
+	 * add a delay here.  See `wait_if_not_found`.
+	 */
+	return 0;
 #endif
 }
 #endif
