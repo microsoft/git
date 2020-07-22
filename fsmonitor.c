@@ -441,7 +441,12 @@ done:
 
 int fsmonitor_daemon_is_running(void)
 {
-	return ipc_is_active(git_path_fsmonitor()) == IPC_STATE__ACTIVE;
+	// TODO Finish conversion from _is_active to _get_active_state.
+	// TODO That is, change the prototype of this function to return
+	// TODO IPC_ state so that caller can decide whether to retry or
+	// TODO just give up.
+
+	return ipc_get_active_state(git_path_fsmonitor()) == IPC_STATE__LISTENING;
 }
 
 /* Let's spin up a new server, returning when it is listening */
