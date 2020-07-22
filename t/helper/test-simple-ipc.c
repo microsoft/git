@@ -239,34 +239,26 @@ static int daemon__run_server(const char *path, int argc, const char **argv)
  */
 static int client__probe_server(const char *path)
 {
-	enum IPC_ACTIVE_STATE s;
-	int i;
+	enum ipc_active_state s;
 
-	/*
-	 * The test script will start the daemon in the background,
-	 * meaning that it might not be fully set up by the time we are
-	 * verifying that the IPC is active. So let's keep trying for
-	 * up to 2.5 seconds (but only if we were able to normalize
-	 * the path).
-	 */
-	for (i = 0; i < 50; i++) {
-		s = ipc_is_active(path);
-		switch (s) {
-		case IPC_STATE__ACTIVE:
-			return 0;
+	s = ipc_get_active_state(path);
+	switch (s) {
+	case IPC_STATE__LISTENING:
+		return 0;
 
-		case IPC_STATE__INVALID_PATH:
-			return error("invalid pipe/socket name '%s'",
-				     path);
+	case IPC_STATE__NOT_LISTENING:
+		return error("no server listening at '%s'", path);
 
-		case IPC_STATE__NOT_ACTIVE:
-		default:
-			sleep_millisec(50);
-			break;
-		}
+	case IPC_STATE__PATH_NOT_FOUND:
+		return error("path not found '%s'", path);
+
+	case IPC_STATE__INVALID_PATH:
+		return error("invalid pipe/socket name '%s'", path);
+
+	case IPC_STATE__OTHER_ERROR:
+	default:
+		return error("other error for '%s'", path);
 	}
-
-	return error("no server listening at '%s'?", path);
 }
 
 /*
@@ -280,18 +272,19 @@ static int client__send_ipc(int argc, const char **argv, const char *path)
 {
 	const char *command = argc > 2 ? argv[2] : "(no command)";
 	struct strbuf buf = STRBUF_INIT;
-	int is_quit = !strcmp("quit", command);
+	struct ipc_client_connect_options options
+		= IPC_CLIENT_CONNECT_OPTIONS_INIT;
 
-	if (!ipc_client_send_command(path, command, &buf)) {
+	options.wait_if_busy = 1;
+	options.wait_if_not_found = 0;
+
+	if (!ipc_client_send_command(path, &options, command, &buf)) {
 		printf("%s\n", buf.buf);
 		fflush(stdout);
 		strbuf_release(&buf);
 
 		return 0;
 	}
-
-	if (is_quit && (errno == ENOENT || errno == ECONNRESET))
-		return 0;
 
 	return error("failed to send '%s' to '%s'", command, path);
 }
@@ -305,11 +298,16 @@ static int do_sendbytes(int bytecount, char byte, const char *path)
 {
 	struct strbuf buf_send = STRBUF_INIT;
 	struct strbuf buf_resp = STRBUF_INIT;
+	struct ipc_client_connect_options options
+		= IPC_CLIENT_CONNECT_OPTIONS_INIT;
+
+	options.wait_if_busy = 1;
+	options.wait_if_not_found = 0;
 
 	strbuf_addstr(&buf_send, "sendbytes ");
 	strbuf_addchars(&buf_send, byte, bytecount);
 
-	if (!ipc_client_send_command(path, buf_send.buf, &buf_resp)) {
+	if (!ipc_client_send_command(path, &options, buf_send.buf, &buf_resp)) {
 		strbuf_rtrim(&buf_resp);
 		printf("sent:%c%08d %s\n", byte, bytecount, buf_resp.buf);
 		fflush(stdout);
