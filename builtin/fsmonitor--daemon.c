@@ -217,7 +217,9 @@ error:
 		// TODO token buffer.)
 
 		reply(reply_data, token.buf, token.len + 1);
+		trace2_data_string("fsmonitor", the_repository, "serve.token", token.buf);
 		reply(reply_data, "/", 2);
+		trace2_data_intmax("fsmonitor", the_repository, "serve.trivial", 1);
 		strbuf_release(&token);
 		trace2_region_leave("fsmonitor", "serve", the_repository);
 		return -1;
@@ -249,6 +251,8 @@ error:
 	pthread_mutex_unlock(&state->queue_update_lock);
 
 	reply(reply_data, token.buf, token.len + 1);
+	trace2_data_string("fsmonitor", the_repository, "serve.token", token.buf);
+
 	shown = kh_init_str();
 	while (queue && queue->time >= since) {
 		if (kh_get_str(shown, queue->path->path) != kh_end(shown))

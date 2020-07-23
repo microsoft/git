@@ -435,13 +435,18 @@ try_again:
 		ret = ipc_client_send_command_to_fd(fd, command.buf, answer);
 		close(fd);
 
-		if (trace2_is_enabled()) {
-			int trivial = answer->len > 2 &&
-				answer->buf[answer->len-2] == '\0' &&
-				answer->buf[answer->len-1] == '/';
+		trace2_data_intmax("fsm_client", NULL,
+				   "query-daemon/response-length", answer->len);
 
-			trace2_data_intmax("fsm_client", NULL,
-					   "query-daemon/trivial", trivial);
+		if (trace2_is_enabled()) {
+			static char trivial_response[3] = { '\0', '/', '\0' };
+			int trivial = !memcmp(trivial_response,
+					      &answer->buf[answer->len - 3], 3);
+			if (trivial)
+				trace2_data_intmax(
+					"fsm_client", NULL,
+					"query-daemon/trivial-response",
+					trivial);
 		}
 
 		goto done;
