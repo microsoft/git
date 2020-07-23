@@ -210,6 +210,12 @@ error:
 		pthread_mutex_lock(&state->queue_update_lock);
 		strbuf_addf(&token, "%"PRIu64"", state->latest_update);
 		pthread_mutex_unlock(&state->queue_update_lock);
+
+		// TODO This code sends "<token> NUL <slash> NUL" using
+		// TODO 2 network writes.  We should assemble a buffer
+		// TODO and do it in 1 IO.  (We are already building a
+		// TODO token buffer.)
+
 		reply(reply_data, token.buf, token.len + 1);
 		reply(reply_data, "/", 2);
 		strbuf_release(&token);

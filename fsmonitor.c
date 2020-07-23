@@ -397,8 +397,15 @@ GIT_PATH_FUNC(git_path_fsmonitor, "fsmonitor")
 int fsmonitor_stop_daemon(void)
 {
 	struct strbuf answer = STRBUF_INIT;
-	int ret = ipc_client_send_command(git_path_fsmonitor(), 0,
-					  "quit", &answer);
+	struct ipc_client_connect_options options
+		= IPC_CLIENT_CONNECT_OPTIONS_INIT;
+	int ret;
+
+	options.wait_if_busy = 1;
+	options.wait_if_not_found = 0;
+
+	ret = ipc_client_send_command(git_path_fsmonitor(), &options,
+				      "quit", &answer);
 	strbuf_release(&answer);
 	return ret;
 }
@@ -409,26 +416,33 @@ int fsmonitor_query_daemon(const char *since, struct strbuf *answer)
 	int ret = -1;
 	int fd = -1;
 	int tried_to_spawn = 0;
-	enum IPC_ACTIVE_STATE state = IPC_STATE__OTHER_ERROR;
+	enum ipc_active_state state = IPC_STATE__OTHER_ERROR;
+	struct ipc_client_connect_options options
+		= IPC_CLIENT_CONNECT_OPTIONS_INIT;
+
+	options.wait_if_busy = 1;
+	options.wait_if_not_found = 0;
 
 	trace2_region_enter("fsm_client", "query-daemon", NULL);
 
 	strbuf_addf(&command, "%ld %s", FSMONITOR_VERSION, since);
 
 try_again:
-	/*
-	 * Try to connect to the daemon.  If we just spawned the daemon,
-	 * let the connect loop spin until the named pipe/socket appears
-	 * in the file system.
-	 */
-	state = ipc_client_try_connect(git_path_fsmonitor(),
-				       (tried_to_spawn > 0),
-				       &fd);
+	state = ipc_client_try_connect(git_path_fsmonitor(), &options, &fd);
 
 	switch (state) {
 	case IPC_STATE__LISTENING:
 		ret = ipc_client_send_command_to_fd(fd, command.buf, answer);
 		close(fd);
+
+		if (trace2_is_enabled()) {
+			int trivial = answer->len > 2 &&
+				answer->buf[answer->len-2] == '\0' &&
+				answer->buf[answer->len-1] == '/';
+
+			trace2_data_intmax("fsm_client", NULL,
+					   "query-daemon/trivial", trivial);
+		}
 
 		goto done;
 
@@ -449,6 +463,12 @@ try_again:
 		// TODO yet, so we'll always get a trivial answer.  But we
 		// TODO allow it in case there are other command verbs, such
 		// TODO as a startup sequence number or something.
+
+		/*
+		 * Try again, but this time give the daemon a chance to
+		 * actually create the pipe/socket.
+		 */
+		options.wait_if_not_found = 1;
 		goto try_again;
 
 	case IPC_STATE__INVALID_PATH:
@@ -470,7 +490,7 @@ done:
 	return ret;
 }
 
-enum IPC_ACTIVE_STATE fsmonitor_daemon_get_active_state(void)
+enum ipc_active_state fsmonitor_daemon_get_active_state(void)
 {
 	return ipc_get_active_state(git_path_fsmonitor());
 }
@@ -518,9 +538,9 @@ int fsmonitor_spawn_daemon(void)
 	}
 
 	/*
-	 * We assume that `ipc_client_try_connect()` contains a spin loop
-	 * to wait for the daemon to begin listening, so we don't have to
-	 * add a delay here.  See `wait_if_not_found`.
+	 * The daemon is (probably) still booting up.  We DO NOT spin/wait
+	 * for the pipe/socket to become ready.  We ASSUME that our caller
+	 * takes care of that.
 	 */
 	return 0;
 #endif
