@@ -121,3 +121,42 @@ fail:
 	errno = saved_errno;
 	return -1;
 }
+
+int unix_stream_listen_gently(const char *path,
+			      const struct unix_stream_listen_opts *opts)
+{
+	int fd = -1;
+	int bind_successful = 0;
+	int saved_errno;
+	struct sockaddr_un sa;
+	struct unix_sockaddr_context ctx;
+
+	if (unix_sockaddr_init(&sa, path, &ctx) < 0)
+		goto fail;
+
+	fd = socket(AF_UNIX, SOCK_STREAM, 0);
+	if (fd < 0)
+		goto fail;
+
+	if (opts->force_unlink_before_bind)
+		unlink(path);
+
+	if (bind(fd, (struct sockaddr *)&sa, sizeof(sa)) < 0)
+		goto fail;
+	bind_successful = 1;
+
+	if (listen(fd, opts->listen_backlog_size) < 0)
+		goto fail;
+
+	unix_sockaddr_cleanup(&ctx);
+	return fd;
+
+fail:
+	saved_errno = errno;
+	unix_sockaddr_cleanup(&ctx);
+	close(fd);
+	if (bind_successful)
+		unlink(path);
+	errno = saved_errno;
+	return -1;
+}
