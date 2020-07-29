@@ -131,6 +131,19 @@ int unix_stream_listen_gently(const char *path,
 	struct sockaddr_un sa;
 	struct unix_sockaddr_context ctx;
 
+	if (opts->disallow_chdir) {
+		/*
+		 * When given a long pathname, the unix-socket.c layer
+		 * will try to temporarily `chdir(2)` to the containing
+		 * directory of the pathname and use only the filename
+		 * portion in `sockaddr_un.path`.  This is problematic
+		 * if called from threaded context.
+		 */
+		int size = strlen(path) + 1;
+		if (size > sizeof(sa.sun_path))
+			return ENAMETOOLONG;
+	}
+
 	if (unix_sockaddr_init(&sa, path, &ctx) < 0)
 		goto fail;
 
