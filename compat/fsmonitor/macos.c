@@ -248,6 +248,12 @@ static void fsevent_callback(ConstFSEventStreamRef streamRef,
 	string_list_clear(&state->cookie_list, 0);
 }
 
+// TODO This is a thread-proc.  Name it as such to let us know that.
+//
+// TODO Don't call die() in a thead-proc.  Rather, return and let the
+// TODO normal cleanup happen (such as deleting unix domain sockets on
+// TODO the disk).
+//
 struct fsmonitor_daemon_state *fsmonitor_listen(struct fsmonitor_daemon_state *state)
 {
 	FSEventStreamCreateFlags flags = kFSEventStreamCreateFlagNoDefer |

@@ -115,6 +115,12 @@ static int unwatch_directory(struct fsmonitor_daemon_state *state,
 	return 0; /* ignore unseen path */
 }
 
+// TODO This is a thread-proc.  Name it as such to let us know that.
+//
+// TODO Don't call die() in a thead-proc.  Rather, return and let the
+// TODO normal cleanup happen (such as deleting unix domain sockets on
+// TODO the disk).
+//
 struct fsmonitor_daemon_state *fsmonitor_listen(
 		struct fsmonitor_daemon_state *state)
 {
@@ -161,6 +167,15 @@ struct fsmonitor_daemon_state *fsmonitor_listen(
 		int ret = read(data.fd, &b, sizeof(b)), i;
 
 		if (ret < 0) {
+
+			// TODO Guard this (and perhaps the above read() call
+			// TODO from the case where (data.fd == -1) because
+			// TODO another thread called fsmonitor_listen_stop()
+			// TODO (with or without any locking) and closed the
+			// TODO fd.
+			//
+			// TODO investigate the locking around access to data.fd.
+			//
 			error_errno(_("could not read() inotify fd"));
 			goto out;
 		}

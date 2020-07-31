@@ -308,6 +308,10 @@ static int paths_cmp(const void *data, const struct hashmap_entry *he1,
 	return strcmp(a->path, keydata ? keydata : b->path);
 }
 
+// TODO add the path of the listener unix domain socket to this list.
+// TODO so that if someone deletes the socket, we will automatically
+// TODO shutdown rather than being orphaned.
+//
 int fsmonitor_special_path(struct fsmonitor_daemon_state *state,
 			   const char *path, size_t len, int was_deleted)
 {
