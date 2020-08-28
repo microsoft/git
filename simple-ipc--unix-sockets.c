@@ -9,78 +9,43 @@
 #include "unix-socket.h"
 
 /*
- * Write message with optional flush to a pipe with SIGPIPE disabled
- * (so that we get EPIPE from write() rather than an actual signal).
+ * Block SIGPIPE on the current thread (so that we get EPIPE from
+ * write() rather than an actual signal).
  *
- * We would like to use sigchain_push() and _pop() to control SIGPIPE
- * around our IO calls, but it is not thread safe.
+ * Note that using sigchain_push() and _pop() to control SIGPIPE
+ * around our IO calls is not thread safe:
  * [] It uses a global stack of handler frames.
  * [] It uses ALLOC_GROW() to resize it.
  * [] Finally, according to the `signal(2)` man-page:
  *    "The effects of `signal()` in a multithreaded process are unspecified."
- *
- * TODO This is not the right file (or name) for this function, but there
- * TODO are several issues that need to be discussed before we find a
- * TODO permanent home for it.
  */
-static int write_packetized_from_buf_with_sigpipe_thread_blocked(
-	const char *src_in, size_t len, int fd_out,
-	int flush_at_end)
+static void thread_block_sigpipe(sigset_t *old_set)
 {
-	sigset_t old_set;
 	sigset_t new_set;
-	int saved_errno;
-	int ret;
 
-	sigemptyset(&old_set);
 	sigemptyset(&new_set);
 	sigaddset(&new_set, SIGPIPE);
 
-	pthread_sigmask(SIG_BLOCK, &new_set, &old_set);
-
-	ret = write_packetized_from_buf(src_in, len, fd_out, flush_at_end);
-	saved_errno = errno;
-
-	pthread_sigmask(SIG_SETMASK, &old_set, NULL);
-
-	errno = saved_errno;
-	return ret;
+	sigemptyset(old_set);
+	pthread_sigmask(SIG_BLOCK, &new_set, old_set);
 }
 
-/*
- * TODO Similarly, this function needs to be moved too.
- */
-static int packet_flush_gently_with_sigpipe_thread_blocked(int fd)
+enum ipc_active_state ipc_get_active_state(const char *path)
 {
-	sigset_t old_set;
-	sigset_t new_set;
-	int saved_errno;
-	int ret;
-
-	sigemptyset(&old_set);
-	sigemptyset(&new_set);
-	sigaddset(&new_set, SIGPIPE);
-
-	pthread_sigmask(SIG_BLOCK, &new_set, &old_set);
-
-	ret = packet_flush_gently(fd);
-	saved_errno = errno;
-
-	pthread_sigmask(SIG_SETMASK, &old_set, NULL);
-
-	errno = saved_errno;
-	return ret;
-}
-
-enum IPC_ACTIVE_STATE ipc_is_active(const char *path)
-{
+	enum ipc_active_state state = IPC_STATE__OTHER_ERROR;
+	struct ipc_client_connect_options options
+		= IPC_CLIENT_CONNECT_OPTIONS_INIT;
 	struct stat st;
+	int fd_test = -1;
+
+	options.wait_if_busy = 0;
+	options.wait_if_not_found = 0;
 
 	if (lstat(path, &st) == -1) {
 		switch (errno) {
 		case ENOENT:
 		case ENOTDIR:
-			return IPC_STATE__NOT_ACTIVE;
+			return IPC_STATE__NOT_LISTENING;
 		default:
 			return IPC_STATE__INVALID_PATH;
 		}
@@ -91,53 +56,72 @@ enum IPC_ACTIVE_STATE ipc_is_active(const char *path)
 		return IPC_STATE__INVALID_PATH;
 
 	/*
-	 * If we have have valid socket at that path then we have to
-	 * assume that there is a server running somewhere and listening.
+	 * Just because the filesystem has a S_IFSOCK type inode
+	 * at `path`, doesn't mean it that there is a server listening.
+	 * Ping it to be sure.
 	 */
-	return IPC_STATE__ACTIVE;
-}
+	state = ipc_client_try_connect(path, &options, &fd_test);
+	close(fd_test);
 
-static int client_write_and_read(const char *path, int fd,
-				 const char *message, struct strbuf *answer)
-{
-	if (write_packetized_from_buf_with_sigpipe_thread_blocked(
-		    message, strlen(message), fd, 1) < 0)
-		return error_errno(_("could not send IPC to '%s'"), path);
-
-	if (!answer)
-		return 0;
-
-	if (read_packetized_to_strbuf(fd, answer, PACKET_READ_NEVER_DIE) < 0)
-		return error_errno(_("could not read IPC response from '%s'"),
-				   path);
-
-	return 0;
+	return state;
 }
 
 /*
- * If the server if very busy, we may not get a connection the first time.
+ * This value was chosen at random.
  */
-static int connect_to_server(const char *path, int timeout_ms)
+#define WAIT_STEP_MS (50)
+
+/*
+ * Try to connect to the server.  If the server is just starting up or
+ * is very busy, we may not get a connection the first time.
+ */
+static enum ipc_active_state connect_to_server(
+	const char *path,
+	int timeout_ms,
+	const struct ipc_client_connect_options *options,
+	int *pfd)
 {
 	int wait_ms = 50;
 	int k;
 
+	*pfd = -1;
+
 	for (k = 0; k < timeout_ms; k += wait_ms) {
 		int fd = unix_stream_connect(path);
 
-		if (fd != -1)
-			return fd;
-		if (errno != ECONNREFUSED)
-			return fd;
+		if (fd != -1) {
+			*pfd = fd;
+			return IPC_STATE__LISTENING;
+		}
 
-		/*
-		 * ECONNREFUSED usually means the server is busy and cannot
-		 * accept() our connection attempt.
-		 */
+		if (errno == ENOENT) {
+			if (!options->wait_if_not_found)
+				return IPC_STATE__PATH_NOT_FOUND;
+
+			goto sleep_and_try_again;
+		}
+
+		if (errno == ETIMEDOUT) {
+			if (!options->wait_if_busy)
+				return IPC_STATE__NOT_LISTENING;
+
+			goto sleep_and_try_again;
+		}
+
+		if (errno == ECONNREFUSED) {
+			if (!options->wait_if_busy)
+				return IPC_STATE__NOT_LISTENING;
+
+			goto sleep_and_try_again;
+		}
+
+		return IPC_STATE__OTHER_ERROR;
+
+	sleep_and_try_again:
 		sleep_millisec(wait_ms);
 	}
 
-	return -1;
+	return IPC_STATE__NOT_LISTENING;
 }
 
 /*
@@ -145,44 +129,71 @@ static int connect_to_server(const char *path, int timeout_ms)
  */
 #define MY_CONNECTION_TIMEOUT_MS (1000)
 
-int ipc_client_send_command(const char *path, const char *message,
-			    struct strbuf *answer)
+enum ipc_active_state ipc_client_try_connect(
+	const char *path,
+	const struct ipc_client_connect_options *options,
+	int *pfd)
 {
-	int fd;
-	int ret;
+	enum ipc_active_state state = IPC_STATE__OTHER_ERROR;
 
-	fd = connect_to_server(path, MY_CONNECTION_TIMEOUT_MS);
-	if (fd < 0)
-		return error_errno(_("could not open UDS for '%s'"),
-				   path);
+	*pfd = -1;
 
-	ret = client_write_and_read(path, fd, message, answer);
+	trace2_region_enter("ipc-client", "try-connect", NULL);
+	trace2_data_string("ipc-client", NULL, "try-connect/path", path);
 
-	close(fd);
+	state = connect_to_server(path, MY_CONNECTION_TIMEOUT_MS,
+				  options, pfd);
+
+	trace2_data_intmax("ipc-client", NULL, "try-connect/state",
+			   (intmax_t)state);
+	trace2_region_leave("ipc-client", "try-connect", NULL);
+	return state;
+}
+
+int ipc_client_send_command_to_fd(int fd, const char *message,
+				  struct strbuf *answer)
+{
+	int ret = 0;
+
+	strbuf_setlen(answer, 0);
+
+	trace2_region_enter("ipc-client", "send-command", NULL);
+	trace2_data_string("ipc-client", NULL, "command", message);
+
+	if (write_packetized_from_buf(message, strlen(message), fd, 1) < 0) {
+		ret = error(_("could not send IPC command"));
+		goto done;
+	}
+
+	if (read_packetized_to_strbuf(fd, answer, PACKET_READ_NEVER_DIE) < 0) {
+		ret = error(_("could not read IPC response"));
+		goto done;
+	}
+
+	trace2_data_intmax("ipc-client", NULL, "response-length", answer->len);
+
+done:
+	trace2_region_leave("ipc-client", "send-command", NULL);
 	return ret;
 }
 
-static struct string_list listener_paths = STRING_LIST_INIT_DUP;
-static int atexit_registered;
-
-static void unlink_listener_path(void)
+	
+int ipc_client_send_command(const char *path,
+			    const struct ipc_client_connect_options *options,
+			    const char *message, struct strbuf *answer)
 {
-	int i;
+	int fd;
+	int ret = -1;
+	enum ipc_active_state state;
 
-	for (i = 0; i < listener_paths.nr; i++)
-		unlink(listener_paths.items[i].string);
+	state = ipc_client_try_connect(path, options, &fd);
 
-	string_list_clear(&listener_paths, 0);
-}
+	if (state != IPC_STATE__LISTENING)
+		return ret;
 
-static void register_atexit(const char *path)
-{
-	if (!atexit_registered) {
-		atexit(unlink_listener_path);
-		atexit_registered = 1;
-	}
-
-	string_list_append(&listener_paths, path);
+	ret = ipc_client_send_command_to_fd(fd, message, answer);
+	close(fd);
+	return ret;
 }
 
 static int set_socket_blocking_flag(int fd, int make_nonblocking)
@@ -224,6 +235,7 @@ struct ipc_accept_thread_data {
 	const char *magic;
 	struct ipc_server_data *server_data;
 	int fd_listen;
+	ino_t inode_listen;
 	int fd_send_shutdown;
 	int fd_wait_shutdown;
 	pthread_t pthread_id;
@@ -305,7 +317,7 @@ static int fifo_enqueue(struct ipc_server_data *server_data, int fd)
 		next_back_pos = 0;
 
 	if (next_back_pos == server_data->front_pos) {
-//		trace2_printf("XXX: queue full %d", fd);
+		/* Queue is full. Just drop it. */
 		close(fd);
 		return -1;
 	}
@@ -359,8 +371,76 @@ static int do_io_reply(struct ipc_server_reply_data *reply_data,
 	if (reply_data->magic != MAGIC_SERVER_REPLY_DATA)
 		BUG("reply_cb called with wrong instance data");
 
-	return write_packetized_from_buf_with_sigpipe_thread_blocked(
-		response, response_len, reply_data->fd, 0);
+	return write_packetized_from_buf(response, response_len,
+					 reply_data->fd, 0);
+}
+
+/* A randomly chosen value. */
+#define MY_WAIT_POLL_TIMEOUT_MS (10)
+
+/*
+ * If the client hangs up without sending any data on the wire, just
+ * quietly close the socket and ignore this client.
+ *
+ * This worker thread is committed to reading the IPC request data
+ * from the client at the other end of this fd.  Wait here for the
+ * client to actually put something on the wire -- because if the
+ * client just does a ping (connect and hangup without sending any
+ * data), our use of the pkt-line read routines will spew an error
+ * message.
+ *
+ * Return -1 if the client hung up.
+ * Return 0 if data (possibly incomplete) is ready.
+ */
+static int worker_thread__wait_for_io_start(
+	struct ipc_worker_thread_data *worker_thread_data,
+	int fd)
+{
+	struct ipc_server_data *server_data = worker_thread_data->server_data;
+	struct pollfd pollfd[1];
+	int result;
+
+	while (1) {
+		pollfd[0].fd = fd;
+		pollfd[0].events = POLLIN;
+
+		result = poll(pollfd, 1, MY_WAIT_POLL_TIMEOUT_MS);
+		if (result < 0) {
+			if (errno == EINTR)
+				continue;
+			goto cleanup;
+		}
+
+		if (result == 0) {
+			/* a timeout */
+
+			int in_shutdown;
+
+			pthread_mutex_lock(&server_data->work_available_mutex);
+			in_shutdown = server_data->shutdown_requested;
+			pthread_mutex_unlock(&server_data->work_available_mutex);
+
+			/*
+			 * If a shutdown is already in progress and this
+			 * client has not started talking yet, just drop it.
+			 */
+			if (in_shutdown)
+				goto cleanup;
+			continue;
+		}
+
+		if (pollfd[0].revents & POLLHUP)
+			goto cleanup;
+
+		if (pollfd[0].revents & POLLIN)
+			return 0;
+
+		goto cleanup;
+	}
+
+cleanup:
+	close(fd);
+	return -1;
 }
 
 /*
@@ -386,21 +466,17 @@ static int worker_thread__do_io(
 	ret = read_packetized_to_strbuf(reply_data.fd, &buf,
 					PACKET_READ_NEVER_DIE);
 	if (ret >= 0) {
-//		trace2_printf("simple-ipc: %s", buf.buf);
-
 		ret = worker_thread_data->server_data->application_cb(
 			worker_thread_data->server_data->application_data,
 			buf.buf, do_io_reply, &reply_data);
 
-		packet_flush_gently_with_sigpipe_thread_blocked(reply_data.fd);
+		packet_flush_gently(reply_data.fd);
 	}
 	else {
 		/*
 		 * The client probably disconnected/shutdown before it
 		 * could send a well-formed message.  Ignore it.
 		 */
-//		trace2_printf("ipc-server[%s]: read_packetized failed",
-//			      worker_thread_data->server_data->buf_path.buf);
 	}
 
 	strbuf_release(&buf);
@@ -413,24 +489,40 @@ static int worker_thread__do_io(
  * Thread proc for an IPC worker thread.  It handles a series of
  * connections from clients.  It pulls the next fd from the queue
  * processes it, and then waits for the next client.
+ *
+ * Block SIGPIPE in this worker thread for the life of the thread.
+ * This avoids stray (and sometimes delayed) SIGPIPE signals caused
+ * by client errors and/or when we are under extremely heavy IO load.
+ *
+ * This means that the application callback will have SIGPIPE blocked.
+ * The callback should not change it.
  */
 static void *worker_thread_proc(void *_worker_thread_data)
 {
 	struct ipc_worker_thread_data *worker_thread_data = _worker_thread_data;
 	struct ipc_server_data *server_data = worker_thread_data->server_data;
+	sigset_t old_set;
+	int fd, io;
 	int ret;
 
 	trace2_thread_start("ipc-worker");
 
-	while (1) {
-		int fd = worker_thread__wait_for_connection(worker_thread_data);
+	thread_block_sigpipe(&old_set);
 
+	while (1) {
+		fd = worker_thread__wait_for_connection(worker_thread_data);
 		if (fd == -1)
 			break; /* in shutdown */
+
+		io = worker_thread__wait_for_io_start(worker_thread_data, fd);
+		if (io == -1)
+			continue; /* client hung up without sending anything */
 
 		ret = worker_thread__do_io(worker_thread_data, fd);
 
 		if (ret == SIMPLE_IPC_QUIT) {
+			trace2_data_string("ipc-worker", NULL, "queue_stop_async",
+					   "application_quit");
 			/* The application told us to shutdown. */
 			ipc_server_stop_async(server_data);
 			break;
@@ -441,10 +533,31 @@ static void *worker_thread_proc(void *_worker_thread_data)
 	return NULL;
 }
 
+static int accept_thread__has_listen_socket_been_stolen(
+	struct ipc_accept_thread_data *accept_thread_data)
+{
+	struct stat st;
+
+	if (lstat(accept_thread_data->server_data->buf_path.buf, &st) == -1) {
+		trace2_printf("has_listen_socket_been_stolen: socket not found");
+		return 1;
+	}
+
+	if (st.st_ino != accept_thread_data->inode_listen) {
+		trace2_printf("has_listen_socket_been_stolen: inode different");
+		return 1;
+	}
+
+	return 0;
+}
+
+/* A randomly chosen value. */
+#define MY_ACCEPT_POLL_TIMEOUT_MS (60 * 1000)
+
 /*
  * Accept a new client connection on our socket.  This uses non-blocking
  * IO so that we can also wait for shutdown requests on our socket-pair
- * without actually spinning on a timeout.
+ * without actually spinning on a fast timeout.
  */
 static int accept_thread__wait_for_connection(
 	struct ipc_accept_thread_data *accept_thread_data)
@@ -459,21 +572,39 @@ static int accept_thread__wait_for_connection(
 		pollfd[1].fd = accept_thread_data->fd_listen;
 		pollfd[1].events = POLLIN;
 
-		result = poll(pollfd, 2, -1);
+		result = poll(pollfd, 2, MY_ACCEPT_POLL_TIMEOUT_MS);
 		if (result < 0) {
 			if (errno == EINTR)
 				continue;
 			return result;
 		}
-		if (result == 0) /* a timeout */
-			continue;
 
-		if (pollfd[0].revents == POLLIN) {
+		if (result == 0) {
+			/* a timeout */
+
+			/*
+			 * If someone deletes or force-creates a new unix
+			 * domain socket at out path, all future clients
+			 * will be routed elsewhere and we silently starve.
+			 * If that happens, just queue a shutdown.
+			 */
+			if (accept_thread__has_listen_socket_been_stolen(
+				    accept_thread_data)) {
+				trace2_data_string("ipc-accept", NULL,
+						   "queue_stop_async",
+						   "socket_stolen");
+				ipc_server_stop_async(
+					accept_thread_data->server_data);
+			}
+			continue;
+		}
+
+		if (pollfd[0].revents & POLLIN) {
 			/* shutdown message queued to socketpair */
 			return -1;
 		}
 
-		if (pollfd[1].revents == POLLIN) {
+		if (pollfd[1].revents & POLLIN) {
 			/* a connection is available on fd_listen */
 
 			int client_fd = accept(accept_thread_data->fd_listen,
@@ -498,13 +629,21 @@ static int accept_thread__wait_for_connection(
  * Thread proc for the IPC server "accept thread".  This waits for
  * an incoming socket connection, appends it to the queue of available
  * connections, and notifies a worker thread to process it.
+ *
+ * Block SIGPIPE in this thread for the life of the thread.  This
+ * avoids any stray SIGPIPE signals when closing pipe fds under
+ * extremely heavy loads (such as when the fifo queue is full and we
+ * drop incomming connections).
  */
 static void *accept_thread_proc(void *_accept_thread_data)
 {
 	struct ipc_accept_thread_data *accept_thread_data = _accept_thread_data;
 	struct ipc_server_data *server_data = accept_thread_data->server_data;
+	sigset_t old_set;
 
 	trace2_thread_start("ipc-accept");
+
+	thread_block_sigpipe(&old_set);
 
 	while (1) {
 		int client_fd = accept_thread__wait_for_connection(
@@ -523,9 +662,6 @@ static void *accept_thread_proc(void *_accept_thread_data)
 		}
 		else {
 			fifo_enqueue(server_data, client_fd);
-			// TODO We are about to add one fd to the fifo, so
-			// TODO we should only need to wake up one sleeping
-			// TODO worker.  Broadcasting seems overkill here.
 			pthread_cond_broadcast(&server_data->work_available_cond);
 		}
 		pthread_mutex_unlock(&server_data->work_available_mutex);
@@ -538,12 +674,153 @@ static void *accept_thread_proc(void *_accept_thread_data)
 /*
  * We can't predict the connection arrival rate relative to the worker
  * processing rate, therefore we allow the "accept-thread" to queue up
- * a few connections for each thread (in addition to whatever
- * buffering the kernel gives us).
+ * a generous number of connections, since we'd rather have the client
+ * not unnecessarily timeout if we can avoid it.  (The assumption is
+ * that this will be used for FSMonitor and a few second wait on a
+ * connection is better than having the client timeout and do the full
+ * computation itself.)
  *
  * The FIFO queue size is set to a multiple of the worker pool size.
+ * This value chosen at random.
  */
-#define FIFO_SCALE (5)
+#define FIFO_SCALE (100)
+
+/*
+ * The backlog value for `listen(2)`.  This doesn't need to huge,
+ * rather just large enough for our "accept-thread" to wake up and
+ * queue incoming connections onto the FIFO without the kernel
+ * dropping any.
+ *
+ * This value chosen at random.
+ */
+#define LISTEN_BACKLOG (50)
+
+/*
+ * Create a unix domain socket at the given path to listen for
+ * client connections.  The resulting socket will then appear
+ * in the filesystem as an inode with S_IFSOCK.  The inode is
+ * itself created as part of the `bind(2)` operation.
+ *
+ * Unix domain sockets have a fundamental design flaw because the
+ * inode persists until the pathname is deleted; closing the listening
+ * socket only closes the socket handle/descriptor, it does not delete
+ * the inode.
+ *
+ * Well-behaving service daemons are expected to also delete the inode
+ * before shutdown.  If a service crashes (or forgets) it can leave
+ * the (now stale) inode in the filesystem.  This behaves like a stale
+ * ".lock" file and may prevent future service instances from starting
+ * up correctly.
+ *
+ * When future service instances try to create the listener socket,
+ * `bind(2)` will fail with EADDRINUSE -- because the inode already
+ * exists.  However, the new instance cannot tell if it is a stale
+ * inode *or* another service instance is already running.
+ *
+ * One possible solution is to blindly unlinking the inode before
+ * attempting to create the new socket and inode.  Then `bind(2)`
+ * should always succeed.  However, if there is an existing service
+ * instance, it would be orphaned -- listening on a socket/inode that
+ * is no longer visible to future clients.
+ *
+ * An alternative solution is to gently create the socket.  If the
+ * inode already exists, try to determine whether it is stale or
+ * actually in use by an existing service process by attempting to
+ * connect to the socket/inode.  (This assumes that the existing
+ * process isn't wedged.)  Then if stale, recreate the socket with
+ * force.
+ */ 
+static int create_listener_socket(const char *path)
+{
+	int fd_listen;
+	int fd_client;
+	struct unix_stream_listen_opts opts = {
+		.listen_backlog_size = LISTEN_BACKLOG,
+		.force_unlink_before_bind = 0,
+		.disallow_chdir = 1
+	};
+
+	trace2_data_string("ipc-server", NULL, "try-listen-gently", path);
+
+	fd_listen = unix_stream_listen_gently(path, &opts);
+	if (fd_listen >= 0)
+		return fd_listen;
+
+	if (errno != EADDRINUSE)
+		return error_errno(_("XXX:could not create socket for '%s'"),
+				   path);
+
+	trace2_data_string("ipc-server", NULL, "try-detect-server", path);
+
+	fd_client = unix_stream_connect(path);
+	if (fd_client >= 0) {
+		/*
+		 * An existing service process is alive and accepted our
+		 * connection.
+		 */
+		close(fd_client);
+
+		errno = EADDRINUSE;
+		return error_errno(_("YYY:could not create socket for '%s'"),
+				   path);
+	}
+
+	trace2_data_string("ipc-server", NULL, "try-listen-force", path);
+
+	opts.force_unlink_before_bind = 1;
+	fd_listen = unix_stream_listen_gently(path, &opts);
+	if (fd_listen >= 0)
+		return fd_listen;
+
+	return error_errno(_("ZZZ:could not create socket for '%s'"), path);
+}
+
+static int setup_listener_socket(const char *path, ino_t *inode)
+{
+	int fd_listen;
+	struct stat st;
+
+	trace2_region_enter("ipc-server", "create-listener_socket", NULL);
+	fd_listen = create_listener_socket(path);
+	trace2_region_leave("ipc-server", "create-listener_socket", NULL);
+
+	if (fd_listen < 0)
+		return fd_listen;
+
+	/*
+	 * We just bound a socket (descriptor) to a newly created unix
+	 * domain socket in the filesystem.  Capture the inode number
+	 * so we can later detect if/when someone else force-creates a
+	 * new socket and effectively steals the path from us.  (Which
+	 * would leave us listening to a socket that no client could
+	 * reach.)
+	 */
+	if (lstat(path, &st) < 0) {
+		int saved_errno = errno;
+
+		close(fd_listen);
+		unlink(path);
+
+		errno = saved_errno;
+		return error_errno(_("AAA: could not set up socket for '%s'"), path);
+	}
+
+	if (set_socket_blocking_flag(fd_listen, 1)) {
+		int saved_errno = errno;
+
+		close(fd_listen);
+		unlink(path);
+
+		errno = saved_errno;
+		return error_errno(_("BBB: could not set up socket for '%s'"), path);
+	}
+
+	trace2_printf("KKK: path '%s' inode %ld", path, (long)st.st_ino);
+
+	*inode = st.st_ino;
+
+	return fd_listen;
+}
 
 /*
  * Start IPC server in a pool of background threads.
@@ -555,32 +832,11 @@ int ipc_server_run_async(struct ipc_server_data **returned_server_data,
 {
 	struct ipc_server_data *server_data;
 	int fd_listen;
+	ino_t inode_listen;
 	int sv[2];
 	int k;
-	enum IPC_ACTIVE_STATE state;
 
 	*returned_server_data = NULL;
-
-	state = ipc_is_active(path);
-	switch (state) {
-	case IPC_STATE__ACTIVE:
-		return error(_("IPC server already running on '%s'"), path);
-
-	default:
-	case IPC_STATE__NOT_ACTIVE:
-	case IPC_STATE__INVALID_PATH:
-		break;
-	}
-
-	fd_listen = unix_stream_listen(path);
-	if (fd_listen < 0)
-		return error_errno(_("could not set up socket for '%s'"), path);
-	if (set_socket_blocking_flag(fd_listen, 1)) {
-		int saved_errno = errno;
-		close(fd_listen);
-		errno = saved_errno;
-		return error_errno(_("could not set up socket for '%s'"), path);
-	}
 
 	/*
 	 * Create a socketpair and set sv[1] to non-blocking.  This will used to
@@ -590,20 +846,25 @@ int ipc_server_run_async(struct ipc_server_data **returned_server_data,
 	 */
 	if (socketpair(AF_UNIX, SOCK_STREAM, 0, sv) < 0) {
 		int saved_errno = errno;
-		close(fd_listen);
 		errno = saved_errno;
 		return error_errno(_("could not set up socketpair for '%s'"), path);
 	}
 	if (set_socket_blocking_flag(sv[1], 1)) {
 		int saved_errno = errno;
-		close(fd_listen);
 		close(sv[0]);
 		close(sv[1]);
 		errno = saved_errno;
 		return error_errno(_("could not set up socketpair for '%s'"), path);
 	}
 
-	register_atexit(path);
+	fd_listen = setup_listener_socket(path, &inode_listen);
+	if (fd_listen < 0) {
+		int saved_errno = errno;
+		close(sv[0]);
+		close(sv[1]);
+		errno = saved_errno;
+		return -1;
+	}
 
 	server_data = xcalloc(1, sizeof(*server_data));
 	server_data->magic = MAGIC_SERVER_DATA;
@@ -627,6 +888,7 @@ int ipc_server_run_async(struct ipc_server_data **returned_server_data,
 	server_data->accept_thread->magic = MAGIC_ACCEPT_THREAD_DATA;
 	server_data->accept_thread->server_data = server_data;
 	server_data->accept_thread->fd_listen = fd_listen;
+	server_data->accept_thread->inode_listen = inode_listen;
 	server_data->accept_thread->fd_send_shutdown = sv[0];
 	server_data->accept_thread->fd_wait_shutdown = sv[1];
 
@@ -662,6 +924,7 @@ int ipc_server_run_async(struct ipc_server_data **returned_server_data,
 
 /*
  * Gently tell the IPC server treads to shutdown.
+ * Can be run on any thread.
  */
 int ipc_server_stop_async(struct ipc_server_data *server_data)
 {
@@ -671,6 +934,8 @@ int ipc_server_stop_async(struct ipc_server_data *server_data)
 
 	if (!server_data)
 		return 0;
+
+	trace2_region_enter("ipc-server", "server-stop-async", NULL);
 
 	pthread_mutex_lock(&server_data->work_available_mutex);
 
@@ -696,6 +961,8 @@ int ipc_server_stop_async(struct ipc_server_data *server_data)
 	pthread_cond_broadcast(&server_data->work_available_cond);
 
 	pthread_mutex_unlock(&server_data->work_available_mutex);
+
+	trace2_region_leave("ipc-server", "server-stop-async", NULL);
 
 	return 0;
 }
@@ -728,6 +995,8 @@ int ipc_server_await(struct ipc_server_data *server_data)
 
 void ipc_server_free(struct ipc_server_data *server_data)
 {
+	struct ipc_accept_thread_data * accept_thread_data;
+
 	if (!server_data)
 		return;
 
@@ -735,15 +1004,29 @@ void ipc_server_free(struct ipc_server_data *server_data)
 		BUG("cannot free ipc-server while running for '%s'",
 		    server_data->buf_path.buf);
 
-	strbuf_release(&server_data->buf_path);
+	accept_thread_data = server_data->accept_thread;
+	if (accept_thread_data) {
+		if (accept_thread_data->fd_listen != -1) {
+			/*
+			 * Only unlink the unix domain socket if we
+			 * created it.  That is, if another daemon
+			 * process force-created a new socket at this
+			 * path, and effectively steals our path
+			 * (which prevents us from receiving any
+			 * future clients), we don't want to do the
+			 * same thing to them.
+			 */
+			if (!accept_thread__has_listen_socket_been_stolen(
+				    accept_thread_data))
+				unlink(server_data->buf_path.buf);
 
-	if (server_data->accept_thread) {
-		if (server_data->accept_thread->fd_listen != -1)
-			close(server_data->accept_thread->fd_listen);
-		if (server_data->accept_thread->fd_send_shutdown != -1)
-			close(server_data->accept_thread->fd_send_shutdown);
-		if (server_data->accept_thread->fd_wait_shutdown != -1)
-			close(server_data->accept_thread->fd_wait_shutdown);
+			close(accept_thread_data->fd_listen);
+		}
+		if (accept_thread_data->fd_send_shutdown != -1)
+			close(accept_thread_data->fd_send_shutdown);
+		if (accept_thread_data->fd_wait_shutdown != -1)
+			close(accept_thread_data->fd_wait_shutdown);
+
 		free(server_data->accept_thread);
 	}
 
@@ -757,6 +1040,8 @@ void ipc_server_free(struct ipc_server_data *server_data)
 
 	pthread_cond_destroy(&server_data->work_available_cond);
 	pthread_mutex_destroy(&server_data->work_available_mutex);
+
+	strbuf_release(&server_data->buf_path);
 
 	free(server_data->fifo_fds);
 	free(server_data);
