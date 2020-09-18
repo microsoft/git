@@ -1878,6 +1878,33 @@ cleanup:
 }
 
 /*
+ * Wrapper for read_loose_object() to read and verify the hash of a
+ * loose object, and discard the contents buffer.
+ *
+ * Returns 0 on success, negative on error (details may be written to stderr).
+ */
+static int verify_loose_object(const char *path,
+			       const struct object_id *expected_oid)
+{
+	enum object_type type;
+	void *contents = NULL;
+	unsigned long size;
+	struct strbuf type_name = STRBUF_INIT;
+	int ret;
+	struct object_info oi = OBJECT_INFO_INIT;
+	struct object_id real_oid = *null_oid();
+	oi.typep = &type;
+	oi.sizep = &size;
+	oi.type_name = &type_name;
+
+	ret = read_loose_object(path, expected_oid, &real_oid, &contents, &oi);
+	if (!ret)
+		free(contents);
+
+	return ret;
+}
+
+/*
  * Convert the tempfile into a permanent loose object in the ODB.
  */
 static void install_loose(struct gh__request_params *params,
@@ -1907,6 +1934,19 @@ static void install_loose(struct gh__request_params *params,
 	 */
 	strbuf_addstr(&tmp_path, get_tempfile_path(params->tempfile));
 	close_tempfile_gently(params->tempfile);
+
+	/*
+	 * Compute the hash of the received content (while it is still
+	 * in a temp file) and verify that it matches the OID that we
+	 * requested and was not corrupted.
+	 */
+	if (verify_loose_object(tmp_path.buf, &params->loose_oid)) {
+		strbuf_addf(&status->error_message,
+			    "hash failed for received loose object '%s'",
+			    oid_to_hex(&params->loose_oid));
+		status->ec = GH__ERROR_CODE__COULD_NOT_INSTALL_LOOSE;
+		goto cleanup;
+	}
 
 	/*
 	 * Try to install the tempfile as the actual loose object.
