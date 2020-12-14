@@ -66,7 +66,11 @@ core.fsmonitor::
 	will identify all files that may have changed since the
 	requested date/time. This information is used to speed up git by
 	avoiding unnecessary processing of files that have not changed.
-	See the "fsmonitor-watchman" section of linkgit:githooks[5].
++
+See the "fsmonitor-watchman" section of linkgit:githooks[5].
++
+The special value `:internal:` is used to select the
+linkgit:git-fsmonitor--daemon[1].
 
 core.fsmonitorHookVersion::
 	Sets the version of hook that is to be used when calling fsmonitor.
