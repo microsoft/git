@@ -2438,7 +2438,7 @@ int git_config_get_virtualfilesystem(void)
 			/* virtual file system relies on the sparse checkout logic so force it on */
 			core_apply_sparse_checkout = 1;
 			return 1;
-		} 
+		}
 		core_virtualfilesystem = NULL;
 	}
 
