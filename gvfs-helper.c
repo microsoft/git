@@ -100,7 +100,7 @@
 //                 git< loose <oid> | packfile <filename.pack>
 //                 git< ok | partial | error <message>
 //                 git< 0000
-//            
+//
 //            [1] Documentation/technical/protocol-common.txt
 //            [2] Documentation/technical/long-running-process-protocol.txt
 //            [3] See GIT_TRACE_PACKET
