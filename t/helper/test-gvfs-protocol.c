@@ -50,7 +50,7 @@ static void logreport(const char *label, const char *err, va_list params)
 	strbuf_addf(&msg, "[%"PRIuMAX"] %s: ", (uintmax_t)getpid(), label);
 	strbuf_vaddf(&msg, err, params);
 	strbuf_addch(&msg, '\n');
-	
+
 	fwrite(msg.buf, sizeof(char), msg.len, stderr);
 	fflush(stderr);
 
@@ -671,7 +671,7 @@ static enum worker_result send_loose_object(const struct object_id *oid,
 }
 
 /*
- * Per the GVFS Protocol, a single OID should be in the slash-arg: 
+ * Per the GVFS Protocol, a single OID should be in the slash-arg:
  *
  *     GET /gvfs/objects/fc3fff3a25559d2d30d1719c4f4a6d9fe7e05170 HTTP/1.1
  *
@@ -1325,7 +1325,7 @@ static enum worker_result req__read(struct req *req, int fd)
 	 *
 	 *    <method> SP <uri-target> SP <HTTP-version> CRLF
 	 *
-	 */    
+	 */
 	if (strbuf_getwholeline_fd(&req->start_line, fd, '\n') == EOF)
 		return WR_OK | WR_HANGUP;
 
@@ -1374,7 +1374,7 @@ static enum worker_result req__read(struct req *req, int fd)
 	 *     "GET /gvfs/config HTTP/1.1"
 	 *     "GET /gvfs/objects/aaaaaaaaaabbbbbbbbbbccccccccccdddddddddd HTTP/1.1"
 	 *     "GET /gvfs/prefetch?lastPackTimestamp=123456789 HTTP/1.1"
-	 * 
+	 *
 	 *     "GET /<uri-base>/gvfs/config HTTP/1.1"
 	 *     "GET /<uri-base>/gvfs/objects/aaaaaaaaaabbbbbbbbbbccccccccccdddddddddd HTTP/1.1"
 	 *     "GET /<uri-base>/gvfs/prefetch?lastPackTimestamp=123456789 HTTP/1.1"
