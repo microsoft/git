@@ -1136,7 +1136,7 @@ int cmd_update_index(int argc, const char **argv, const char *prefix)
 	getline_fn = nul_term_line ? strbuf_getline_nul : strbuf_getline_lf;
 	if (mark_skip_worktree_only && gvfs_config_is_set(GVFS_BLOCK_COMMANDS))
 		die(_("modifying the skip worktree bit is not supported on a GVFS repo"));
-	
+
 	if (preferred_index_format) {
 		if (preferred_index_format != 4 && gvfs_config_is_set(GVFS_BLOCK_COMMANDS))
 			die(_("changing the index version is not supported on a GVFS repo"));
