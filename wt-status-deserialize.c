@@ -327,7 +327,7 @@ static int wt_deserialize_v1_changed_items(const struct wt_status *cmd_s,
 		if (*p)
 			d->rename_source = xstrdup(p);
 		item->util = d;
-		
+
 		trace_printf_key(
 			&trace_deserialize,
 			"change: %d %d %d %d %d %o %o %o %d %d %s %s '%s' '%s'",

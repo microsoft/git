@@ -73,7 +73,7 @@ test_expect_success 'verify untracked-files=complete with no conversion' '
 	! ignored.ign
 	! ignored_dir/
 	EOF
-	
+
 	git status --untracked-files=complete --ignored=matching --serialize >serialized_status.dat &&
 	touch new_change.txt &&
 
@@ -89,7 +89,7 @@ test_expect_success 'verify untracked-files=complete to untracked-files=normal c
 	? untracked/
 	? untracked_1.txt
 	EOF
-	
+
 	git status --untracked-files=complete --ignored=matching --serialize >serialized_status.dat &&
 	touch new_change.txt &&
 
@@ -108,7 +108,7 @@ test_expect_success 'verify untracked-files=complete to untracked-files=all conv
 	! ignored.ign
 	! ignored_dir/
 	EOF
-	
+
 	git status --untracked-files=complete --ignored=matching --serialize >serialized_status.dat &&
 	touch new_change.txt &&
 
@@ -128,7 +128,7 @@ test_expect_success 'verify serialized status with non-convertible ignore mode d
 	! ignored.ign
 	! ignored_dir/
 	EOF
-	
+
 	git status --untracked-files=complete --ignored=matching --serialize >serialized_status.dat &&
 	touch new_change.txt &&
 
@@ -141,7 +141,7 @@ test_expect_success 'verify serialized status handles path scopes' '
 	cat >expect <<-\EOF &&
 	? untracked/
 	EOF
-	
+
 	git status --untracked-files=complete --ignored=matching --serialize >serialized_status.dat &&
 	touch new_change.txt &&
 

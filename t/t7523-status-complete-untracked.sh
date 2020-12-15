@@ -31,7 +31,7 @@ test_expect_success 'verify untracked-files=complete' '
 	! ignored.ign
 	! ignored_dir/
 	EOF
-	
+
 	git status --porcelain=v2 --untracked-files=complete --ignored >output &&
 	test_i18ncmp expect output
 '
