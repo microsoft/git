@@ -1025,6 +1025,8 @@ static int write_loose_object_to_stdin(const struct object_id *oid,
 	return ++(d->count) > d->batch_size;
 }
 
+static const char *object_dir = NULL;
+
 static int pack_loose(struct maintenance_run_opts *opts)
 {
 	struct repository *r = the_repository;
@@ -1032,11 +1034,14 @@ static int pack_loose(struct maintenance_run_opts *opts)
 	struct write_loose_object_data data;
 	struct child_process pack_proc = CHILD_PROCESS_INIT;
 
+	if (!object_dir)
+		object_dir = r->objects->odb->path;
+
 	/*
 	 * Do not start pack-objects process
 	 * if there are no loose objects.
 	 */
-	if (!for_each_loose_file_in_objdir(r->objects->odb->path,
+	if (!for_each_loose_file_in_objdir(object_dir,
 					   bail_on_loose,
 					   NULL, NULL, NULL))
 		return 0;
@@ -1046,7 +1051,7 @@ static int pack_loose(struct maintenance_run_opts *opts)
 	strvec_push(&pack_proc.args, "pack-objects");
 	if (opts->quiet)
 		strvec_push(&pack_proc.args, "--quiet");
-	strvec_pushf(&pack_proc.args, "%s/pack/loose", r->objects->odb->path);
+	strvec_pushf(&pack_proc.args, "%s/pack/loose", object_dir);
 
 	pack_proc.in = -1;
 
@@ -1059,7 +1064,7 @@ static int pack_loose(struct maintenance_run_opts *opts)
 	data.count = 0;
 	data.batch_size = 50000;
 
-	for_each_loose_file_in_objdir(r->objects->odb->path,
+	for_each_loose_file_in_objdir(object_dir,
 				      write_loose_object_to_stdin,
 				      NULL,
 				      NULL,
@@ -1437,6 +1442,7 @@ static int maintenance_run(int argc, const char **argv, const char *prefix)
 {
 	int i;
 	struct maintenance_run_opts opts;
+	const char *tmp_obj_dir = NULL;
 	struct option builtin_maintenance_run_options[] = {
 		OPT_BOOL(0, "auto", &opts.auto_flag,
 			 N_("run tasks based on the state of the repository")),
@@ -1470,6 +1476,18 @@ static int maintenance_run(int argc, const char **argv, const char *prefix)
 	if (argc != 0)
 		usage_with_options(builtin_maintenance_run_usage,
 				   builtin_maintenance_run_options);
+
+	/*
+	 * To enable the VFS for Git/Scalar shared object cache, use
+	 * the gvfs.sharedcache config option to redirect the
+	 * maintenance to that location.
+	 */
+	if (!git_config_get_value("gvfs.sharedcache", &tmp_obj_dir) &&
+	    tmp_obj_dir) {
+		object_dir = xstrdup(tmp_obj_dir);
+		setenv(DB_ENVIRONMENT, object_dir, 1);
+	}
+
 	return maintenance_run_tasks(&opts);
 }
 
