@@ -5,17 +5,17 @@ test_description='block commands in GVFS repo'
 . ./test-lib.sh
 
 not_with_gvfs () {
-    command=$1 &&
-    shift &&
-    test_expect_success "test $command $*" "
-        test_config alias.g4rbled $command &&
-        test_config core.gvfs true &&
-        test_must_fail git $command $* &&
-        test_must_fail git g4rbled $* &&
-        test_unconfig core.gvfs &&
-        test_must_fail git -c core.gvfs=true $command $* &&
-        test_must_fail git -c core.gvfs=true g4rbled $*
-    "
+	command=$1 &&
+	shift &&
+	test_expect_success "test $command $*" "
+		test_config alias.g4rbled $command &&
+		test_config core.gvfs true &&
+		test_must_fail git $command $* &&
+		test_must_fail git g4rbled $* &&
+		test_unconfig core.gvfs &&
+		test_must_fail git -c core.gvfs=true $command $* &&
+		test_must_fail git -c core.gvfs=true g4rbled $*
+	"
 }
 
 not_with_gvfs fsck
