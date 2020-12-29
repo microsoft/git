@@ -535,7 +535,7 @@ test_expect_success 'start and stop Windows maintenance' '
 	EOF
 
 	rm -f args &&
-	GIT_TEST_MAINT_SCHEDULER="schtasks:./print-args" GIT_TRACE2_PERF=1 git maintenance start &&
+	GIT_TEST_MAINT_SCHEDULER="schtasks:./print-args" git maintenance start &&
 
 	# start registers the repo
 	git config --get --global maintenance.repo "$(pwd)" &&
@@ -543,9 +543,8 @@ test_expect_success 'start and stop Windows maintenance' '
 	for frequency in hourly daily weekly
 	do
 		grep "/create /tn Git Maintenance ($frequency) /f /xml" args &&
-		file=$(ls schedule_$frequency*.xml) &&
-		test_xmllint "$file" &&
-		grep "encoding=.US-ASCII." "$file" || return 1
+		file=$(ls .git/schedule_${frequency}*.xml) &&
+		test_xmllint "$file" || return 1
 	done &&
 
 	rm -f args &&

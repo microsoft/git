@@ -1610,7 +1610,7 @@ static int launchctl_schedule_plist(const char *exec_path, enum schedule_priorit
 		die(_("failed to create directories for '%s'"), filename);
 	plist = xfopen(filename, "w");
 
-	preamble = "<?xml version=\"1.0\" encoding=\"US-ASCII\"?>\n"
+	preamble = "<?xml version=\"1.0\"?>\n"
 		   "<!DOCTYPE plist PUBLIC \"-//Apple//DTD PLIST 1.0//EN\" \"http://www.apple.com/DTDs/PropertyList-1.0.dtd\">\n"
 		   "<plist version=\"1.0\">"
 		   "<dict>\n"
@@ -1733,14 +1733,15 @@ static int schtasks_schedule_task(const char *exec_path, enum schedule_priority 
 	char *name = schtasks_task_name(frequency);
 	struct strbuf tfilename = STRBUF_INIT;
 
-	strbuf_addf(&tfilename, "schedule_%s_XXXXXX", frequency);
+	strbuf_addf(&tfilename, "%s/schedule_%s_XXXXXX",
+		    get_git_common_dir(), frequency);
 	tfile = xmks_tempfile(tfilename.buf);
 	strbuf_release(&tfilename);
 
 	if (!fdopen_tempfile(tfile, "w"))
 		die(_("failed to create temp xml file"));
 
-	xml = "<?xml version=\"1.0\" encoding=\"US-ASCII\"?>\n"
+	xml = "<?xml version=\"1.0\" ?>\n"
 	      "<Task version=\"1.4\" xmlns=\"http://schemas.microsoft.com/windows/2004/02/mit/task\">\n"
 	      "<Triggers>\n"
 	      "<CalendarTrigger>\n";
