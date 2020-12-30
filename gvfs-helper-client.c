@@ -169,28 +169,6 @@ static int gh_client__send__objects_prefetch(struct child_process *process,
 }
 
 /*
- * Verify that the pathname found in the "odb" response line matches
- * what we requested.
- *
- * Since we ALWAYS send a "--shared-cache=<path>" arg to "gvfs-helper",
- * we should be able to verify that the value is what we requested.
- * In particular, I don't see a need to try to search for the response
- * value in from our list of alternates.
- */
-static void gh_client__verify_odb_line(const char *line)
-{
-	const char *v1_odb_path;
-
-	if (!skip_prefix(line, "odb ", &v1_odb_path))
-		BUG("verify_odb_line: invalid line '%s'", line);
-
-	if (!gh_client__chosen_odb ||
-	    strcmp(v1_odb_path, gh_client__chosen_odb->path))
-		BUG("verify_odb_line: unexpeced odb path '%s' vs '%s'",
-		    v1_odb_path, gh_client__chosen_odb->path);
-}
-
-/*
  * Update the loose object cache to include the newly created
  * object.
  */
@@ -291,7 +269,7 @@ static int gh_client__objects__receive_response(
 			break;
 
 		if (starts_with(line, "odb")) {
-			gh_client__verify_odb_line(line);
+			/* trust that this matches what we expect */
 		}
 
 		else if (starts_with(line, "packfile")) {
