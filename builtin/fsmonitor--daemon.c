@@ -9,7 +9,6 @@
 #include "khash.h"
 #include "pkt-line.h"
 
-#ifdef HAVE_FSMONITOR_DAEMON_BACKEND
 static const char * const builtin_fsmonitor__daemon_usage[] = {
 	N_("git fsmonitor--daemon --start [<options>]"),
 	N_("git fsmonitor--daemon --run [<options>]"),
@@ -20,6 +19,8 @@ static const char * const builtin_fsmonitor__daemon_usage[] = {
 	N_("git fsmonitor--daemon --flush"),
 	NULL
 };
+
+#ifdef HAVE_FSMONITOR_DAEMON_BACKEND
 
 /*
  * Global state loaded from config.
@@ -1438,6 +1439,13 @@ int cmd_fsmonitor__daemon(int argc, const char **argv, const char *prefix)
 #else
 int cmd_fsmonitor__daemon(int argc, const char **argv, const char *prefix)
 {
+	struct option options[] = {
+		OPT_END(),
+	};
+
+	if (argc == 2 && !strcmp(argv[1], "-h"))
+		usage_with_options(builtin_fsmonitor__daemon_usage, options);
+
 	die(_("fsmonitor--daemon not supported on this platform"));
 }
 #endif
