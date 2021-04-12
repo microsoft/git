@@ -6,6 +6,7 @@
 #include "gettext.h"
 #include "parse-options.h"
 #include "config.h"
+#include "run-command.h"
 
 static void setup_enlistment_directory(int argc, const char **argv,
 				       const char * const *usagestr,
@@ -57,6 +58,25 @@ static void setup_enlistment_directory(int argc, const char **argv,
 	}
 
 	setup_git_directory();
+}
+
+static int run_git(const char *arg, ...)
+{
+	struct strvec argv = STRVEC_INIT;
+	va_list args;
+	const char *p;
+	int res;
+
+	va_start(args, arg);
+	strvec_push(&argv, arg);
+	while ((p = va_arg(args, const char *)))
+		strvec_push(&argv, p);
+	va_end(args);
+
+	res = run_command_v_opt(argv.v, RUN_GIT_CMD);
+
+	strvec_clear(&argv);
+	return res;
 }
 
 static int set_recommended_config(void)
@@ -166,11 +186,24 @@ static int set_recommended_config(void)
 	return 0;
 }
 
+static int toggle_maintenance(int enable)
+{
+	return run_git("maintenance", enable ? "start" : "unregister", NULL);
+}
+
 static int register_dir(void)
 {
 	int res = set_recommended_config();
 
+	if (!res)
+		res = toggle_maintenance(1);
+
 	return res;
+}
+
+static int unregister_dir(void)
+{
+	return toggle_maintenance(0);
 }
 
 static int cmd_register(int argc, const char **argv)
@@ -191,11 +224,30 @@ static int cmd_register(int argc, const char **argv)
 	return register_dir();
 }
 
+static int cmd_unregister(int argc, const char **argv)
+{
+	struct option options[] = {
+		OPT_END(),
+	};
+	const char * const usage[] = {
+		N_("scalar unregister [<enlistment>]"),
+		NULL
+	};
+
+	argc = parse_options(argc, argv, NULL, options,
+			     usage, 0);
+
+	setup_enlistment_directory(argc, argv, usage, options);
+
+	return unregister_dir();
+}
+
 struct {
 	const char *name;
 	int (*fn)(int, const char **);
 } builtins[] = {
 	{ "register", cmd_register },
+	{ "unregister", cmd_unregister },
 	{ NULL, NULL},
 };
 
