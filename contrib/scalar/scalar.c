@@ -191,9 +191,34 @@ static int toggle_maintenance(int enable)
 	return run_git("maintenance", enable ? "start" : "unregister", NULL);
 }
 
+static int add_or_remove_enlistment(int add)
+{
+	int res;
+
+	if (!the_repository->worktree)
+		die(_("Scalar enlistments require a worktree"));
+
+	res = run_git("config", "--global", "--get", "--fixed-value",
+		      "scalar.repo", the_repository->worktree, NULL);
+
+	/*
+	 * If we want to add and the setting is already there, then do nothing.
+	 * If we want to remove and the setting is not there, then do nothing.
+	 */
+	if ((add && !res) || (!add && res))
+		return 0;
+
+	return run_git("config", "--global", add ? "--add" : "--unset",
+		       add ? "--no-fixed-value" : "--fixed-value",
+		       "scalar.repo", the_repository->worktree, NULL);
+}
+
 static int register_dir(void)
 {
-	int res = set_recommended_config();
+	int res = add_or_remove_enlistment(1);
+
+	if (!res)
+		res = set_recommended_config();
 
 	if (!res)
 		res = toggle_maintenance(1);
@@ -203,7 +228,25 @@ static int register_dir(void)
 
 static int unregister_dir(void)
 {
-	return toggle_maintenance(0);
+	int res = 0;
+
+	if (toggle_maintenance(0) < 0)
+		res = -1;
+
+	if (add_or_remove_enlistment(0) < 0)
+		res = -1;
+
+	return res;
+}
+
+static int cmd_list(int argc, const char **argv)
+{
+	if (argc != 1)
+		die(_("`scalar list` does not take arguments"));
+
+	if (run_git("config", "--global", "--get-all", "scalar.repo", NULL) < 0)
+		return -1;
+	return 0;
 }
 
 static int cmd_register(int argc, const char **argv)
@@ -246,6 +289,7 @@ struct {
 	const char *name;
 	int (*fn)(int, const char **);
 } builtins[] = {
+	{ "list", cmd_list },
 	{ "register", cmd_register },
 	{ "unregister", cmd_unregister },
 	{ NULL, NULL},
