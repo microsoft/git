@@ -25,7 +25,9 @@ all-scalar: scalar$X
 
 all:: all-scalar
 
-docs:: Documentation/scalar.html Documentation/scalar.1
+docs-scalar: Documentation/scalar.html Documentation/scalar.1
+
+docs:: docs-scalar
 
 scalar$X: scalar.o $(GITLIBS)
 	$(QUIET_LINK)$(CC) $(ALL_CFLAGS) $(ALL_LDFLAGS) -o $@ $< \
@@ -45,6 +47,6 @@ Documentation/scalar.1: contrib/scalar/scalar.txt
 		MAN_TXT=../contrib/scalar/scalar.txt \
 		../contrib/scalar/scalar.1
 
-.PHONY: all-scalar FORCE
+.PHONY: all-scalar docs-scalar FORCE
 
 endif
