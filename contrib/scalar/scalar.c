@@ -434,6 +434,13 @@ static int cmd_unregister(int argc, const char **argv)
 	return res;
 }
 
+static int cmd_test(int argc, const char **argv)
+{
+	const char *dir = argc > 1 ? argv[1] : ".";
+	printf("default for '%s': '%s'\n", dir, remote_default_branch(dir));
+	return 0;
+}
+
 struct {
 	const char *name;
 	int (*fn)(int, const char **);
@@ -446,6 +453,7 @@ struct {
 	{ "register", cmd_register, 1 },
 	{ "run", cmd_run, 1 },
 	{ "unregister", cmd_unregister, 1 },
+	{ "test", cmd_test, 0 },
 	{ NULL, NULL},
 };
 
