@@ -116,6 +116,58 @@ static int set_recommended_config(const char *file)
 	return 0;
 }
 
+static char *remote_default_branch(const char *dir)
+{
+	struct child_process cp = CHILD_PROCESS_INIT;
+	struct strbuf out = STRBUF_INIT;
+
+	cp.git_cmd = 1;
+	cp.dir = dir;
+	strvec_pushl(&cp.args, "ls-remote", "--symref", "origin", "HEAD", NULL);
+	strbuf_addstr(&out, "-\n");
+	if (!pipe_command(&cp, NULL, 0, &out, 0, NULL, 0)) {
+		char *ref = out.buf;
+
+		while ((ref = strstr(ref + 1, "\nref: "))) {
+			const char *p;
+			char *head, *branch;
+
+			ref += strlen("\nref: ");
+			head = strstr(ref, "\tHEAD");
+
+			if (!head || memchr(ref, '\n', head - ref))
+				continue;
+
+			if (skip_prefix(ref, "refs/heads/", &p)) {
+				branch = xstrndup(p, head - p);
+				strbuf_release(&out);
+				return branch;
+			}
+
+			error(_("remote HEAD is not a branch: '%.*s'"),
+			      (int)(head - ref), ref);
+			strbuf_release(&out);
+			return NULL;
+		}
+	}
+	warning(_("failed to get default branch name from remote; "
+		  "using local default"));
+	strbuf_reset(&out);
+
+	child_process_init(&cp);
+	cp.git_cmd = 1;
+	cp.dir = dir;
+	strvec_pushl(&cp.args, "symbolic-ref", "--short", "HEAD", NULL);
+	if (!pipe_command(&cp, NULL, 0, &out, 0, NULL, 0)) {
+		strbuf_trim(&out);
+		return strbuf_detach(&out, NULL);
+	}
+
+	strbuf_release(&out);
+	error(_("failed to get default branch name"));
+	return NULL;
+}
+
 static int cmd_clone(int argc, const char **argv)
 {
 	int is_unattended = git_env_bool("Scalar_UNATTENDED", 0);
@@ -250,12 +302,21 @@ static int cmd_clone(int argc, const char **argv)
 			goto cleanup;
 	}
 
+	if (!branch &&
+	    !(branch = remote_default_branch(dir))) {
+		res = error(_("failed to get default branch for '%s'"), url);
+		goto cleanup;
+	}
 
 	die("To be continued");
 
 cleanup:
 	free(dir);
+	free(config_path);
 	strbuf_release(&buf);
+	free(branch);
+	free(cache_server_url);
+	free(local_cache_path);
 	return res;
 }
 
