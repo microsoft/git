@@ -28,18 +28,15 @@ T = $(sort $(wildcard t[0-9][0-9][0-9][0-9]-*.sh))
 
 all: $(DEFAULT_TEST_TARGET)
 
-test: pre-clean $(TEST_LINT)
+test: $(TEST_LINT)
 	$(MAKE) aggregate-results-and-cleanup
 
-prove: pre-clean $(TEST_LINT)
+prove: $(TEST_LINT)
 	@echo "*** prove ***"; GIT_CONFIG=.git/config $(PROVE) --exec '$(SHELL_PATH_SQ)' $(GIT_PROVE_OPTS) $(T) :: $(GIT_TEST_OPTS)
 	$(MAKE) clean-except-prove-cache
 
 $(T):
 	@echo "*** $@ ***"; GIT_CONFIG=.git/config '$(SHELL_PATH_SQ)' $@ $(GIT_TEST_OPTS)
-
-pre-clean:
-	$(RM) -r '$(TEST_RESULTS_DIRECTORY_SQ)'
 
 clean-except-prove-cache:
 	$(RM) -r 'trash directory'.* '$(TEST_RESULTS_DIRECTORY_SQ)'
@@ -78,5 +75,5 @@ valgrind:
 test-results:
 	mkdir -p test-results
 
-.PHONY: pre-clean $(T) aggregate-results clean valgrind
+.PHONY: $(T) aggregate-results clean valgrind
 

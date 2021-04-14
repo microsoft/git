@@ -50,8 +50,6 @@ Documentation/scalar.1: contrib/scalar/scalar.txt
 test-scalar:
 	$(MAKE) -C contrib/scalar/t
 
-test: test-scalar
-
 .PHONY: all-scalar docs-scalar test-scalar FORCE
 
 endif
