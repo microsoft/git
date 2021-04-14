@@ -91,6 +91,13 @@ jobs:
         HOME: ${{runner.workspace}}
         NO_PERL: 1
       run: . /etc/profile && ci/make-test-artifacts.sh artifacts
+    - name: build Scalar
+      shell: bash
+      run: |
+        make -C contrib/scalar &&
+        mkdir -p artifacts/bin-wrappers artifacts/contrib/scalar &&
+        cp contrib/scalar/scalar.exe artifacts/contrib/scalar/ &&
+        cp bin-wrappers/scalar artifacts/bin-wrappers/
     - name: zip up tracked files
       run: git archive -o artifacts/tracked.tar.gz HEAD
     - name: upload tracked files and build artifacts
@@ -161,6 +168,8 @@ jobs:
       run: compat\vcbuild\vcpkg_copy_dlls.bat release
     - name: generate Visual Studio solution
       shell: bash
+      env:
+        INCLUDE_SCALAR: YesPlease
       run: |
         cmake `pwd`/contrib/buildsystems/ -DCMAKE_PREFIX_PATH=`pwd`/compat/vcbuild/vcpkg/installed/x64-windows \
         -DNO_GETTEXT=YesPlease -DPERL_TESTS=OFF -DPYTHON_TESTS=OFF -DCURL_NO_CURL_CMAKE=ON
@@ -174,6 +183,12 @@ jobs:
       run: |
         mkdir -p artifacts &&
         eval "$(make -n artifacts-tar INCLUDE_DLLS_IN_ARTIFACTS=YesPlease ARTIFACTS_DIRECTORY=artifacts NO_GETTEXT=YesPlease 2>&1 | grep ^tar)"
+    - name: copy Scalar
+      shell: bash
+      run: |
+        mkdir -p artifacts/bin-wrappers artifacts/contrib/scalar &&
+        cp contrib/scalar/scalar.exe artifacts/contrib/scalar/ &&
+        cp bin-wrappers/scalar artifacts/bin-wrappers/
     - name: zip up tracked files
       run: git archive -o artifacts/tracked.tar.gz HEAD
     - name: upload tracked files and build artifacts
