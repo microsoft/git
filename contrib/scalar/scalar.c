@@ -200,6 +200,7 @@ static int cmd_clone(int argc, const char **argv)
 	const char *url;
 	char *dir, *config_path;
 	struct strbuf buf = STRBUF_INIT;
+	struct strbuf buf2 = STRBUF_INIT;
 	struct strvec args = STRVEC_INIT;
 	int res;
 
@@ -308,12 +309,28 @@ static int cmd_clone(int argc, const char **argv)
 		goto cleanup;
 	}
 
+	strbuf_reset(&buf);
+	strbuf_addf(&buf, "branch.%s.remote", branch);
+	if (git_config_set_in_file_gently(config_path, buf.buf, "origin")) {
+		res = error(_("could not configure remote branch"));
+		goto cleanup;
+	}
+	strbuf_reset(&buf);
+	strbuf_reset(&buf2);
+	strbuf_addf(&buf, "branch.%s.merge", branch);
+	strbuf_addf(&buf2, "refs/heads/%s", branch);
+	if (git_config_set_in_file_gently(config_path, buf.buf, buf2.buf)) {
+		res = error(_("could not configure remote branch"));
+		goto cleanup;
+	}
+
 	die("To be continued");
 
 cleanup:
 	free(dir);
 	free(config_path);
 	strbuf_release(&buf);
+	strbuf_release(&buf2);
 	free(branch);
 	free(cache_server_url);
 	free(local_cache_path);
