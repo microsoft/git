@@ -324,64 +324,44 @@ static const char scalar_run_usage[] =
 	   "\ttasks: all, config, commit-graph,\n"
 	   "\t       fetch, loose-objects, pack-files");
 
-static int run_maintenance_task(const char *task)
+static struct {
+	const char *arg, *task;
+} tasks[] = {
+	{ "config", NULL },
+	{ "commit-graph", "commit-graph" },
+	{ "fetch", "prefetch" },
+	{ "loose-objects", "loose-objects" },
+	{ "pack-files", "incremental-repack" },
+	{ NULL, NULL }
+};
+
+static int run_maintenance_task(const char *arg)
 {
-	int res;
-	struct strvec args = STRVEC_INIT;
+	int i;
 
-	strvec_pushl(&args, "maintenance", "run", NULL);
-	strvec_pushf(&args, "--task=%s", task);
+	if (!strcmp("config", arg))
+		return run_config_task();
+	else if (!strcmp("all", arg)) {
+		for (i = 0; tasks[i].arg; i++)
+			if (run_maintenance_task(tasks[i].arg))
+				return -1;
+		return 0;
+	}
 
-	res = run_command_v_opt(args.v, RUN_GIT_CMD);
+	for (i = 0; tasks[i].arg; i++)
+		if (!strcmp(tasks[i].arg, arg))
+			return run_git(NULL, "maintenance", "run", "--task",
+				       tasks[i].task, NULL);
 
-	strvec_clear(&args);
-	return res;
-}
-
-static int run_commit_graph_task(void)
-{
-	return run_maintenance_task("commit-graph");
-}
-
-static int run_fetch_task(void)
-{
-	return run_maintenance_task("prefetch");
-}
-
-static int run_loose_objects_task(void)
-{
-	return run_maintenance_task("loose-objects");
-}
-
-static int run_pack_files_task(void)
-{
-	return run_maintenance_task("incremental-repack");
+	return error(_("no such task: '%s'"), arg);
 }
 
 static int cmd_run(int argc, const char **argv)
 {
-	if (argc < 2)
+	if (argc != 2)
 		usage(scalar_run_usage);
 
-	if (!strcmp(argv[1], "all")) {
-		return run_config_task() ||
-		       run_fetch_task() ||
-		       run_commit_graph_task() ||
-		       run_loose_objects_task() ||
-		       run_pack_files_task();
-	} else if (!strcmp(argv[1], "config")) {
-		return run_config_task();
-	} else if (!strcmp(argv[1], "commit-graph")) {
-		return run_commit_graph_task();
-	} else if (!strcmp(argv[1], "fetch")) {
-		return run_fetch_task();
-	} else if (!strcmp(argv[1], "loose-objects")) {
-		return run_loose_objects_task();
-	} else if (!strcmp(argv[1], "pack-files")) {
-		return run_pack_files_task();
-	}
-
-	usage(scalar_run_usage);
+	return run_maintenance_task(argv[1]);
 }
 
 static int cmd_unregister(int argc, const char **argv)
