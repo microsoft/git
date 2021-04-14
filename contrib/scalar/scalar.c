@@ -8,6 +8,7 @@
 #include "config.h"
 #include "run-command.h"
 #include "strbuf.h"
+#include "refs.h"
 
 static const char scalar_usage[] =
 	N_("scalar <command> [<options>]\n\n"
@@ -257,7 +258,16 @@ static int cmd_clone(int argc, const char **argv)
 		die(_("'%s' exists and is not empty"), dir);
 	}
 
-	if ((res = run_git(NULL, "init", "--", dir, NULL)))
+	strbuf_reset(&buf);
+	if (branch)
+		strbuf_addf(&buf, "init.defaultBranch=%s", branch);
+	else {
+		char *b = repo_default_branch_name(the_repository, 1);
+		strbuf_addf(&buf, "init.defaultBranch=%s", b);
+		free(b);
+	}
+
+	if ((res = run_git(NULL, "-c", buf.buf, "init", "--", dir, NULL)))
 		goto cleanup;
 
 	/* TODO: trace command-line options, is_unattended, elevated, dir */
