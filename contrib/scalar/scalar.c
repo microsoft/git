@@ -18,12 +18,13 @@ static char *scalar_executable_path;
 
 static int run_git(const char *dir, const char *arg, ...)
 {
-	struct strvec argv;
+	struct strvec argv = STRVEC_INIT;
 	va_list args;
 	const char *p;
 	int res;
 
 	va_start(args, arg);
+	strvec_push(&argv, arg);
 	while ((p = va_arg(args, const char *)))
 		strvec_push(&argv, p);
 	va_end(args);
@@ -219,7 +220,7 @@ static int cmd_clone(int argc, const char **argv)
 		NULL
 	};
 	const char *url;
-	char *dir, *config_path;
+	char *dir = NULL, *config_path = NULL;
 	struct strbuf buf = STRBUF_INIT;
 	int res;
 
@@ -322,7 +323,8 @@ static int cmd_clone(int argc, const char **argv)
 			      branch, branch)))
 		goto cleanup;
 
-	die("To be continued");
+	res = run_git(dir, "-c", "core.useGVFSHelper=false",
+		      "checkout", "-f", branch, NULL);
 
 cleanup:
 	free(dir);
