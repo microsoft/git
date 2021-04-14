@@ -116,6 +116,27 @@ static int set_recommended_config(const char *file)
 	return 0;
 }
 
+/* printf-style interface, expects `<key>=<value>` argument */
+static int set_config(const char *file, const char *fmt, ...)
+{
+	struct strbuf buf = STRBUF_INIT;
+	char *value;
+	int res;
+	va_list args;
+
+	va_start(args, fmt);
+	strbuf_vaddf(&buf, fmt, args);
+	va_end(args);
+
+	value = strchr(buf.buf, '=');
+	if (value)
+		*(value++) = '\0';
+	res = git_config_set_in_file_gently(file, buf.buf, value);
+	strbuf_release(&buf);
+
+	return res;
+}
+
 static char *remote_default_branch(const char *dir)
 {
 	struct child_process cp = CHILD_PROCESS_INIT;
@@ -200,8 +221,6 @@ static int cmd_clone(int argc, const char **argv)
 	const char *url;
 	char *dir, *config_path;
 	struct strbuf buf = STRBUF_INIT;
-	struct strbuf buf2 = STRBUF_INIT;
-	struct strvec args = STRVEC_INIT;
 	int res;
 
 	argc = parse_options(argc, argv, NULL, clone_options, clone_usage,
@@ -252,22 +271,14 @@ static int cmd_clone(int argc, const char **argv)
 
 	/* TODO: this should be removed, right? */
 	/* protocol.version=2 is broken right now. */
-	if (git_config_set_in_file_gently(config_path,
-					  "protocol.version", "1") ||
-	    git_config_set_in_file_gently(config_path,
-					  "remote.origin.url", url) ||
-	    git_config_set_in_file_gently(config_path,
-					  "remote.origin.fetch",
-					  /*
-					   * TODO: should we respect
-					   * single_branch here?
-					   */
-					  "+refs/heads/*:refs/remotes/origin/*") ||
-	    git_config_set_in_file_gently(config_path,
-					  "remote.origin.promisor", "true") ||
-	    git_config_set_in_file_gently(config_path,
-					  "remote.origin.partialCloneFilter",
-					  "blob:none"))
+	if (set_config(config_path, "protocol.version=1") ||
+	    set_config(config_path, "remote.origin.url=%s", url) ||
+	    /* TODO: should we respect single_branch here? */
+	    set_config(config_path, "remote.origin.fetch="
+		       "+refs/heads/*:refs/remotes/origin/*") ||
+	    set_config(config_path, "remote.origin.promisor=true") ||
+	    set_config(config_path,
+		       "remote.origin.partialCloneFilter=blob:none"))
 		return error(_("could not configure '%s'"), dir);
 
 	if (!full_clone &&
@@ -287,14 +298,10 @@ static int cmd_clone(int argc, const char **argv)
 			   "--quiet", "origin", NULL))) {
 		warning(_("Partial clone failed; Trying full clone"));
 
-		if (git_config_set_in_file_gently(config_path,
-						  "remote.origin.promisor",
-						  NULL) ||
-		    git_config_set_in_file_gently(config_path,
-						  "remote.origin.partialCloneFilter",
-						  NULL)) {
+		if (set_config(config_path, "remote.origin.promisor") ||
+		    set_config(config_path,
+			       "remote.origin.partialCloneFilter")) {
 			res = error(_("could not configure for full clone"));
-			strvec_clear(&args);
 			goto cleanup;
 		}
 
@@ -309,20 +316,11 @@ static int cmd_clone(int argc, const char **argv)
 		goto cleanup;
 	}
 
-	strbuf_reset(&buf);
-	strbuf_addf(&buf, "branch.%s.remote", branch);
-	if (git_config_set_in_file_gently(config_path, buf.buf, "origin")) {
-		res = error(_("could not configure remote branch"));
+	if ((res = set_config(config_path, "branch.%s.remote=origin", branch)))
 		goto cleanup;
-	}
-	strbuf_reset(&buf);
-	strbuf_reset(&buf2);
-	strbuf_addf(&buf, "branch.%s.merge", branch);
-	strbuf_addf(&buf2, "refs/heads/%s", branch);
-	if (git_config_set_in_file_gently(config_path, buf.buf, buf2.buf)) {
-		res = error(_("could not configure remote branch"));
+	if ((res = set_config(config_path, "branch.%s.merge=refs/heads/%s",
+			      branch, branch)))
 		goto cleanup;
-	}
 
 	die("To be continued");
 
@@ -330,7 +328,6 @@ cleanup:
 	free(dir);
 	free(config_path);
 	strbuf_release(&buf);
-	strbuf_release(&buf2);
 	free(branch);
 	free(cache_server_url);
 	free(local_cache_path);
