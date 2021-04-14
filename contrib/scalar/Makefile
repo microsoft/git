@@ -21,7 +21,7 @@ else
 
 include Makefile
 
-all-scalar: scalar$X
+all-scalar: scalar$X bin-wrappers/scalar
 
 all:: all-scalar
 
@@ -47,6 +47,11 @@ Documentation/scalar.1: contrib/scalar/scalar.txt
 		MAN_TXT=../contrib/scalar/scalar.txt \
 		../contrib/scalar/scalar.1
 
-.PHONY: all-scalar docs-scalar FORCE
+test-scalar:
+	$(MAKE) -C contrib/scalar/t
+
+test: test-scalar
+
+.PHONY: all-scalar docs-scalar test-scalar FORCE
 
 endif
