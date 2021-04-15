@@ -16,6 +16,8 @@ test_expect_success 'set up repository to clone' '
 	test_commit second &&
 	test_commit third &&
 	git switch -c parallel first &&
+	mkdir -p 1/2 &&
+	test_commit 1/2/3 &&
 	git config uploadPack.allowFilter true &&
 	git config uploadPack.allowAnySHA1InWant true
 '
@@ -25,6 +27,7 @@ test_expect_success 'scalar clone' '
 	scalar clone --single-branch "file://$(pwd)" cloned &&
 	(
 		cd cloned &&
+		test_path_is_missing 1/2 &&
 		test_must_fail git rev-list --missing=print $second &&
 		git rev-list $second &&
 		git cat-file blob $second >actual &&
