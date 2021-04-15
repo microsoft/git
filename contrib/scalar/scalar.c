@@ -346,11 +346,6 @@ cleanup:
 	return res;
 }
 
-static int cmd_config(int argc, const char **argv)
-{
-	die(N_("'%s' not yet implemented"), argv[0]);
-}
-
 static int cmd_diagnose(int argc, const char **argv)
 {
 	die(N_("'%s' not yet implemented"), argv[0]);
@@ -473,7 +468,6 @@ struct {
 	int needs_git_repo;
 } builtins[] = {
 	{ "clone", cmd_clone, 0 },
-	{ "config", cmd_config, 1 },
 	{ "diagnose", cmd_diagnose, 1 },
 	{ "list", cmd_list, 0 },
 	{ "register", cmd_register, 1 },
