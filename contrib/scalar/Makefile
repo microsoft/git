@@ -21,9 +21,11 @@ else
 
 include Makefile
 
-all-scalar: scalar$X Documentation/scalar.html Documentation/scalar.1
+all-scalar: scalar$X
 
 all:: all-scalar
+
+docs:: Documentation/scalar.html Documentation/scalar.1
 
 scalar$X: scalar.o $(GITLIBS)
 	$(QUIET_LINK)$(CC) $(ALL_CFLAGS) $(ALL_LDFLAGS) -o $@ $< \

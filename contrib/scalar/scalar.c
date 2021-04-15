@@ -297,49 +297,91 @@ static int add_or_remove_enlistment(int add)
 		       the_repository->worktree, NULL);
 }
 
-static int initialize_enlistment_id(const char *file)
-{
-	const char *key = "scalar.enlistment-id";
-	char *value;
-	struct strbuf id = STRBUF_INIT;
-	int res;
-
-	if (!file && !git_config_get_string(key, &value)) {
-		trace2_data_string("scalar", the_repository, "enlistment-id", value);
-		free(value);
-		return 0;
-	}
-
-	strbuf_addstr(&id, "TODO:GENERATE-GUID");
-
-	trace2_data_string("scalar", the_repository, "enlistment-id", id.buf);
-	res = git_config_set_in_file_gently(file, key, id.buf);
-	/* TODO: CONFIG_FLAGS_MULTI_REPLACE */
-	strbuf_release(&id);
-	return res;
-}
-
 static int toggle_maintenance(int enable)
 {
 	return run_git(NULL, "maintenance", enable ? "start" : "unregister",
 		       NULL);
 }
 
-static int cmd_register(int argc, const char **argv)
+static int run_config_task(void)
 {
 	int res = 0;
 
 	res = res || add_or_remove_enlistment(1);
-	res = res || initialize_enlistment_id(NULL); /* TODO: should we do that only on `clone`? */
 	res = res || set_recommended_config(NULL);
 	res = res || toggle_maintenance(1);
 
 	return res;
 }
 
+static int cmd_register(int argc, const char **argv)
+{
+	return run_config_task();
+}
+
+static const char scalar_run_usage[] =
+	N_("scalar run <task>\n"
+	   "\ttasks: all, config, commit-graph,\n"
+	   "\t       fetch, loose-objects, pack-files");
+
+static int run_maintenance_task(const char *task)
+{
+	int res;
+	struct strvec args = STRVEC_INIT;
+
+	strvec_pushl(&args, "maintenance", "run", NULL);
+	strvec_pushf(&args, "--task=%s", task);
+
+	res = run_command_v_opt(args.v, RUN_GIT_CMD);
+
+	strvec_clear(&args);
+	return res;
+}
+
+static int run_commit_graph_task(void)
+{
+	return run_maintenance_task("commit-graph");
+}
+
+static int run_fetch_task(void)
+{
+	return run_maintenance_task("prefetch");
+}
+
+static int run_loose_objects_task(void)
+{
+	return run_maintenance_task("loose-objects");
+}
+
+static int run_pack_files_task(void)
+{
+	return run_maintenance_task("incremental-repack");
+}
+
 static int cmd_run(int argc, const char **argv)
 {
-	die(N_("'%s' not yet implemented"), argv[0]);
+	if (argc < 2)
+		usage(scalar_run_usage);
+
+	if (!strcmp(argv[1], "all")) {
+		return run_config_task() ||
+		       run_fetch_task() ||
+		       run_commit_graph_task() ||
+		       run_loose_objects_task() ||
+		       run_pack_files_task();
+	} else if (!strcmp(argv[1], "config")) {
+		return run_config_task();
+	} else if (!strcmp(argv[1], "commit-graph")) {
+		return run_commit_graph_task();
+	} else if (!strcmp(argv[1], "fetch")) {
+		return run_fetch_task();
+	} else if (!strcmp(argv[1], "loose-objects")) {
+		return run_loose_objects_task();
+	} else if (!strcmp(argv[1], "pack-files")) {
+		return run_pack_files_task();
+	}
+
+	usage(scalar_run_usage);
 }
 
 static int cmd_unregister(int argc, const char **argv)
