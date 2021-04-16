@@ -130,7 +130,7 @@
 //            Interactive verb: objects.get
 //
 //                 Fetch 1 or more objects, one at a time, using a
-//                 "/gvfs/ojbects" GET requests.
+//                 "/gvfs/objects" GET requests.
 //
 //                 Each object will be created as a loose object in the ODB.
 //
@@ -1257,7 +1257,7 @@ static int option_parse_shared_cache_directory(const struct option *opt,
 	else if (!gvfs_shared_cache_pathname.len) {
 		/*
 		 * A shared-cache was requested and we did not inherit one.
-		 * Try it, but let alt_odb_usabe() secretly disable it if
+		 * Try it, but let alt_odb_usable() secretly disable it if
 		 * it cannot create the directory on disk.
 		 */
 		strbuf_addbuf(&gvfs_shared_cache_pathname, &buf_arg);
@@ -1284,7 +1284,7 @@ static int option_parse_shared_cache_directory(const struct option *opt,
 		add_to_alternates_memory(buf_arg.buf);
 
 		/*
-		 * alt_odb_usabe() releases gvfs_shared_cache_pathname
+		 * alt_odb_usable() releases gvfs_shared_cache_pathname
 		 * if it cannot create the directory on disk, so fallback
 		 * to the previous choice when it fails.
 		 */
@@ -1334,7 +1334,7 @@ static void do__http_get__gvfs_config(struct gh__response_status *status,
 /*
  * Find the URL of the cache-server, if we have one.
  *
- * This routined is called by the initialization code and is allowed
+ * This routine is called by the initialization code and is allowed
  * to call die() rather than returning an 'ec'.
  */
 static void select_cache_server(void)
@@ -2451,7 +2451,7 @@ static void install_result(struct gh__request_params *params,
 	if (params->objects_mode == GH__OBJECTS_MODE__PREFETCH) {
 		/*
 		 * The "gvfs/prefetch" API is the only thing that sends
-		 * these multi-part packfiles.  According to the procotol
+		 * these multi-part packfiles.  According to the protocol
 		 * documentation, they will have this x- content type.
 		 *
 		 * However, it appears that there is a BUG in the origin
@@ -2830,7 +2830,7 @@ static void set_cache_server_creds_on_slot(struct active_request_slot *slot,
 	 * [b] If we want to talk to a cache-server, we have get the
 	 *     Basic Auth creds for the main server.  And this may be
 	 *     problematic if the libcurl and/or the credential manager
-	 *     insists on using NTML and prevents us from getting them.
+	 *     insists on using NTLM and prevents us from getting them.
 	 *
 	 * So we never try AUTH-ANY and force Basic Auth (if possible).
 	 */
@@ -3309,7 +3309,7 @@ static void cb_find_last(const char *full_path, size_t full_path_len,
  * TODO
  * TODO Since each cache-server maintains its own set of prefetch
  * TODO packs (such that 2 requests may hit 2 different
- * TODO load-balanced servers and get different anwsers (with or
+ * TODO load-balanced servers and get different answers (with or
  * TODO without clock-skew issues)), is it possible for us to miss
  * TODO the absolute fringe of new commits and trees?
  * TODO
