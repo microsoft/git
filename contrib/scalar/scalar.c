@@ -8,6 +8,8 @@
 #include "config.h"
 #include "run-command.h"
 #include "refs.h"
+#include "help.h"
+#include "dir.h"
 
 static void setup_enlistment_directory(int argc, const char **argv,
 				       const char * const *usagestr,
@@ -244,6 +246,108 @@ static int unregister_dir(void)
 	return res;
 }
 
+static int stage(const char *git_dir, struct strbuf *buf, const char *path)
+{
+	struct strbuf cacheinfo = STRBUF_INIT;
+	struct child_process cp = CHILD_PROCESS_INIT;
+	int res;
+
+	strbuf_addstr(&cacheinfo, "100644,");
+
+	cp.git_cmd = 1;
+	strvec_pushl(&cp.args, "--git-dir", git_dir,
+		     "hash-object", "-w", "--stdin", NULL);
+	res = pipe_command(&cp, buf->buf, buf->len, &cacheinfo, 256, NULL, 0);
+	if (!res) {
+		strbuf_rtrim(&cacheinfo);
+		strbuf_addch(&cacheinfo, ',');
+		/* We cannot stage `.git`, use `_git` instead. */
+		if (starts_with(path, ".git/"))
+			strbuf_addf(&cacheinfo, "_%s", path + 1);
+		else
+			strbuf_addstr(&cacheinfo, path);
+
+		child_process_init(&cp);
+		cp.git_cmd = 1;
+		strvec_pushl(&cp.args, "--git-dir", git_dir,
+			     "update-index", "--add", "--cacheinfo",
+			     cacheinfo.buf, NULL);
+		res = run_command(&cp);
+	}
+
+	strbuf_release(&cacheinfo);
+	return res;
+}
+
+static int stage_file(const char *git_dir, const char *path)
+{
+	struct strbuf buf = STRBUF_INIT;
+	int res;
+
+	if (strbuf_read_file(&buf, path, 0) < 0)
+		return error(_("could not read '%s'"), path);
+
+	res = stage(git_dir, &buf, path);
+
+	strbuf_release(&buf);
+	return res;
+}
+
+static int stage_directory(const char *git_dir, const char *path, int recurse)
+{
+	int at_root = !*path;
+	DIR *dir = opendir(at_root ? "." : path);
+	struct dirent *e;
+	struct strbuf buf = STRBUF_INIT;
+	size_t len;
+	int res = 0;
+
+	if (!dir)
+		return error(_("could not open directory '%s'"), path);
+
+	if (!at_root)
+		strbuf_addf(&buf, "%s/", path);
+	len = buf.len;
+
+	while (!res && (e = readdir(dir))) {
+		if (!strcmp(".", e->d_name) || !strcmp("..", e->d_name))
+			continue;
+
+		strbuf_setlen(&buf, len);
+		strbuf_addstr(&buf, e->d_name);
+
+		if ((e->d_type == DT_REG && stage_file(git_dir, buf.buf)) ||
+		    (e->d_type == DT_DIR && recurse &&
+		     stage_directory(git_dir, buf.buf, recurse)))
+			res = -1;
+	}
+
+	closedir(dir);
+	strbuf_release(&buf);
+	return res;
+}
+
+static int index_to_zip(const char *git_dir)
+{
+	struct child_process cp = CHILD_PROCESS_INIT;
+	struct strbuf oid = STRBUF_INIT;
+
+	cp.git_cmd = 1;
+	strvec_pushl(&cp.args, "--git-dir", git_dir, "write-tree", NULL);
+	if (pipe_command(&cp, NULL, 0, &oid, the_hash_algo->hexsz + 1,
+			 NULL, 0))
+		return error(_("could not write temporary tree object"));
+
+	strbuf_rtrim(&oid);
+	child_process_init(&cp);
+	cp.git_cmd = 1;
+	strvec_pushl(&cp.args, "--git-dir", git_dir, "archive", "-o", NULL);
+	strvec_pushf(&cp.args, "%s.zip", git_dir);
+	strvec_pushl(&cp.args, oid.buf, "--", NULL);
+	strbuf_release(&oid);
+	return run_command(&cp);
+}
+
 /* printf-style interface, expects `<key>=<value>` argument */
 static int set_config(const char *fmt, ...)
 {
@@ -446,6 +550,82 @@ cleanup:
 	free(enlistment);
 	free(dir);
 	strbuf_release(&buf);
+	return res;
+}
+
+/*
+ * Dummy implementation; Using `get_version_info()` would cause a link error
+ * without this.
+ */
+void load_builtin_commands(const char *prefix, struct cmdnames *cmds)
+{
+	die("not implemented");
+}
+
+static int cmd_diagnose(int argc, const char **argv)
+{
+	struct option options[] = {
+		OPT_END(),
+	};
+	const char * const usage[] = {
+		N_("scalar diagnose [<enlistment>]"),
+		NULL
+	};
+	struct strbuf tmp_dir = STRBUF_INIT;
+	time_t now = time(NULL);
+	struct tm tm;
+	struct strbuf path = STRBUF_INIT, buf = STRBUF_INIT;
+	int res = 0;
+
+	argc = parse_options(argc, argv, NULL, options,
+			     usage, 0);
+
+	setup_enlistment_directory(argc, argv, usage, options);
+
+	strbuf_addstr(&buf, "../.scalarDiagnostics/scalar_");
+	strbuf_addftime(&buf, "%Y%m%d_%H%M%S", localtime_r(&now, &tm), 0, 0);
+	if (run_git("init", "-q", "-b", "dummy", "--bare", buf.buf, NULL)) {
+		res = error(_("could not initialize temporary repository: %s"),
+			    buf.buf);
+		goto diagnose_cleanup;
+	}
+	strbuf_realpath(&tmp_dir, buf.buf, 1);
+
+	strbuf_reset(&buf);
+	strbuf_addf(&buf, "Collecting diagnostic info into temp folder %s\n\n",
+		    tmp_dir.buf);
+
+	get_version_info(&buf, 1);
+
+	strbuf_addf(&buf, "Enlistment root: %s\n", the_repository->worktree);
+	fwrite(buf.buf, buf.len, 1, stdout);
+
+	if ((res = stage(tmp_dir.buf, &buf, "diagnostics.log")))
+		goto diagnose_cleanup;
+
+	if ((res = stage_directory(tmp_dir.buf, ".git", 0)) ||
+	    (res = stage_directory(tmp_dir.buf, ".git/hooks", 0)) ||
+	    (res = stage_directory(tmp_dir.buf, ".git/info", 0)) ||
+	    (res = stage_directory(tmp_dir.buf, ".git/logs", 1)) ||
+	    (res = stage_directory(tmp_dir.buf, ".git/objects/info", 0)))
+		goto diagnose_cleanup;
+
+	res = index_to_zip(tmp_dir.buf);
+
+	if (!res)
+		res = remove_dir_recursively(&tmp_dir, 0);
+
+	if (!res)
+		printf("\n"
+		       "Diagnostics complete.\n"
+		       "All of the gathered info is captured in '%s.zip'\n",
+		       tmp_dir.buf);
+
+diagnose_cleanup:
+	strbuf_release(&tmp_dir);
+	strbuf_release(&path);
+	strbuf_release(&buf);
+
 	return res;
 }
 
@@ -672,6 +852,7 @@ struct {
 	{ "unregister", cmd_unregister },
 	{ "run", cmd_run },
 	{ "reconfigure", cmd_reconfigure },
+	{ "diagnose", cmd_diagnose },
 	{ NULL, NULL},
 };
 
