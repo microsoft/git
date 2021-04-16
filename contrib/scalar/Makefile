@@ -21,11 +21,13 @@ else
 
 include Makefile
 
-all-scalar: scalar$X
+all-scalar: scalar$X bin-wrappers/scalar
 
 all:: all-scalar
 
-docs:: Documentation/scalar.html Documentation/scalar.1
+docs-scalar: Documentation/scalar.html Documentation/scalar.1
+
+docs:: docs-scalar
 
 scalar$X: scalar.o $(GITLIBS)
 	$(QUIET_LINK)$(CC) $(ALL_CFLAGS) $(ALL_LDFLAGS) -o $@ $< \
@@ -45,6 +47,9 @@ Documentation/scalar.1: contrib/scalar/scalar.txt
 		MAN_TXT=../contrib/scalar/scalar.txt \
 		../contrib/scalar/scalar.1
 
-.PHONY: all-scalar FORCE
+test-scalar:
+	$(MAKE) -C contrib/scalar/t
+
+.PHONY: all-scalar docs-scalar test-scalar FORCE
 
 endif
