@@ -9,6 +9,8 @@
 #include "run-command.h"
 #include "strbuf.h"
 #include "refs.h"
+#include "version.h"
+#include "dir.h"
 
 static const char scalar_usage[] =
 	N_("scalar <command> [<options>]\n\n"
@@ -346,9 +348,181 @@ cleanup:
 	return res;
 }
 
+static int stage(const char *git_dir, struct strbuf *buf, const char *path)
+{
+	struct strbuf cacheinfo = STRBUF_INIT;
+	struct child_process cp = CHILD_PROCESS_INIT;
+	int res;
+
+	strbuf_addstr(&cacheinfo, "100644,");
+
+	cp.git_cmd = 1;
+	strvec_pushl(&cp.args, "--git-dir", git_dir,
+		     "hash-object", "-w", "--stdin", NULL);
+	res = pipe_command(&cp, buf->buf, buf->len, &cacheinfo, 256, NULL, 0);
+	if (!res) {
+		strbuf_rtrim(&cacheinfo);
+		strbuf_addch(&cacheinfo, ',');
+		/* We cannot stage `.git`, use `_git` instead. */
+		if (starts_with(path, ".git/"))
+			strbuf_addf(&cacheinfo, "_%s", path + 1);
+		else
+			strbuf_addstr(&cacheinfo, path);
+
+		child_process_init(&cp);
+		cp.git_cmd = 1;
+		strvec_pushl(&cp.args, "--git-dir", git_dir,
+			     "update-index", "--add", "--cacheinfo",
+			     cacheinfo.buf, NULL);
+		res = run_command(&cp);
+	}
+
+	strbuf_release(&cacheinfo);
+	return res;
+}
+
+static int stage_file(const char *git_dir, const char *path)
+{
+	struct strbuf buf = STRBUF_INIT;
+	int res;
+
+	if (strbuf_read_file(&buf, path, 0) < 0)
+		return error(_("could not read '%s'"), path);
+
+	res = stage(git_dir, &buf, path);
+
+	strbuf_release(&buf);
+	return res;
+}
+
+static int stage_directory(const char *git_dir, const char *path, int recurse)
+{
+	int at_root = !*path;
+	DIR *dir = opendir(at_root ? "." : path);
+	struct dirent *e;
+	struct strbuf buf = STRBUF_INIT;
+	size_t len;
+	int res = 0;
+
+	if (!dir)
+		return error(_("could not open directory '%s'"), path);
+
+	if (!at_root)
+		strbuf_addf(&buf, "%s/", path);
+	len = buf.len;
+
+	while (!res && (e = readdir(dir))) {
+		if (!strcmp(".", e->d_name) || !strcmp("..", e->d_name))
+			continue;
+
+		strbuf_setlen(&buf, len);
+		strbuf_addstr(&buf, e->d_name);
+
+		if ((e->d_type == DT_REG && stage_file(git_dir, buf.buf)) ||
+		    (e->d_type == DT_DIR && recurse &&
+		     stage_directory(git_dir, buf.buf, recurse)))
+			res = -1;
+	}
+
+	closedir(dir);
+	strbuf_release(&buf);
+	return res;
+}
+
+static int index_to_zip(const char *git_dir)
+{
+	struct child_process cp = CHILD_PROCESS_INIT;
+	struct strbuf oid = STRBUF_INIT;
+
+	cp.git_cmd = 1;
+	strvec_pushl(&cp.args, "--git-dir", git_dir, "write-tree", NULL);
+	if (pipe_command(&cp, NULL, 0, &oid, the_hash_algo->hexsz + 1,
+			 NULL, 0))
+		return error(_("could not write temporary tree object"));
+
+	strbuf_rtrim(&oid);
+	child_process_init(&cp);
+	cp.git_cmd = 1;
+	strvec_pushl(&cp.args, "--git-dir", git_dir, "archive", "-o", NULL);
+	strvec_pushf(&cp.args, "%s.zip", git_dir);
+	strvec_pushl(&cp.args, oid.buf, "--", NULL);
+	strbuf_release(&oid);
+	return run_command(&cp);
+}
+
 static int cmd_diagnose(int argc, const char **argv)
 {
-	die(N_("'%s' not yet implemented"), argv[0]);
+	struct strbuf tmp_dir = STRBUF_INIT;
+	time_t now = time(NULL);
+	struct tm tm;
+	struct strbuf path = STRBUF_INIT, buf = STRBUF_INIT;
+	int res = 0;
+
+	if (argc != 1)
+		die("'scalar diagnose' does not accept any arguments");
+
+	strbuf_addstr(&tmp_dir, ".scalarDiagnostics/scalar_");
+	strbuf_addftime(&tmp_dir, "%Y%m%d_%H%M%S",
+			localtime_r(&now, &tm), 0, 0);
+	if (run_git(NULL, "init", "-q", "-b", "dummy",
+		    "--bare", tmp_dir.buf, NULL)) {
+		res = error(_("could not initialize temporary repository"));
+		goto diagnose_cleanup;
+	}
+
+	strbuf_reset(&buf);
+	strbuf_addf(&buf, "Collecting diagnostic info into temp folder %s\n\n",
+		    tmp_dir.buf);
+
+	strbuf_addf(&buf, "git version %s\n", git_version_string);
+	strbuf_addf(&buf, "built from commit: %s\n\n",
+		    git_built_from_commit_string[0] ?
+		    git_built_from_commit_string : "(n/a)");
+
+	strbuf_addf(&buf, "Enlistment root: %s\n", the_repository->worktree);
+	strbuf_addf(&buf,
+		    "Cache Server: None\n"
+		    "Local Cache:\n"
+		    "\n"
+		    "TODO: acquire disk space information\n");
+	fwrite(buf.buf, buf.len, 1, stdout);
+
+	if ((res = stage(tmp_dir.buf, &buf, "diagnostics.log")))
+		goto diagnose_cleanup;
+
+	if ((res = stage_directory(tmp_dir.buf, ".git", 0)) ||
+	    (res = stage_directory(tmp_dir.buf, ".git/hooks", 0)) ||
+	    (res = stage_directory(tmp_dir.buf, ".git/info", 0)) ||
+	    (res = stage_directory(tmp_dir.buf, ".git/logs", 1)) ||
+	    (res = stage_directory(tmp_dir.buf, ".git/objects/info", 0)))
+		goto diagnose_cleanup;
+
+	/*
+	 * TODO: add more stuff:
+	 * disk space info
+	 * LogDirectoryEnumeration(...DotGit.Objects.Root), ScalarConstants.DotGit.Objects.Pack.Root, "packs-local.txt");
+	 * LogLooseObjectCount(...DotGit.Objects.Root), ScalarConstants.DotGit.Objects.Root, "objects-local.txt");
+	 *
+	 * CopyLocalCacheData(archiveFolderPath, gitObjectsRoot);
+	 */
+
+	res = index_to_zip(tmp_dir.buf);
+
+	if (!res)
+		res = remove_dir_recursively(&tmp_dir, 0);
+
+	if (!res)
+		printf("\n"
+		       "Diagnostics complete.\n"
+		       "All of the gathered info is captured in '%s.zip'\n",
+		       tmp_dir.buf);
+
+diagnose_cleanup:
+	strbuf_release(&tmp_dir);
+	strbuf_release(&path);
+	strbuf_release(&buf);
+
+	return res;
 }
 
 static int cmd_list(int argc, const char **argv)
