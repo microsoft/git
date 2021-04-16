@@ -223,7 +223,7 @@ static int cmd_clone(int argc, const char **argv)
 		NULL
 	};
 	const char *url;
-	char *dir = NULL, *config_path = NULL;
+	char *root = NULL, *dir = NULL, *config_path = NULL;
 	struct strbuf buf = STRBUF_INIT;
 	int res;
 
@@ -233,7 +233,7 @@ static int cmd_clone(int argc, const char **argv)
 
 	if (argc == 2) {
 		url = argv[0];
-		dir = xstrdup(argv[1]);
+		root = xstrdup(argv[1]);
 	} else if (argc == 1) {
 		url = argv[0];
 
@@ -244,14 +244,16 @@ static int cmd_clone(int argc, const char **argv)
 		/* Strip suffix `.git`, if any */
 		strbuf_strip_suffix(&buf, ".git");
 
-		dir = find_last_dir_sep(buf.buf);
-		if (!dir) {
+		root = find_last_dir_sep(buf.buf);
+		if (!root) {
 			die(_("cannot deduce worktree name from '%s'"), url);
 		}
-		dir = xstrdup(dir + 1);
+		root = xstrdup(root + 1);
 	} else {
 		usage_msg_opt(N_("need a URL"), clone_usage, clone_options);
 	}
+
+	dir = xstrfmt("%s/src", root);
 
 	/* TODO: verify that '--local-cache-path' isn't inside the src folder */
 	/* TODO: CheckNotInsideExistingRepo */
@@ -339,6 +341,7 @@ static int cmd_clone(int argc, const char **argv)
 		      "checkout", "-f", branch, NULL);
 
 cleanup:
+	free(root);
 	free(dir);
 	free(config_path);
 	strbuf_release(&buf);
