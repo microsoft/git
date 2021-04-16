@@ -293,8 +293,10 @@ static int cmd_clone(int argc, const char **argv)
 		       "+refs/heads/*:refs/remotes/origin/*") ||
 	    set_config(config_path, "remote.origin.promisor=true") ||
 	    set_config(config_path,
-		       "remote.origin.partialCloneFilter=blob:none"))
-		return error(_("could not configure '%s'"), dir);
+		       "remote.origin.partialCloneFilter=blob:none")) {
+		res = error(_("could not configure '%s'"), dir);
+		goto cleanup;
+	}
 
 	if (!full_clone &&
 	    (res = run_git(dir, "-c", "core.useGVFSHelper=false",
