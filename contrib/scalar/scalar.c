@@ -141,14 +141,14 @@ static int set_config(const char *file, const char *fmt, ...)
 	return res;
 }
 
-static char *remote_default_branch(const char *dir)
+static char *remote_default_branch(const char *dir, const char *url)
 {
 	struct child_process cp = CHILD_PROCESS_INIT;
 	struct strbuf out = STRBUF_INIT;
 
 	cp.git_cmd = 1;
 	cp.dir = dir;
-	strvec_pushl(&cp.args, "ls-remote", "--symref", "origin", "HEAD", NULL);
+	strvec_pushl(&cp.args, "ls-remote", "--symref", url, "HEAD", NULL);
 	strbuf_addstr(&out, "-\n");
 	if (!pipe_command(&cp, NULL, 0, &out, 0, NULL, 0)) {
 		char *ref = out.buf;
@@ -280,6 +280,12 @@ static int cmd_clone(int argc, const char **argv)
 
 	/* TODO: handle local cache root */
 
+	if (!branch &&
+	    !(branch = remote_default_branch(dir, url))) {
+		res = error(_("failed to get default branch for '%s'"), url);
+		goto cleanup;
+	}
+
 	/* TODO: check whether to use the GVFS protocol */
 
 	config_path = xstrfmt("%s/.git/config", dir);
@@ -319,12 +325,6 @@ static int cmd_clone(int argc, const char **argv)
 
 		if ((res = run_git(dir, "fetch", "--quiet", "origin", NULL)))
 			goto cleanup;
-	}
-
-	if (!branch &&
-	    !(branch = remote_default_branch(dir))) {
-		res = error(_("failed to get default branch for '%s'"), url);
-		goto cleanup;
 	}
 
 	if ((res = set_config(config_path, "branch.%s.remote=origin", branch)))
