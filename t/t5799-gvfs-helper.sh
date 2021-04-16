@@ -1199,8 +1199,8 @@ test_expect_success 'integration: fully implicit: diff 2 commits' '
 # If we request a fixed set of blobs, we should get a unique packfile
 # of the form "vfs-<sha>.{pack,idx}".  It we request that same set
 # again, the server should create and send the exact same packfile.
-# True webservers might build the custom packfile in random order,
-# but our test webserver should give us consistent results.
+# True web servers might build the custom packfile in random order,
+# but our test web server should give us consistent results.
 #
 # Verify that we can handle the duplicate pack and idx file properly.
 #################################################################
