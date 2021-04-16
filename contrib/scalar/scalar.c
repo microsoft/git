@@ -284,10 +284,7 @@ static int cmd_clone(int argc, const char **argv)
 
 	config_path = xstrfmt("%s/.git/config", dir);
 
-	/* TODO: this should be removed, right? */
-	/* protocol.version=2 is broken right now. */
-	if (set_config(config_path, "protocol.version=1") ||
-	    set_config(config_path, "remote.origin.url=%s", url) ||
+	if (set_config(config_path, "remote.origin.url=%s", url) ||
 	    /* TODO: should we respect single_branch here? */
 	    set_config(config_path, "remote.origin.fetch="
 		       "+refs/heads/*:refs/remotes/origin/*") ||
