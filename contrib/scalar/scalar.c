@@ -141,6 +141,48 @@ static int set_config(const char *file, const char *fmt, ...)
 	return res;
 }
 
+static int retrieve_cache_server_url(const char *dir, const char *url,
+				     char **cache_server_url)
+{
+	struct child_process cp = CHILD_PROCESS_INIT;
+	struct strbuf out = STRBUF_INIT;
+	const char *needle = "\"CacheServers\":[";
+	const char *url_needle = "\"Url\":\"";
+	const char *global_default_needle = "\"GlobalDefault\":true";
+	const char *p, *curly, *dq;
+	char *res = NULL;
+
+	cp.git_cmd = 1;
+	cp.dir = dir; /* gvfs-helper requires a Git repository */
+	strvec_pushl(&cp.args, "gvfs-helper", "--remote", url, "config", NULL);
+	if (pipe_command(&cp, NULL, 0, &out, 512, NULL, 0)) {
+		strbuf_release(&out);
+		return -1; /* error out quietly */
+	}
+
+	p = strstr(out.buf, needle);
+	if (p)
+		p += strlen(needle);
+	while (*p == '{') {
+		curly = strchrnul(p, '}');
+		if (memmem(p, curly - p, global_default_needle,
+				strlen(global_default_needle)))
+			FREE_AND_NULL(res);
+		if (!res && (p = memmem(p, curly - p, url_needle,
+					strlen(url_needle)))) {
+			p += strlen(url_needle);
+			dq = strchr(p, '"');
+			if (dq)
+				res = xstrndup(p, dq - p);
+		}
+		p = curly + 1 + (curly[1] == ',');
+	}
+
+	strbuf_release(&out);
+	*cache_server_url = res ? res : xstrdup(url);
+	return 0;
+}
+
 static char *remote_default_branch(const char *dir, const char *url)
 {
 	struct child_process cp = CHILD_PROCESS_INIT;
@@ -286,8 +328,6 @@ static int cmd_clone(int argc, const char **argv)
 		goto cleanup;
 	}
 
-	/* TODO: check whether to use the GVFS protocol */
-
 	config_path = xstrfmt("%s/.git/config", dir);
 
 	strbuf_reset(&buf);
@@ -295,7 +335,8 @@ static int cmd_clone(int argc, const char **argv)
 		    "+refs/heads/%s:refs/remotes/origin/%s",
 		    single_branch ? branch : "*",
 		    single_branch ? branch : "*");
-	if (set_config(config_path, "remote.origin.url=%s", url) ||
+	if (set_config(config_path, "core.useGVFSHelper=false") ||
+	    set_config(config_path, "remote.origin.url=%s", url) ||
 	    /* TODO: should we respect single_branch here? */
 	    set_config(config_path, buf.buf) ||
 	    set_config(config_path, "remote.origin.promisor=true") ||
@@ -311,6 +352,20 @@ static int cmd_clone(int argc, const char **argv)
 
 	if (set_recommended_config(config_path))
 		return error(_("could not configure '%s'"), dir);
+
+	if (cache_server_url ||
+	    !retrieve_cache_server_url(dir, url, &cache_server_url)) {
+		if (set_config(config_path, "core.useGVFSHelper=true") ||
+		    set_config(config_path, "remote.origin.promisor") ||
+		    set_config(config_path,
+			       "remote.origin.partialCloneFilter") ||
+		    set_config(config_path, "core.gvfs=150") ||
+		    set_config(config_path,
+			       "gvfs.cache-server=%s", cache_server_url)) {
+			res = error(_("could not turn on GVFS helper"));
+			goto cleanup;
+		}
+	}
 
 	/*
 	 * TODO: should we pipe the output and grep for "filtering not
