@@ -290,10 +290,14 @@ static int cmd_clone(int argc, const char **argv)
 
 	config_path = xstrfmt("%s/.git/config", dir);
 
+	strbuf_reset(&buf);
+	strbuf_addf(&buf, "remote.origin.fetch="
+		    "+refs/heads/%s:refs/remotes/origin/%s",
+		    single_branch ? branch : "*",
+		    single_branch ? branch : "*");
 	if (set_config(config_path, "remote.origin.url=%s", url) ||
 	    /* TODO: should we respect single_branch here? */
-	    set_config(config_path, "remote.origin.fetch="
-		       "+refs/heads/*:refs/remotes/origin/*") ||
+	    set_config(config_path, buf.buf) ||
 	    set_config(config_path, "remote.origin.promisor=true") ||
 	    set_config(config_path,
 		       "remote.origin.partialCloneFilter=blob:none")) {
