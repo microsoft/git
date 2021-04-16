@@ -26,7 +26,7 @@ test_expect_success 'scalar clone' '
 	second=$(git rev-parse --verify second:second.t) &&
 	scalar clone --single-branch "file://$(pwd)" cloned &&
 	(
-		cd cloned &&
+		cd cloned/src &&
 		test_path_is_missing 1/2 &&
 		test_must_fail git rev-list --missing=print $second &&
 		git rev-list $second &&
@@ -39,7 +39,7 @@ test_expect_success 'scalar clone' '
 SQ="'"
 test_expect_success UNZIP 'scalar diagnose' '
 	(
-		cd cloned &&
+		cd cloned/src &&
 		scalar diagnose >out &&
 		cat out &&
 		sed -n "s/.*$SQ\\(.*\\.zip\\)$SQ.*/\\1/p" <out >zip_path &&
