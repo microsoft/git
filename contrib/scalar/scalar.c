@@ -634,8 +634,11 @@ static int cmd_unregister(int argc, const char **argv)
 
 static int cmd_test(int argc, const char **argv)
 {
-	const char *dir = argc > 1 ? argv[1] : ".";
-	printf("default for '%s': '%s'\n", dir, remote_default_branch(dir));
+	const char *url = argc > 1 ? argv[1] :
+		"https://dev.azure.com/gvfs/ci/_git/ForTests";
+	char *p = NULL;
+	int res = retrieve_cache_server_url(NULL, url, &p);
+	printf("resolve: %d, %s\n", res, p);
 	return 0;
 }
 
