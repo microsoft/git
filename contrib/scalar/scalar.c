@@ -336,7 +336,9 @@ static int cmd_clone(int argc, const char **argv)
 			      branch, branch)))
 		goto cleanup;
 
-	res = run_git(dir, "checkout", "-f", branch, NULL);
+	strbuf_reset(&buf);
+	strbuf_addf(&buf, "origin/%s", branch);
+	res = run_git(dir, "checkout", "-f", "-t", buf.buf, NULL);
 
 cleanup:
 	free(root);
