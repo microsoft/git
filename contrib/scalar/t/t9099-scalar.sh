@@ -63,6 +63,12 @@ test_atexit '
 
 	# The server will shutdown automatically when we delete the pid-file.
 	rm -f "$PID_FILE"
+
+	test -z "$verbose$verbose_log" || {
+		echo "server log:"
+		cat "$SERVER_LOG"
+	}
+
 	# Give it a few seconds to shutdown (mainly to completely release the
 	# port before the next test start another instance and it attempts to
 	# bind to it).
