@@ -299,8 +299,7 @@ static int cmd_clone(int argc, const char **argv)
 	}
 
 	if (!full_clone &&
-	    (res = run_git(dir, "-c", "core.useGVFSHelper=false",
-			   "sparse-checkout", "init", "--cone", NULL)))
+	    (res = run_git(dir, "sparse-checkout", "init", "--cone", NULL)))
 		goto cleanup;
 
 	if (set_recommended_config(config_path))
@@ -311,8 +310,7 @@ static int cmd_clone(int argc, const char **argv)
 	 * recognized by server", and suppress the error output in
 	 * that case?
 	 */
-	if ((res = run_git(dir, "-c", "core.useGVFSHelper=false", "fetch",
-			   "--quiet", "origin", NULL))) {
+	if ((res = run_git(dir, "fetch", "--quiet", "origin", NULL))) {
 		warning(_("Partial clone failed; Trying full clone"));
 
 		if (set_config(config_path, "remote.origin.promisor") ||
@@ -322,8 +320,7 @@ static int cmd_clone(int argc, const char **argv)
 			goto cleanup;
 		}
 
-		if ((res = run_git(dir, "-c", "core.useGVFSHelper=false",
-				   "fetch", "--quiet", "origin", NULL)))
+		if ((res = run_git(dir, "fetch", "--quiet", "origin", NULL)))
 			goto cleanup;
 	}
 
@@ -339,8 +336,7 @@ static int cmd_clone(int argc, const char **argv)
 			      branch, branch)))
 		goto cleanup;
 
-	res = run_git(dir, "-c", "core.useGVFSHelper=false",
-		      "checkout", "-f", branch, NULL);
+	res = run_git(dir, "checkout", "-f", branch, NULL);
 
 cleanup:
 	free(root);
