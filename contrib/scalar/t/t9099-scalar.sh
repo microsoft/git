@@ -8,7 +8,7 @@ export TEST_DIRECTORY
 . ../../../t/test-lib.sh
 
 test_expect_success 'scalar shows a usage' '
-        test_expect_code 129 scalar -h
+	test_expect_code 129 scalar -h
 '
 
 test_expect_success 'set up repository to clone' '
