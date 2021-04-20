@@ -83,18 +83,30 @@ test_atexit '
 	return 1
 '
 
+start_gvfs_enabled_http_server () {
+	GIT_HTTP_EXPORT_ALL=1 \
+	test-gvfs-protocol --verbose \
+		--listen=127.0.0.1 \
+		--port=$GIT_TEST_GVFS_PROTOCOL_PORT \
+		--reuseaddr \
+		--pid-file="$PID_FILE" \
+		2>"$SERVER_LOG" &
+
+	for k in 0 1 2 3 4
+	do
+		if test -f "$PID_FILE"
+		then
+			return 0
+		fi
+		sleep 1
+	done
+	return 1
+}
+
 test_expect_success 'start GVFS-enabled server' '
 	git config uploadPack.allowFilter false &&
 	git config uploadPack.allowAnySHA1InWant false &&
-	(
-		GIT_HTTP_EXPORT_ALL=1 \
-		test-gvfs-protocol --verbose \
-			--listen=127.0.0.1 \
-			--port=$GIT_TEST_GVFS_PROTOCOL_PORT \
-			--reuseaddr \
-			--pid-file="$PID_FILE" \
-			2>"$SERVER_LOG" &
-	)
+	start_gvfs_enabled_http_server
 '
 
 test_expect_success '`scalar clone` with GVFS-enabled server' '
