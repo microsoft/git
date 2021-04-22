@@ -337,7 +337,6 @@ static int cmd_clone(int argc, const char **argv)
 		    single_branch ? branch : "*");
 	if (set_config(config_path, "core.useGVFSHelper=false") ||
 	    set_config(config_path, "remote.origin.url=%s", url) ||
-	    /* TODO: should we respect single_branch here? */
 	    set_config(config_path, buf.buf) ||
 	    set_config(config_path, "remote.origin.promisor=true") ||
 	    set_config(config_path,
