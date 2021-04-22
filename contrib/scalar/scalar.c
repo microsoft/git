@@ -668,6 +668,11 @@ static int add_or_remove_enlistment(int add)
 		       the_repository->worktree, NULL);
 }
 
+static int stop_fsmonitor_daemon(void)
+{
+	return run_git(NULL, "fsmonitor--daemon", "--stop", NULL);
+}
+
 static int toggle_maintenance(int enable)
 {
 	return run_git(NULL, "maintenance", enable ? "start" : "unregister",
@@ -739,8 +744,9 @@ static int cmd_unregister(int argc, const char **argv)
 {
 	int res = 0;
 
-	res = res || add_or_remove_enlistment(0);
+	res = res || stop_fsmonitor_daemon();
 	res = res || toggle_maintenance(0);
+	res = res || add_or_remove_enlistment(0);
 	return res;
 }
 
