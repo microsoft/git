@@ -761,11 +761,12 @@ static int cmd_unregister(int argc, const char **argv)
 
 static int cmd_test(int argc, const char **argv)
 {
-	const char *url = argc > 1 ? argv[1] :
-		"https://dev.azure.com/gvfs/ci/_git/ForTests";
-	char *p = NULL;
-	int res = supports_gvfs_protocol(NULL, url, &p);
-	printf("resolve: %d, %s\n", res, p);
+	struct strbuf buf = STRBUF_INIT;
+
+	get_disk_info(&buf);
+	printf("%s\n", buf.buf);
+	strbuf_release(&buf);
+
 	return 0;
 }
 
