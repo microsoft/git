@@ -675,6 +675,12 @@ static int stop_fsmonitor_daemon(void)
 
 static int toggle_maintenance(int enable)
 {
+	/*
+	 * TODO: check whether the Scalar service used to run `scalar run` and
+	 * if so, whether it ran the config step. In the positive case, we will
+	 * have to extend `git maintenance` to allow for user-defined tasks,
+	 * and register one.
+	 */
 	return run_git(NULL, "maintenance", enable ? "start" : "unregister",
 		       NULL);
 }
@@ -682,6 +688,9 @@ static int toggle_maintenance(int enable)
 static int run_config_task(void)
 {
 	int res = 0;
+
+	/* TODO: turn `feature.scalar` into the appropriate settings */
+	/* TODO: enable FSMonitor and other forgotten settings */
 
 	res = res || add_or_remove_enlistment(1);
 	res = res || set_recommended_config(NULL);
