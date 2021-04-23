@@ -67,6 +67,18 @@ static int is_non_empty_dir(const char *path)
 	return 0;
 }
 
+static void ensure_absolute_path(char **p)
+{
+	char *absolute;
+
+	if (is_absolute_path(*p))
+		return;
+
+	absolute = real_pathdup(*p, 1);
+	free(*p);
+	*p = absolute;
+}
+
 static int set_recommended_config(const char *file)
 {
 	struct {
@@ -417,17 +429,21 @@ static int cmd_clone(int argc, const char **argv)
 		usage_msg_opt(N_("need a URL"), clone_usage, clone_options);
 	}
 
+	ensure_absolute_path(&root);
+
 	dir = xstrfmt("%s/src", root);
 
 	if (!local_cache_root)
 		local_cache_root = default_cache_root(root);
-	else if (!is_absolute_path(local_cache_root))
-		local_cache_root = real_pathdup(local_cache_root, 1);
+	else
+		ensure_absolute_path(&local_cache_root);
 
 	if (!local_cache_root)
 		die(_("could not determine local cache root"));
-	if (dir_inside_of(local_cache_root, dir))
+
+	if (dir_inside_of(local_cache_root, dir) >= 0)
 		die(_("'--local-cache-path' cannot be inside the src folder"));
+
 
 	/* TODO: CheckNotInsideExistingRepo */
 
