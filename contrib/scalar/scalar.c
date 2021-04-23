@@ -141,6 +141,9 @@ static int set_config(const char *file, const char *fmt, ...)
 	return res;
 }
 
+/*
+ * If `cache_server_url` is `NULL`, print the list to `stdout`.
+ */
 static int supports_gvfs_protocol(const char *dir, const char *url,
 				  char **cache_server_url)
 {
@@ -150,6 +153,7 @@ static int supports_gvfs_protocol(const char *dir, const char *url,
 	const char *url_needle = "\"Url\":\"";
 	const char *global_default_needle = "\"GlobalDefault\":true";
 	const char *p, *curly, *dq;
+	int is_default;
 	char *res = NULL;
 
 	cp.git_cmd = 1;
@@ -165,23 +169,82 @@ static int supports_gvfs_protocol(const char *dir, const char *url,
 		p += strlen(needle);
 	while (*p == '{') {
 		curly = strchrnul(p, '}');
-		if (memmem(p, curly - p, global_default_needle,
-				strlen(global_default_needle)))
+		is_default = !!memmem(p, curly - p, global_default_needle,
+				      strlen(global_default_needle));
+		if (is_default)
 			FREE_AND_NULL(res);
 		if (!res && (p = memmem(p, curly - p, url_needle,
 					strlen(url_needle)))) {
 			p += strlen(url_needle);
 			dq = strchr(p, '"');
-			if (dq)
-				res = xstrndup(p, dq - p);
+			if (dq) {
+				if (cache_server_url)
+					res = xstrndup(p, dq - p);
+				else
+					printf("cache-server%s: %.*s\n",
+					       is_default ? " (default)" : "",
+					       (int)(dq - p), p);
+			}
 		}
 		p = curly + 1 + (curly[1] == ',');
 	}
 
 	strbuf_release(&out);
-	if (res)
+	if (res && cache_server_url)
 		*cache_server_url = res;
 	return 1;
+}
+
+static int cmd_cache_server(int argc, const char **argv)
+{
+	enum {
+		GET, SET, LIST
+	} mode = GET;
+	struct option cache_server_options[] = {
+		OPT_CMDMODE(0, "get", &mode,
+			    N_("get the configured cache-server URL"), GET),
+		OPT_CMDMODE(0, "set", &mode,
+			    N_("set the configured cache-server URL"), SET),
+		OPT_CMDMODE(0, "list", &mode,
+			    N_("list the possible cache-server URLs"), LIST),
+		OPT_END(),
+	};
+	const char * const cache_server_usage[] = {
+		N_("git cache_server "
+		   "[--get | --set <url> | --list [<remote>]]"),
+		NULL
+	};
+
+	argc = parse_options(argc, argv, NULL, cache_server_options,
+			     cache_server_usage,
+			     PARSE_OPT_STOP_AT_NON_OPTION);
+
+
+	if (mode == LIST) {
+		if (argc > 1)
+			usage_with_options(cache_server_usage,
+					   cache_server_options);
+		return !!supports_gvfs_protocol(NULL, argc > 0 ?
+						argv[0] : "origin", NULL);
+	} else if (mode == SET) {
+		if (argc != 1)
+			usage_with_options(cache_server_usage,
+					   cache_server_options);
+		return !!set_config(NULL, "gvfs.cache-server=%s", argv[0]);
+	} else {
+		char *url = NULL;
+
+		if (argc != 0)
+			usage_with_options(cache_server_usage,
+					   cache_server_options);
+
+		printf("Using cache server: %s\n",
+		       git_config_get_string("gvfs.cache-server", &url) ?
+		       "(undefined)" : url);
+		free(url);
+	}
+
+	return 0;
 }
 
 static char *remote_default_branch(const char *dir, const char *url)
@@ -775,6 +838,7 @@ struct {
 	int (*fn)(int, const char **);
 	int needs_git_repo;
 } builtins[] = {
+	{ "cache-server", cmd_cache_server, 0 },
 	{ "clone", cmd_clone, 0 },
 	{ "diagnose", cmd_diagnose, 1 },
 	{ "list", cmd_list, 0 },
