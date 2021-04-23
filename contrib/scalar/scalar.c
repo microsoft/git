@@ -467,10 +467,21 @@ static int cmd_clone(int argc, const char **argv)
 	trace2_data_intmax("scalar", the_repository, "unattended",
 			   is_unattended());
 
+	/*
+	 * TODO: verify that the file system is case-insensitive on Windows and
+	 * macOS, and case-sensitive on Linux.
+	 */
+
 	if ((res = set_acls(dir)) < 0)
 		goto cleanup;
 
-	/* TODO: handle local cache root */
+	/*
+	 * TODO: initialize local cache root:
+	 * - need to port QueryVstsInfo(), then
+	 * - need to port TryGetLocalCacheKeyFromRepoInfoOrURL() to
+	 *   get the local cache key
+	 * - create the respective <local-cache-root>/<key>/pack/
+	 */
 
 	if (!branch &&
 	    !(branch = remote_default_branch(dir, url))) {
