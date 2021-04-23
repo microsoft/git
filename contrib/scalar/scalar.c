@@ -307,7 +307,7 @@ static int cmd_clone(int argc, const char **argv)
 {
 	char *cache_server_url = NULL, *branch = NULL;
 	int single_branch = 0, no_fetch_commits_and_trees = 0;
-	char *local_cache_path = NULL;
+	char *local_cache_root = NULL;
 	int full_clone = 0;
 	struct option clone_options[] = {
 		OPT_STRING(0, "cache-server-url", &cache_server_url,
@@ -320,7 +320,7 @@ static int cmd_clone(int argc, const char **argv)
 		OPT_BOOL(0, "no-fetch-commits-and-trees",
 			 &no_fetch_commits_and_trees,
 			 N_("skip fetching commits and trees after clone")),
-		OPT_STRING(0, "local-cache-path", &local_cache_path,
+		OPT_STRING(0, "local-cache-path", &local_cache_root,
 			   N_("<path>"),
 			   N_("override the path for the local Scalar cache")),
 		OPT_BOOL(0, "full-clone", &full_clone,
@@ -473,7 +473,7 @@ cleanup:
 	strbuf_release(&buf);
 	free(branch);
 	free(cache_server_url);
-	free(local_cache_path);
+	free(local_cache_root);
 	return res;
 }
 
