@@ -533,6 +533,7 @@ static int cmd_clone(int argc, const char **argv)
 	strbuf_addf(&buf, "origin/%s", branch);
 	res = run_git(dir, "checkout", "-f", "-t", buf.buf, NULL);
 
+	/* TODO: cmd_register() */
 cleanup:
 	free(root);
 	free(dir);
