@@ -326,6 +326,38 @@ static char *remote_default_branch(const char *dir, const char *url)
 	return NULL;
 }
 
+static int set_acls(const char *root)
+{
+#ifdef WIN32
+	// The following permissions are typically present on deskop and missing on Server
+	//
+	//   ACCESS_ALLOWED_ACE_TYPE: NT AUTHORITY\Authenticated Users
+	//          [OBJECT_INHERIT_ACE]
+	//          [CONTAINER_INHERIT_ACE]
+	//          [INHERIT_ONLY_ACE]
+	//        DELETE
+	//        GENERIC_EXECUTE
+	//        GENERIC_WRITE
+	//        GENERIC_READ
+	/* TODO:
+	DirectorySecurity rootSecurity = DirectoryEx.GetAccessControl(enlistmentPath);
+	AccessRule authenticatedUsersAccessRule = rootSecurity.AccessRuleFactory(
+	new SecurityIdentifier(WellKnownSidType.AuthenticatedUserSid, null),
+	unchecked((int)(NativeMethods.FileAccess.DELETE | NativeMethods.FileAccess.GENERIC_EXECUTE | NativeMethods.FileAccess.GENERIC_WRITE | NativeMethods.FileAccess.GENERIC_READ)),
+	true,
+	InheritanceFlags.ContainerInherit | InheritanceFlags.ObjectInherit,
+	PropagationFlags.None,
+	AccessControlType.Allow);
+
+	// The return type of the AccessRuleFactory method is the base class, AccessRule, but the return value can be cast safely to the derived class.
+	// https://msdn.microsoft.com/en-us/library/system.security.accesscontrol.filesystemsecurity.accessrulefactory(v=vs.110).aspx
+	rootSecurity.AddAccessRule((FileSystemAccessRule)authenticatedUsersAccessRule);
+	DirectoryEx.SetAccessControl(enlistmentPath, rootSecurity);
+	*/
+#endif
+	return 0;
+}
+
 static int cmd_clone(int argc, const char **argv)
 {
 	char *cache_server_url = NULL, *branch = NULL;
@@ -418,6 +450,9 @@ static int cmd_clone(int argc, const char **argv)
 	/* TODO: trace command-line options, is_unattended, elevated, dir */
 	trace2_data_intmax("scalar", the_repository, "unattended",
 			   is_unattended());
+
+	if ((res = set_acls(dir)) < 0)
+		goto cleanup;
 
 	/* TODO: handle local cache root */
 
