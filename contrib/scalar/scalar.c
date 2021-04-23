@@ -802,9 +802,26 @@ static int add_or_remove_enlistment(int add)
 		       the_repository->worktree, NULL);
 }
 
-static int stop_fsmonitor_daemon(void)
+static int stop_fsmonitor_daemon(const char *dir)
 {
-	return run_git(NULL, "fsmonitor--daemon", "--stop", NULL);
+	struct child_process cp = CHILD_PROCESS_INIT;
+	struct strbuf err = STRBUF_INIT;
+	int res;
+
+	cp.dir = dir;
+	cp.git_cmd = 1;
+	strvec_pushl(&cp.args, "fsmonitor--daemon", "--stop", NULL);
+	strvec_push(&cp.env_array, "LC_ALL=C");
+	res = pipe_command(&cp, NULL, 0, NULL, 0, &err, 0);
+
+	if (res == 128 &&
+	    !strcmp("fatal: fsmonitor--daemon is not running", err.buf))
+		res = 0;
+	else if (res)
+		fwrite(err.buf, err.len, 1, stderr);
+
+	strbuf_release(&err);
+	return res;
 }
 
 static int toggle_maintenance(int enable)
@@ -887,7 +904,7 @@ static int cmd_unregister(int argc, const char **argv)
 {
 	int res = 0;
 
-	res = res || stop_fsmonitor_daemon();
+	res = res || stop_fsmonitor_daemon(NULL);
 	res = res || toggle_maintenance(0);
 	res = res || add_or_remove_enlistment(0);
 	return res;
