@@ -251,6 +251,29 @@ static int cmd_cache_server(int argc, const char **argv)
 	return 0;
 }
 
+static char *default_cache_root(const char *root)
+{
+	const char *env;
+
+	if (is_unattended())
+		return xstrfmt("%s/.scalarCache", root);
+
+#ifdef WIN32
+	(void)env;
+	return xstrfmt("%.*s.scalarCache", offset_1st_component(root), root);
+#elif defined(__APPLE__)
+	if ((env = getenv("HOME")) && *env)
+		return xstrfmt("%s/.scalarCache", env);
+	return NULL;
+#else
+	if ((env = getenv("XDG_CACHE_HOME")) && *env)
+		return xstrfmt("%s/scalar", env);
+	if ((env = getenv("HOME")) && *env)
+		return xstrfmt("%s/.cache/scalar", env);
+	return NULL;
+#endif
+}
+
 static char *remote_default_branch(const char *dir, const char *url)
 {
 	struct child_process cp = CHILD_PROCESS_INIT;
@@ -364,7 +387,16 @@ static int cmd_clone(int argc, const char **argv)
 
 	dir = xstrfmt("%s/src", root);
 
-	/* TODO: verify that '--local-cache-path' isn't inside the src folder */
+	if (!local_cache_root)
+		local_cache_root = default_cache_root(root);
+	else if (!is_absolute_path(local_cache_root))
+		local_cache_root = real_pathdup(local_cache_root, 1);
+
+	if (!local_cache_root)
+		die(_("could not determine local cache root"));
+	if (dir_inside_of(local_cache_root, dir))
+		die(_("'--local-cache-path' cannot be inside the src folder"));
+
 	/* TODO: CheckNotInsideExistingRepo */
 
 	if (is_non_empty_dir(dir)) {
