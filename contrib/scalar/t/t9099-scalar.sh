@@ -7,6 +7,10 @@ export TEST_DIRECTORY
 
 . ../../../t/test-lib.sh
 
+# Do not write any files outside the trash directory
+Scalar_UNATTENDED=1
+export Scalar_UNATTENDED
+
 test_expect_success 'scalar shows a usage' '
 	test_expect_code 129 scalar -h
 '

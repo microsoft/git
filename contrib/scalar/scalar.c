@@ -19,6 +19,10 @@ static const char scalar_usage[] =
 
 static char *scalar_executable_path;
 
+static int is_unattended(void) {
+	return git_env_bool("Scalar_UNATTENDED", 0);
+}
+
 static int run_git(const char *dir, const char *arg, ...)
 {
 	struct strvec argv = STRVEC_INIT;
@@ -301,7 +305,6 @@ static char *remote_default_branch(const char *dir, const char *url)
 
 static int cmd_clone(int argc, const char **argv)
 {
-	int is_unattended = git_env_bool("Scalar_UNATTENDED", 0);
 	char *cache_server_url = NULL, *branch = NULL;
 	int single_branch = 0, no_fetch_commits_and_trees = 0;
 	char *local_cache_path = NULL;
@@ -382,7 +385,7 @@ static int cmd_clone(int argc, const char **argv)
 
 	/* TODO: trace command-line options, is_unattended, elevated, dir */
 	trace2_data_intmax("scalar", the_repository, "unattended",
-			   is_unattended);
+			   is_unattended());
 
 	/* TODO: handle local cache root */
 
