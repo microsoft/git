@@ -479,7 +479,8 @@ static int cmd_clone(int argc, const char **argv)
 	 * TODO: initialize local cache root:
 	 * - need to call `gvfs-helper -r <url> endpoint vsts/info` and
 	 *   use `.repository.id`, if found, otherwise down-case the URL
-	 *   and pass it through `SHA-1` and use the result, as cache key.
+	 *   and pass it through `SHA-1` and use the result, as cache key
+	 *   (seems that looking for `"repository":{"id":"` suffices).
 	 * - store <local-cache-root>/<cache-key> as `gvfs.sharedCache` in
 	 *   the config.
 	 * - create the <local-cache-root>/<cache-key>/pack/
