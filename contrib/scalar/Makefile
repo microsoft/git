@@ -33,7 +33,7 @@ include ../../config.mak.uname
 -include ../../config.mak.autogen
 -include ../../config.mak
 
-TARGETS = scalar$(X) scalar.o
+TARGETS = scalar$(X) scalar.o json-parser.o
 GITLIBS = ../../common-main.o ../../libgit.a ../../xdiff/lib.a
 
 all: scalar$X ../../bin-wrappers/scalar
@@ -41,7 +41,7 @@ all: scalar$X ../../bin-wrappers/scalar
 $(GITLIBS):
 	$(QUIET_SUBDIR0)../.. $(QUIET_SUBDIR1) $(subst ../../,,$@)
 
-$(TARGETS): $(GITLIBS) scalar.c
+$(TARGETS): $(GITLIBS) scalar.c json-parser.c json-parser.h
 	$(QUIET_SUBDIR0)../.. $(QUIET_SUBDIR1) $(patsubst %,contrib/scalar/%,$@)
 
 clean:
