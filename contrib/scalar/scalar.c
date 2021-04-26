@@ -11,6 +11,7 @@
 #include "refs.h"
 #include "version.h"
 #include "dir.h"
+#include "json-parser.h"
 
 static const char scalar_usage[] =
 	N_("scalar <command> [<options>]\n\n"
@@ -940,13 +941,29 @@ static int cmd_unregister(int argc, const char **argv)
 	return res;
 }
 
+static int json_fn(struct json_iterator *it)
+{
+	printf("key '%s' @%d+%d '%s'\n", it->key.buf,
+		(int)(it->begin - it->json), (int)(it->end - it->begin),
+		it->type == JSON_NULL ? "(null)" :
+		it->type == JSON_FALSE ? "(false)" :
+		it->type == JSON_TRUE ? "(true)" :
+		it->type == JSON_NUMBER ? "(number)" :
+		it->type == JSON_STRING ? it->string_value.buf :
+		it->type == JSON_ARRAY ? "(array)" :
+		it->type == JSON_OBJECT ? "(object)" :
+		"(huh?)");
+
+	return 0;
+}
+
 static int cmd_test(int argc, const char **argv)
 {
-	struct strbuf buf = STRBUF_INIT;
+	const char *json = argc > 1 ? argv[1] : "{\"hello\":\"world\"}";
+	struct json_iterator it = JSON_ITERATOR_INIT(json, json_fn, NULL);
 
-	get_disk_info(&buf);
-	printf("%s\n", buf.buf);
-	strbuf_release(&buf);
+	if (iterate_json(&it))
+		die("could not parse '%s'", json);
 
 	return 0;
 }
