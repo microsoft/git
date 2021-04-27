@@ -1041,7 +1041,7 @@ struct {
 	int (*fn)(int, const char **);
 	int needs_git_repo;
 } builtins[] = {
-	{ "cache-server", cmd_cache_server, 0 },
+	{ "cache-server", cmd_cache_server, 1 },
 	{ "clone", cmd_clone, 0 },
 	{ "diagnose", cmd_diagnose, 1 },
 	{ "list", cmd_list, 0 },
