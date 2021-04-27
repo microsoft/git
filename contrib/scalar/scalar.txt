@@ -75,6 +75,12 @@ clone [<options>] <url> [<directory>]::
     Retrieve missing objects from the specified remote, which is expected to
     understand the GVFS protocol.
 
+List
+~~~~
+
+To see which repositories are currently registered by the service, run
+`scalar list`.
+
 To be continued
 
 SEE ALSO
