@@ -10,6 +10,9 @@ SYNOPSIS
 [verse]
 scalar clone [--single-branch] [--branch <main-branch>] [--full-clone]
          [--no-fetch-commits-and-trees] <url> [<enlistment>]
+scalar list
+scalar register [<enlistment>]
+scalar unregister [<enlistment>]
 
 DESCRIPTION
 -----------
@@ -80,6 +83,30 @@ cloning. If the HEAD at the remote did not point at any branch when
     The default behavior is to clone all commit and tree objects, with blob
     objects being fetched on demand. With the `--no-fetch-commits-and-trees`
     option, commit and tree objects are also fetched only as needed.
+
+List
+~~~~
+
+list::
+    To see which repositories are currently registered by the service, run
+    `scalar list`. This command, like `clone`, does not need to be run
+    inside a Git worktree.
+
+Register
+~~~~~~~~
+
+register [<enlistment>]::
+    Adds a repository to the list of registered repositories. If
+    `<enlistment>` is not provided, then the enlistment associated with the
+    current working directory is registered.
+
+Unregister
+~~~~~~~~~~
+
+unregister [<enlistment>]::
+    Remove the specified repository from the list of repositories
+    registered with Scalar. This stops the scheduled maintenance and the
+    built-in FSMonitor.
 
 SEE ALSO
 --------
