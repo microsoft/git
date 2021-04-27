@@ -472,7 +472,7 @@ static int cmd_clone(int argc, const char **argv)
 	};
 	const char *url;
 	char *root = NULL, *dir = NULL, *config_path = NULL;
-	char *cache_key = NULL, *shared_cache_path;
+	char *cache_key = NULL, *shared_cache_path = NULL;
 	struct strbuf buf = STRBUF_INIT;
 	int res;
 
