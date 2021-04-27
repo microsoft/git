@@ -87,8 +87,26 @@ clone), and `~/.scalarCache` on macOS.
 List
 ~~~~
 
-To see which repositories are currently registered by the service, run
-`scalar list`.
+list::
+    To see which repositories are currently registered by the service, run
+    `scalar list`. This command, like `clone`, does not need to be run
+    inside a Git worktree.
+
+Register
+~~~~~~~~
+
+register [<path>]::
+    Adds a repository to the list of registered repositories. If `<path>`
+    is not provided, then the repository associated with the current
+    directory is registered.
+
+Unregister
+~~~~~~~~~~
+
+unregister [<path>]::
+    Remove the specified repository from the list of repositories
+    registered with Scalar.
+
 
 To be continued
 
