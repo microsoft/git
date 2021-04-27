@@ -158,6 +158,42 @@ static int set_config(const char *file, const char *fmt, ...)
 	return res;
 }
 
+/* Find N for which .CacheServers[N].GlobalDefault == true */
+static int get_cache_server_index(struct json_iterator *it)
+{
+	const char *p;
+	char *q;
+	long l;
+
+	if (it->type == JSON_TRUE &&
+	    skip_iprefix(it->key.buf, ".CacheServers[", &p) &&
+	    (l = strtol(p, &q, 10)) >= 0 && p != q &&
+	    !strcasecmp(q, "].GlobalDefault")) {
+		*(long *)it->fn_data = l;
+		return 1;
+	}
+
+	return 0;
+}
+
+struct cache_server_url_data {
+	char *key, *url;
+};
+
+/* Get .CacheServers[N].Url */
+static int get_cache_server_url(struct json_iterator *it)
+{
+	struct cache_server_url_data *data = it->fn_data;
+
+	if (it->type == JSON_STRING &&
+	    !strcasecmp(data->key, it->key.buf)) {
+		data->url = strbuf_detach(&it->string_value, NULL);
+		return 1;
+	}
+
+	return 0;
+}
+
 /*
  * If `cache_server_url` is `NULL`, print the list to `stdout`.
  */
@@ -166,50 +202,33 @@ static int supports_gvfs_protocol(const char *dir, const char *url,
 {
 	struct child_process cp = CHILD_PROCESS_INIT;
 	struct strbuf out = STRBUF_INIT;
-	const char *needle = "\"CacheServers\":[";
-	const char *url_needle = "\"Url\":\"";
-	const char *global_default_needle = "\"GlobalDefault\":true";
-	const char *p, *curly, *dq;
-	int is_default;
-	char *res = NULL;
 
 	cp.git_cmd = 1;
 	cp.dir = dir; /* gvfs-helper requires a Git repository */
 	strvec_pushl(&cp.args, "gvfs-helper", "--remote", url, "config", NULL);
-	if (pipe_command(&cp, NULL, 0, &out, 512, NULL, 0)) {
-		strbuf_release(&out);
-		return 0; /* error out quietly */
-	}
+	if (!pipe_command(&cp, NULL, 0, &out, 512, NULL, 0)) {
+		long l = 0;
+		struct json_iterator it =
+			JSON_ITERATOR_INIT(out.buf, get_cache_server_index, &l);
+		struct cache_server_url_data data = { .url = NULL };
 
-	p = strstr(out.buf, needle);
-	if (p)
-		p += strlen(needle);
-	while (*p == '{') {
-		curly = strchrnul(p, '}');
-		is_default = !!memmem(p, curly - p, global_default_needle,
-				      strlen(global_default_needle));
-		if (is_default)
-			FREE_AND_NULL(res);
-		if (!res && (p = memmem(p, curly - p, url_needle,
-					strlen(url_needle)))) {
-			p += strlen(url_needle);
-			dq = strchr(p, '"');
-			if (dq) {
-				if (cache_server_url)
-					res = xstrndup(p, dq - p);
-				else
-					printf("cache-server%s: %.*s\n",
-					       is_default ? " (default)" : "",
-					       (int)(dq - p), p);
-			}
+		if (iterate_json(&it) < 0) {
+			strbuf_release(&out);
+			return error("JSON parse error");
 		}
-		p = curly + 1 + (curly[1] == ',');
+		data.key = xstrfmt(".CacheServers[%ld].Url", l);
+		it.fn = get_cache_server_url;
+		it.fn_data = &data;
+		if (iterate_json(&it) < 0) {
+			strbuf_release(&out);
+			return error("JSON parse error");
+		}
+		*cache_server_url = data.url;
+		free(data.key);
+		return 1;
 	}
-
 	strbuf_release(&out);
-	if (res && cache_server_url)
-		*cache_server_url = res;
-	return 1;
+	return 0; /* error out quietly */
 }
 
 static int cmd_cache_server(int argc, const char **argv)
@@ -941,29 +960,14 @@ static int cmd_unregister(int argc, const char **argv)
 	return res;
 }
 
-static int json_fn(struct json_iterator *it)
-{
-	printf("key '%s' @%d+%d '%s'\n", it->key.buf,
-		(int)(it->begin - it->json), (int)(it->end - it->begin),
-		it->type == JSON_NULL ? "(null)" :
-		it->type == JSON_FALSE ? "(false)" :
-		it->type == JSON_TRUE ? "(true)" :
-		it->type == JSON_NUMBER ? "(number)" :
-		it->type == JSON_STRING ? it->string_value.buf :
-		it->type == JSON_ARRAY ? "(array)" :
-		it->type == JSON_OBJECT ? "(object)" :
-		"(huh?)");
-
-	return 0;
-}
-
 static int cmd_test(int argc, const char **argv)
 {
-	const char *json = argc > 1 ? argv[1] : "{\"hello\":\"world\"}";
-	struct json_iterator it = JSON_ITERATOR_INIT(json, json_fn, NULL);
+	const char *url = argc > 1 ?
+		argv[1] : "https://gvfs@dev.azure.com/gvfs/ci/_git/ForTests";
+	char *cache_server_url = NULL;
+	int res = supports_gvfs_protocol(NULL, url, &cache_server_url);
 
-	if (iterate_json(&it))
-		die("could not parse '%s'", json);
+	printf("res: %d, url: %s\n", res, cache_server_url);
 
 	return 0;
 }
