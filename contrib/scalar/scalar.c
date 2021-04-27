@@ -913,7 +913,7 @@ static int add_or_remove_enlistment(int add)
 
 	return run_git(NULL, "config", "--global",
 		       add ? "--add" : "--unset",
-		       "--fixed-value", "scalar.repo",
+		       "scalar.repo",
 		       the_repository->worktree, NULL);
 }
 
