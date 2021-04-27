@@ -39,9 +39,15 @@ Clone
 
 clone [<options>] <url> [<directory>]::
     Clones the specified repository, similar to linkgit:git-clone[1]. By
-    default, only commit and tree objects are cloned, and the revision is
-    checked out sparsely in cone-mode (see linkgit:git-sparse-checkout[1]
-    for details).
+    default, only commit and tree objects are cloned. Once finished, the
+    worktree is located at `<directory>/src`.
++
+The sparse-checkout feature is enabled (except when run with `--full-clone`)
+and the only files present are those in the top-level directory. Use
+`git sparse-checkout set` to expand the set of directories you want to see,
+or `git sparse-checkout disable` to expand to all files (see
+linkgit:git-sparse-checkout[1] for more details). You can explore the
+subdirectories outside your sparse-checkout by using `git ls-tree HEAD`.
 
 -b <name>::
 --branch <name>::
@@ -59,7 +65,7 @@ clone [<options>] <url> [<directory>]::
 	branch is created.
 
 --[no-]full-clone::
-    A partial clone is performed by default. This behavior can be turned
+    A sparse-checkout is initialized by default. This behavior can be turned
     off via `--no-full-clone`.
 
 --[no-]fetch-commits-and-trees::
@@ -70,6 +76,9 @@ clone [<options>] <url> [<directory>]::
 --local-cache-path <path>::
     Override the path to the local cache root directory; Pre-fetched objects
     are stored into a repository-dependent subdirectory of that path.
++
+The default is `<drive>:\.scalarCache` on Windows (on the same drive as the
+clone), and `~/.scalarCache` on macOS.
 
 --cache-server-url <url>::
     Retrieve missing objects from the specified remote, which is expected to
