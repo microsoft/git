@@ -3,14 +3,84 @@ scalar(1)
 
 NAME
 ----
-scalar - TBD
+scalar - an opinionated repository management tool
 
 SYNOPSIS
 --------
 [verse]
-scalar [<options>]
+scalar clone [--single-branch] [--branch <main-branch>] [--full-clone]
+         [--no-fetch-commits-and-trees] [--local-cache-path <path>]
+         [--cache-server-url <url>] <url> [<directory>]
+scalar list
+scalar register
+scalar unregister
+scalar run ( all | config | commit-graph | fetch | loose-objects | pack-files )
+scalar diagnose
+scalar cache-server ( --get | --set <url> | --list [<remote>] )
 
 DESCRIPTION
 -----------
 
-TBD
+Scalar is an opinionated repository management tool. By creating new
+repositories or registering existing repositories with Scalar, your Git
+experience will speed up. Scalar sets advanced Git config settings,
+maintains your repositories in the background, and helps reduce data sent
+across the network.
+
+The command implements various subcommands, and different options depending
+on the subcommand. With the exception of `clone` and `list`, all subcommands
+expect to be run in a Git worktree.
+
+COMMANDS
+--------
+
+Clone
+~~~~~
+
+clone [<options>] <url> [<directory>]::
+    Clones the specified repository, similar to linkgit:git-clone[1]. By
+    default, only commit and tree objects are cloned, and the revision is
+    checked out sparsely in cone-mode (see linkgit:git-sparse-checkout[1]
+    for details).
+
+-b <name>::
+--branch <name>::
+	Instead of checking out the branch pointed to by the cloned repository's
+    HEAD, check out the `<name>` branch instead.
+
+--[no-]single-branch::
+	Clone only the history leading to the tip of a single branch,
+	either specified by the `--branch` option or the primary
+	branch remote's `HEAD` points at.
+	Further fetches into the resulting repository will only update the
+	remote-tracking branch for the branch this option was used for the
+	initial cloning.  If the HEAD at the remote did not point at any
+	branch when `--single-branch` clone was made, no remote-tracking
+	branch is created.
+
+--[no-]full-clone::
+    A partial clone is performed by default. This behavior can be turned
+    off via `--no-full-clone`.
+
+--[no-]fetch-commits-and-trees::
+    The default behavior is to clone all commit and tree objects, with blob
+    objects being fetched on demand. With the `--no-fetch-commits-and-trees`
+    option, commit and tree objects are also fetched only as needed.
+
+--local-cache-path <path>::
+    Override the path to the local cache root directory; Pre-fetched objects
+    are stored into a repository-dependent subdirectory of that path.
+
+--cache-server-url <url>::
+    Retrieve missing objects from the specified remote, which is expected to
+    understand the GVFS protocol.
+
+To be continued
+
+SEE ALSO
+--------
+linkgit:git-clone[1], linkgit:git-maintenance[1].
+
+Scalar
+---
+Associated with the linkgit:git[1] suite
