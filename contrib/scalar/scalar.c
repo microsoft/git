@@ -306,6 +306,58 @@ static char *default_cache_root(const char *root)
 #endif
 }
 
+static int get_repository_id(struct json_iterator *it)
+{
+	if (it->type == JSON_STRING &&
+	    !strcasecmp(".repository.id", it->key.buf)) {
+		*(char **)it->fn_data = strbuf_detach(&it->string_value, NULL);
+		return 1;
+	}
+
+	return 0;
+}
+
+static char *get_cache_key(const char *dir, const char *url)
+{
+	struct child_process cp = CHILD_PROCESS_INIT;
+	struct strbuf out = STRBUF_INIT;
+	char *cache_key = NULL;
+
+	cp.git_cmd = 1;
+	cp.dir = dir; /* gvfs-helper requires a Git repository */
+	strvec_pushl(&cp.args, "gvfs-helper", "--remote", url,
+		     "endpoint", "vsts/info", NULL);
+	if (!pipe_command(&cp, NULL, 0, &out, 512, NULL, 0)) {
+		char *id = NULL;
+		struct json_iterator it =
+			JSON_ITERATOR_INIT(out.buf, get_repository_id, &id);
+
+		if (iterate_json(&it) < 0)
+			warning("JSON parse error (%s)", out.buf);
+		else if (id)
+			cache_key = xstrfmt("id_%s", id);
+		free(id);
+	}
+
+	if (!cache_key) {
+		struct strbuf downcased = STRBUF_INIT;
+		git_hash_ctx ctx;
+		unsigned char hash[GIT_MAX_RAWSZ];
+
+		strbuf_addstr(&downcased, url);
+		strbuf_tolower(&downcased);
+
+		the_hash_algo->init_fn(&ctx);
+		the_hash_algo->update_fn(&ctx, downcased.buf, downcased.len);
+		the_hash_algo->final_fn(hash, &ctx);
+
+		cache_key = xstrfmt("url_%s", hash_to_hex(hash));
+	}
+
+	strbuf_release(&out);
+	return cache_key;
+}
+
 static char *remote_default_branch(const char *dir, const char *url)
 {
 	struct child_process cp = CHILD_PROCESS_INIT;
@@ -420,6 +472,7 @@ static int cmd_clone(int argc, const char **argv)
 	};
 	const char *url;
 	char *root = NULL, *dir = NULL, *config_path = NULL;
+	char *cache_key = NULL, *shared_cache_path;
 	struct strbuf buf = STRBUF_INIT;
 	int res;
 
@@ -495,17 +548,6 @@ static int cmd_clone(int argc, const char **argv)
 	if ((res = set_acls(dir)) < 0)
 		goto cleanup;
 
-	/*
-	 * TODO: initialize local cache root:
-	 * - need to call `gvfs-helper -r <url> endpoint vsts/info` and
-	 *   use `.repository.id`, if found, otherwise down-case the URL
-	 *   and pass it through `SHA-1` and use the result, as cache key
-	 *   (seems that looking for `"repository":{"id":"` suffices).
-	 * - store <local-cache-root>/<cache-key> as `gvfs.sharedCache` in
-	 *   the config.
-	 * - create the <local-cache-root>/<cache-key>/pack/
-	 */
-
 	if (!branch &&
 	    !(branch = remote_default_branch(dir, url))) {
 		res = error(_("failed to get default branch for '%s'"), url);
@@ -513,6 +555,27 @@ static int cmd_clone(int argc, const char **argv)
 	}
 
 	config_path = xstrfmt("%s/.git/config", dir);
+
+	if (!(cache_key = get_cache_key(dir, url))) {
+		res = error(_("could not determine cache key for '%s'"), url);
+		goto cleanup;
+	}
+
+	shared_cache_path = xstrfmt("%s/%s", local_cache_root, cache_key);
+	if (set_config(config_path, "gvfs.sharedCache=%s", shared_cache_path)) {
+		res = error(_("could not configure shared cache"));
+		goto cleanup;
+	}
+
+	strbuf_reset(&buf);
+	strbuf_addf(&buf, "%s/pack", shared_cache_path);
+	switch (safe_create_leading_directories(buf.buf)) {
+	case SCLD_OK: case SCLD_EXISTS:
+		break; /* okay */
+	default:
+		res = error_errno(_("could not initialize '%s'"), buf.buf);
+		goto cleanup;
+	}
 
 	if (set_config(config_path, "remote.origin.url=%s", url) ||
 	    set_config(config_path, "remote.origin.fetch="
@@ -592,6 +655,8 @@ cleanup:
 	free(branch);
 	free(cache_server_url);
 	free(local_cache_root);
+	free(cache_key);
+	free(shared_cache_path);
 	return res;
 }
 
@@ -964,10 +1029,9 @@ static int cmd_test(int argc, const char **argv)
 {
 	const char *url = argc > 1 ?
 		argv[1] : "https://gvfs@dev.azure.com/gvfs/ci/_git/ForTests";
-	char *cache_server_url = NULL;
-	int res = supports_gvfs_protocol(NULL, url, &cache_server_url);
+	char *cache_key = get_cache_key(NULL, url);
 
-	printf("res: %d, url: %s\n", res, cache_server_url);
+	printf("key: %s\n", cache_key);
 
 	return 0;
 }

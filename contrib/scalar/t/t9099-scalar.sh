@@ -117,6 +117,15 @@ test_expect_success '`scalar clone` with GVFS-enabled server' '
 	: the fake cache server requires fake authentication &&
 	git config --global core.askPass true &&
 	scalar clone --single-branch http://$HOST_PORT/ using-gvfs &&
+
+	: verify that the shared cache has been configured &&
+	cache_key="url_$(printf "%s" http://$HOST_PORT/ |
+		tr A-Z a-z |
+		test-tool $GIT_DEFAULT_HASH)" &&
+	echo "$PWD/using-gvfs/.scalarCache/$cache_key" >expect &&
+	git -C using-gvfs/src config gvfs.sharedCache >actual &&
+	test_cmp expect actual &&
+
 	(
 		cd using-gvfs/src &&
 		test_path_is_missing 1/2 &&
