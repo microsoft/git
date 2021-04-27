@@ -107,8 +107,55 @@ unregister [<path>]::
     Remove the specified repository from the list of repositories
     registered with Scalar.
 
+Run
+~~~
 
-To be continued
+scalar run ( all | config | commit-graph | fetch | loose-objects | pack-files )::
+    Run the given maintenance task (or all tasks, if `all` was specified).
+    Except for `all` and `config`, this subcommand simply hands off to
+    linkgit:git-maintenance[1] (mapping `fetch` to `prefetch` and
+    `pack-files` to `incremental-repack`).
++
+These tasks are run automatically as part of the scheduled maintenance,
+as soon as the repository is registered with Scalar. It should therefore
+not be necessary to run this command manually.
++
+The `config` task is specific to Scalar and configures all those
+opinionated default settings that make Git work more efficiently with
+large repositories. As this task is run as part of `scalar clone`
+automatically, explicit invocations of this task are rarely needed.
+
+Diagnose
+~~~~~~~~
+
+diagnose::
+    When reporting issues with Scalar, it is often helpful to provide the
+    information gathered by this command, including logs and certain
+    statistics describing the data shape of the current repository.
++
+The output of this command is a `.zip` file that is written into
+a directory adjacent to the worktree in the `src` directory.
+
+Cache-server
+~~~~~~~~~~~~
+
+cache-server ( --get | --set <url> | --list [<remote>] )::
+    This command lets you query or set the GVFS-enabled cache server used
+    to fetch missing objects.
+
+--get::
+    This is the default command mode: query the currently-configured cache
+    server URL, if any.
+
+--list::
+    Access the `gvfs/info` endpoint of the specified remote (default:
+    `origin`) to figure out which cache servers are available, if any.
++
+In contrast to the `--get` command mode (which only accesses the local
+repository), this command mode triggers a request via the network that
+potentially requires authentication. If authentication is required, the
+configured credential helper is employed (see linkgit:git-credential[1]
+for details).
 
 SEE ALSO
 --------
