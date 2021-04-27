@@ -134,7 +134,8 @@ test_expect_success '`scalar clone` with GVFS-enabled server' '
 		test_i18ngrep gvfs-helper trace.txt &&
 		echo "second" >expect &&
 		test_cmp expect actual
-	)
+	) &&
+	echo "TODO: verify that it registered the Scalar clone"
 '
 
 test_done
