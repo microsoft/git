@@ -1553,6 +1553,9 @@ static enum worker_result dispatch(struct req *req)
 		strvec_pushf(&cp.env_array, "REQUEST_METHOD=%s", method);
 		strvec_pushf(&cp.env_array, "PATH_TRANSLATED=%s",
 			     req->uri_base.buf);
+		/* Prevent MSYS2 from "converting to a Windows path" */
+		strvec_pushf(&cp.env_array,
+			     "MSYS2_ENV_CONV_EXCL=PATH_TRANSLATED");
 		strvec_push(&cp.env_array, "SERVER_PROTOCOL=HTTP/1.1");
 		if (req->quest_args.len)
 			strvec_pushf(&cp.env_array, "QUERY_STRING=%s",
