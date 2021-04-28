@@ -649,7 +649,7 @@ static int cmd_clone(int argc, const char **argv)
 	strbuf_addf(&buf, "origin/%s", branch);
 	res = run_git(dir, "checkout", "-f", "-t", buf.buf, NULL);
 
-	/* TODO: cmd_register() */
+	/* TODO: cmd_register(), test it using GIT_TEST_MAINT_SCHEDULER (?) */
 cleanup:
 	free(root);
 	free(dir);
@@ -817,6 +817,26 @@ static int get_disk_info(struct strbuf *out)
 	return 0;
 }
 
+/*
+ * TODO: investigate this problem on Windows:
+ *
+ * $ scalar diagnose
+ * Collecting diagnostic info into temp folder .scalarDiagnostics/scalar_20210428_164058
+ *
+ * git version 2.31.1.vfs.0.0.84.gc5b178c
+ * built from commit: c5b178ccafb9b69d32fdec2ef94ff53ef6fc130b
+ *
+ * Enlistment root: C:/Users/me/repos/ForTests-321/src
+ * Cache Server: None
+ * Local Cache:
+ *
+ * Available space on 'C:/': 228.22 GiB
+ * error: fsmonitor--daemon failed to start
+ * error: fsmonitor--daemon failed to start
+ * error: fsmonitor--daemon failed to start
+ * error: fsmonitor--daemon failed to start
+ * [... repeats ...]
+ */
 static int cmd_diagnose(int argc, const char **argv)
 {
 	struct strbuf tmp_dir = STRBUF_INIT;
