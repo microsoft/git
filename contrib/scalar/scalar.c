@@ -341,15 +341,18 @@ static char *get_cache_key(const char *dir, const char *url)
 
 	if (!cache_key) {
 		struct strbuf downcased = STRBUF_INIT;
+		int hash_algo_index = hash_algo_by_name("sha1");
+		const struct git_hash_algo *hash_algo = hash_algo_index < 0 ?
+			the_hash_algo : &hash_algos[hash_algo_index];
 		git_hash_ctx ctx;
 		unsigned char hash[GIT_MAX_RAWSZ];
 
 		strbuf_addstr(&downcased, url);
 		strbuf_tolower(&downcased);
 
-		the_hash_algo->init_fn(&ctx);
-		the_hash_algo->update_fn(&ctx, downcased.buf, downcased.len);
-		the_hash_algo->final_fn(hash, &ctx);
+		hash_algo->init_fn(&ctx);
+		hash_algo->update_fn(&ctx, downcased.buf, downcased.len);
+		hash_algo->final_fn(hash, &ctx);
 
 		cache_key = xstrfmt("url_%s", hash_to_hex(hash));
 	}
