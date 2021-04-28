@@ -18,8 +18,6 @@ static const char scalar_usage[] =
 	   "Commands: clone, config, diagnose, list\n"
 	   "\tregister, run, unregister");
 
-static char *scalar_executable_path;
-
 static int is_unattended(void) {
 	return git_env_bool("Scalar_UNATTENDED", 0);
 }
@@ -1081,10 +1079,6 @@ int cmd_main(int argc, const char **argv)
 
 	if (argc < 2)
 		usage(scalar_usage);
-
-	scalar_executable_path = real_pathdup(argv[0], 0);
-	if (!scalar_executable_path)
-		die(_("could not determine full path of `scalar`"));
 
 	argv++;
 	argc--;
