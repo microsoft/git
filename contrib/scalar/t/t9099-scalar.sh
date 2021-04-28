@@ -134,6 +134,7 @@ test_expect_success '`scalar clone` with GVFS-enabled server' '
 	git -C using-gvfs/src config gvfs.sharedCache >actual &&
 	test_cmp expect actual &&
 
+	second=$(git rev-parse --verify second:second.t) &&
 	(
 		cd using-gvfs/src &&
 		test_path_is_missing 1/2 &&
