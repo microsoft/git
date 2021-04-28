@@ -656,11 +656,22 @@ cleanup:
 	return res;
 }
 
+static void spinner(void)
+{
+	static const char whee[] = "|\010/\010-\010\\\010", *next = whee;
+	write(2, next, 2);
+	next += 2;
+	if (!*next)
+		next = whee;
+}
+
 static int stage(const char *git_dir, struct strbuf *buf, const char *path)
 {
 	struct strbuf cacheinfo = STRBUF_INIT;
 	struct child_process cp = CHILD_PROCESS_INIT;
 	int res;
+
+	spinner();
 
 	strbuf_addstr(&cacheinfo, "100644,");
 
