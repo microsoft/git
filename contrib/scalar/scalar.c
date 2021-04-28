@@ -246,11 +246,25 @@ static int unregister_dir(void)
 	return res;
 }
 
+static void spinner(void)
+{
+	static const char whee[] = "|\010/\010-\010\\\010", *next = whee;
+
+	if (!next)
+		return;
+	if (write(2, next, 2) < 0)
+		next = NULL;
+	else
+		next = next[2] ? next + 2 : whee;
+}
+
 static int stage(const char *git_dir, struct strbuf *buf, const char *path)
 {
 	struct strbuf cacheinfo = STRBUF_INIT;
 	struct child_process cp = CHILD_PROCESS_INIT;
 	int res;
+
+	spinner();
 
 	strbuf_addstr(&cacheinfo, "100644,");
 
