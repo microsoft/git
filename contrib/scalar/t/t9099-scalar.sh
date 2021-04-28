@@ -11,6 +11,9 @@ export TEST_DIRECTORY
 Scalar_UNATTENDED=1
 export Scalar_UNATTENDED
 
+GIT_TEST_MAINT_SCHEDULER="crontab:test-tool crontab ../cron.txt"
+export GIT_TEST_MAINT_SCHEDULER
+
 test_expect_success 'scalar shows a usage' '
 	test_expect_code 129 scalar -h
 '
@@ -31,6 +34,8 @@ test_expect_success 'scalar clone' '
 	scalar clone --single-branch "file://$(pwd)" cloned &&
 	(
 		cd cloned/src &&
+		git config --get --global --fixed-value maintenance.repo \
+			"$(pwd)" &&
 		test_path_is_missing 1/2 &&
 		test_must_fail git rev-list --missing=print $second &&
 		git rev-list $second &&
@@ -134,8 +139,7 @@ test_expect_success '`scalar clone` with GVFS-enabled server' '
 		test_i18ngrep gvfs-helper trace.txt &&
 		echo "second" >expect &&
 		test_cmp expect actual
-	) &&
-	echo "TODO: verify that it registered the Scalar clone"
+	)
 '
 
 test_done

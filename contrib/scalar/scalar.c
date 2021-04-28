@@ -438,6 +438,9 @@ static int set_acls(const char *root)
 	return 0;
 }
 
+/* TODO: order the non-`cmd_*()` functions before the `cmd_*()` functions */
+static int run_config_task(const char *dir);
+
 static int cmd_clone(int argc, const char **argv)
 {
 	char *cache_server_url = NULL, *branch = NULL;
@@ -641,8 +644,11 @@ static int cmd_clone(int argc, const char **argv)
 	strbuf_reset(&buf);
 	strbuf_addf(&buf, "origin/%s", branch);
 	res = run_git(dir, "checkout", "-f", "-t", buf.buf, NULL);
+	if (res)
+		goto cleanup;
 
-	/* TODO: cmd_register(), test it using GIT_TEST_MAINT_SCHEDULER (?) */
+	res = run_config_task(dir);
+
 cleanup:
 	free(root);
 	free(dir);
