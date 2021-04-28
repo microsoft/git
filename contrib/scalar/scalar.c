@@ -943,6 +943,9 @@ static int add_or_remove_enlistment(const char *dir, int add)
 
 static int stop_fsmonitor_daemon(const char *dir)
 {
+#ifndef HAVE_FSMONITOR_DAEMON_BACKEND
+	return 0;
+#else
 	struct child_process cp = CHILD_PROCESS_INIT;
 	struct strbuf err = STRBUF_INIT;
 	int res;
@@ -961,6 +964,7 @@ static int stop_fsmonitor_daemon(const char *dir)
 
 	strbuf_release(&err);
 	return res;
+#endif
 }
 
 static int toggle_maintenance(const char *dir, int enable)
