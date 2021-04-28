@@ -821,7 +821,7 @@ static int cmd_diagnose(int argc, const char **argv)
 	if (argc != 1)
 		die("'scalar diagnose' does not accept any arguments");
 
-	strbuf_addstr(&tmp_dir, ".scalarDiagnostics/scalar_");
+	strbuf_addstr(&tmp_dir, "../.scalarDiagnostics/scalar_");
 	strbuf_addftime(&tmp_dir, "%Y%m%d_%H%M%S",
 			localtime_r(&now, &tm), 0, 0);
 	if (run_git(NULL, "init", "-q", "-b", "dummy",
