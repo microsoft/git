@@ -62,6 +62,9 @@ test_expect_success UNZIP 'scalar diagnose' '
 	)
 '
 
+GIT_TEST_ALLOW_GVFS_VIA_HTTP=1
+export GIT_TEST_ALLOW_GVFS_VIA_HTTP
+
 test_set_port GIT_TEST_GVFS_PROTOCOL_PORT
 HOST_PORT=127.0.0.1:$GIT_TEST_GVFS_PROTOCOL_PORT
 PID_FILE="$(pwd)"/pid-file.pid
