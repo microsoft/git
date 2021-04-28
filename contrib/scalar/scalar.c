@@ -903,27 +903,36 @@ static int cmd_list(int argc, const char **argv)
 	return run_git(NULL, "config", "--get-all", "scalar.repo", NULL);
 }
 
-static int add_or_remove_enlistment(int add)
+static int add_or_remove_enlistment(const char *dir, int add)
 {
+	char *p = NULL;
+	const char *worktree;
 	int res;
 
-	if (!the_repository->worktree)
+	if (dir)
+		worktree = p = real_pathdup(dir, 1);
+	else if (!the_repository->worktree)
 		die(_("Scalar enlistments require a worktree"));
+	else
+		worktree = the_repository->worktree;
 
 	res = run_git(NULL, "config", "--global", "--get",
-		      "--fixed-value", "scalar.repo", the_repository->worktree, NULL);
+		      "--fixed-value", "scalar.repo", worktree, NULL);
 
 	/*
 	 * If we want to add and the setting is already there, then do nothing.
 	 * If we want to remove and the setting is not there, then do nothing.
 	 */
 	if ((add && !res) || (!add && res))
-		return 0;
+		res = 0;
+	else
+		res = run_git(NULL, "config", "--global",
+			      add ? "--add" : "--unset",
+			      add ? "--no-fixed-value" : "--fixed-value",
+			      "scalar.repo", worktree, NULL);
 
-	return run_git(NULL, "config", "--global",
-		       add ? "--add" : "--unset",
-		       "scalar.repo",
-		       the_repository->worktree, NULL);
+	free(p);
+	return res;
 }
 
 static int stop_fsmonitor_daemon(const char *dir)
@@ -948,7 +957,7 @@ static int stop_fsmonitor_daemon(const char *dir)
 	return res;
 }
 
-static int toggle_maintenance(int enable)
+static int toggle_maintenance(const char *dir, int enable)
 {
 	/*
 	 * TODO: check whether the Scalar service used to run `scalar run` and
@@ -956,27 +965,29 @@ static int toggle_maintenance(int enable)
 	 * have to extend `git maintenance` to allow for user-defined tasks,
 	 * and register one.
 	 */
-	return run_git(NULL, "maintenance", enable ? "start" : "unregister",
+	return run_git(dir, "maintenance", enable ? "start" : "unregister",
 		       NULL);
 }
 
-static int run_config_task(void)
+static int run_config_task(const char *dir)
 {
+	char *config = dir ? xstrfmt("%s/.git/config", dir) : NULL;
 	int res = 0;
 
 	/* TODO: turn `feature.scalar` into the appropriate settings */
 	/* TODO: enable FSMonitor and other forgotten settings */
 
-	res = res || add_or_remove_enlistment(1);
-	res = res || set_recommended_config(NULL);
-	res = res || toggle_maintenance(1);
+	res = res || add_or_remove_enlistment(dir, 1);
+	res = res || set_recommended_config(config);
+	res = res || toggle_maintenance(dir, 1);
 
+	free(config);
 	return res;
 }
 
 static int cmd_register(int argc, const char **argv)
 {
-	return run_config_task();
+	return run_config_task(NULL);
 }
 
 static const char scalar_run_usage[] =
@@ -1000,7 +1011,7 @@ static int run_maintenance_task(const char *arg)
 	int i;
 
 	if (!strcmp("config", arg))
-		return run_config_task();
+		return run_config_task(NULL);
 	else if (!strcmp("all", arg)) {
 		for (i = 0; tasks[i].arg; i++)
 			if (run_maintenance_task(tasks[i].arg))
@@ -1029,8 +1040,8 @@ static int cmd_unregister(int argc, const char **argv)
 	int res = 0;
 
 	res = res || stop_fsmonitor_daemon(NULL);
-	res = res || toggle_maintenance(0);
-	res = res || add_or_remove_enlistment(0);
+	res = res || toggle_maintenance(NULL, 0);
+	res = res || add_or_remove_enlistment(NULL, 0);
 	return res;
 }
 
