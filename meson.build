@@ -603,6 +603,7 @@ builtin_sources = [
   'builtin/unpack-file.c',
   'builtin/unpack-objects.c',
   'builtin/update-index.c',
+  'builtin/update-microsoft-git.c',
   'builtin/update-ref.c',
   'builtin/update-server-info.c',
   'builtin/upload-archive.c',
