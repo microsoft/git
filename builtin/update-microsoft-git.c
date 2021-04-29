@@ -20,6 +20,39 @@ static int platform_specific_upgrade(void)
 	strvec_clear(&args);
 	return res;
 }
+#elif defined(__APPLE__)
+/*
+ * On macOS, we expect the user to have the microsoft-git
+ * cask installed via Homebrew. We check using these
+ * commands:
+ *
+ * 1. 'brew update' to get latest versions.
+ * 2. 'brew upgrade --cask microsoft-git' to get the
+ *    latest version.
+ */
+static int platform_specific_upgrade(void)
+{
+	int res;
+	struct strvec args = STRVEC_INIT;
+
+	printf("Updating Homebrew with 'brew update'\n");
+
+	strvec_pushl(&args, "brew", "update", NULL);
+	res = run_command_v_opt(args.v, 0);
+	strvec_clear(&args);
+
+	if (res) {
+		error(_("'brew update' failed; is brew installed?"));
+		return 1;
+	}
+
+	printf("Upgrading microsoft-git with 'brew upgrade --cask microsoft-git'\n");
+	strvec_pushl(&args, "brew", "upgrade", "--cask", "microsoft-git", NULL);
+	res = run_command_v_opt(args.v, 0);
+	strvec_clear(&args);
+
+	return res;
+}
 #else
 static int platform_specific_upgrade(void)
 {
