@@ -253,7 +253,7 @@ static int cmd_cache_server(int argc, const char **argv)
 		OPT_END(),
 	};
 	const char * const cache_server_usage[] = {
-		N_("git cache_server "
+		N_("scalar cache_server "
 		   "[--get | --set <url> | --list [<remote>]]"),
 		NULL
 	};
