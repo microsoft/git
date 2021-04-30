@@ -486,7 +486,7 @@ static int cmd_clone(int argc, const char **argv)
 		OPT_END(),
 	};
 	const char * const clone_usage[] = {
-		N_("git clone [<options>] [--] <repo> [<dir>]"),
+		N_("scalar clone [<options>] [--] <repo> [<dir>]"),
 		NULL
 	};
 	const char *url;
