@@ -259,8 +259,7 @@ static int cmd_cache_server(int argc, const char **argv)
 	};
 
 	argc = parse_options(argc, argv, NULL, cache_server_options,
-			     cache_server_usage,
-			     PARSE_OPT_STOP_AT_NON_OPTION);
+			     cache_server_usage, 0);
 
 
 	if (mode == LIST) {
