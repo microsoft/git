@@ -495,9 +495,7 @@ static int cmd_clone(int argc, const char **argv)
 	struct strbuf buf = STRBUF_INIT;
 	int res;
 
-	argc = parse_options(argc, argv, NULL, clone_options, clone_usage,
-			     PARSE_OPT_KEEP_DASHDASH |
-			     PARSE_OPT_STOP_AT_NON_OPTION);
+	argc = parse_options(argc, argv, NULL, clone_options, clone_usage, 0);
 
 	if (argc == 2) {
 		url = argv[0];
