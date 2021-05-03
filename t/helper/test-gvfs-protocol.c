@@ -1357,7 +1357,7 @@ static enum worker_result req__read(struct req *req, int fd)
 	http_version = req->start_line_fields.items[2].string;
 
 	if (strcmp(http_version, "HTTP/1.1")) {
-		logerror("unsuported version '%s' (expecting HTTP/1.1)",
+		logerror("unsupported version '%s' (expecting HTTP/1.1)",
 			 http_version);
 		return WR_IO_ERROR;
 	}

@@ -188,7 +188,7 @@ test_expect_success 'setup repos' '
 	git -C "$REPO_T1" branch -M main &&
 	git -C "$REPO_T1" remote add origin $ORIGIN_URL &&
 	git -C "$REPO_T1" config --local gvfs.cache-server $CACHE_URL &&
-	git -C "$REPO_T1" config --local gvfs.sharedcache "$SHARED_CACHE_T1" &&
+	git -C "$REPO_T1" config --local gvfs.sharedCache "$SHARED_CACHE_T1" &&
 	echo "$SHARED_CACHE_T1" >> "$REPO_T1"/.git/objects/info/alternates &&
 	#
 	#
@@ -366,7 +366,7 @@ verify_objects_in_shared_cache () {
 	#
 	# TODO move the shared-cache directory (and/or the
 	# TODO .git/objects/info/alternates and temporarily unset
-	# TODO gvfs.sharedcache) and repeat the first "batch-check"
+	# TODO gvfs.sharedCache) and repeat the first "batch-check"
 	# TODO and make sure that they are ALL missing.
 	#
 	return 0
@@ -1162,14 +1162,14 @@ test_expect_success 'integration: explicit commit/trees, implicit blobs: diff 2 
 	# With gvfs-helper turned off, we should fail.
 	#
 	test_must_fail \
-		git -C "$REPO_T1" -c core.usegvfshelper=false \
+		git -C "$REPO_T1" -c core.useGVFSHelper=false \
 			diff $(cat m1.branch)..$(cat m3.branch) \
 			>OUT.output 2>OUT.stderr &&
 
 	# Turn on gvfs-helper and retry.  This should implicitly fetch
 	# any needed blobs.
 	#
-	git -C "$REPO_T1" -c core.usegvfshelper=true \
+	git -C "$REPO_T1" -c core.useGVFSHelper=true \
 		diff $(cat m1.branch)..$(cat m3.branch) \
 		>OUT.output 2>OUT.stderr &&
 
@@ -1177,7 +1177,7 @@ test_expect_success 'integration: explicit commit/trees, implicit blobs: diff 2 
 	# local ODB, such that a second attempt with gvfs-helper
 	# turned off should succeed.
 	#
-	git -C "$REPO_T1" -c core.usegvfshelper=false \
+	git -C "$REPO_T1" -c core.useGVFSHelper=false \
 		diff $(cat m1.branch)..$(cat m3.branch) \
 		>OUT.output 2>OUT.stderr
 '
@@ -1188,7 +1188,7 @@ test_expect_success 'integration: fully implicit: diff 2 commits' '
 
 	# Implicitly demand-load everything without any pre-seeding.
 	#
-	git -C "$REPO_T1" -c core.usegvfshelper=true \
+	git -C "$REPO_T1" -c core.useGVFSHelper=true \
 		diff $(cat m1.branch)..$(cat m3.branch) \
 		>OUT.output 2>OUT.stderr
 '
@@ -1199,8 +1199,8 @@ test_expect_success 'integration: fully implicit: diff 2 commits' '
 # If we request a fixed set of blobs, we should get a unique packfile
 # of the form "vfs-<sha>.{pack,idx}".  It we request that same set
 # again, the server should create and send the exact same packfile.
-# True webservers might build the custom packfile in random order,
-# but our test webserver should give us consistent results.
+# True web servers might build the custom packfile in random order,
+# but our test web server should give us consistent results.
 #
 # Verify that we can handle the duplicate pack and idx file properly.
 #################################################################
