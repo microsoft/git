@@ -13,6 +13,10 @@ scalar clone [--single-branch] [--branch <main-branch>] [--full-clone]
 scalar list
 scalar register [<enlistment>]
 scalar unregister [<enlistment>]
+scalar run ( all | config | commit-graph | fetch | loose-objects | pack-files ) [<enlistment>]
+scalar reconfigure [ --all | <enlistment> ]
+scalar diagnose [<enlistment>]
+scalar delete <enlistment>
 
 DESCRIPTION
 -----------
@@ -107,6 +111,54 @@ unregister [<enlistment>]::
     Remove the specified repository from the list of repositories
     registered with Scalar. This stops the scheduled maintenance and the
     built-in FSMonitor.
+
+Run
+~~~
+
+scalar run ( all | config | commit-graph | fetch | loose-objects | pack-files ) [<enlistment>]::
+    Run the given maintenance task (or all tasks, if `all` was specified).
+    Except for `all` and `config`, this subcommand simply hands off to
+    linkgit:git-maintenance[1] (mapping `fetch` to `prefetch` and
+    `pack-files` to `incremental-repack`).
++
+These tasks are run automatically as part of the scheduled maintenance,
+as soon as the repository is registered with Scalar. It should therefore
+not be necessary to run this command manually.
++
+The `config` task is specific to Scalar and configures all those
+opinionated default settings that make Git work more efficiently with
+large repositories. As this task is run as part of `scalar clone`
+automatically, explicit invocations of this task are rarely needed.
+
+Reconfigure
+~~~~~~~~~~~
+
+After a Scalar upgrade, or when the configuration of a Scalar enlistment
+was somehow corrupted or changed by mistake, this command allows to
+reconfigure the enlistment.
+
+With the `--all` option, all enlistments currently registered with Scalar
+will be reconfigured. This option is meant to to be run every time Scalar
+was upgraded.
+
+Diagnose
+~~~~~~~~
+
+diagnose [<enlistment>]::
+    When reporting issues with Scalar, it is often helpful to provide the
+    information gathered by this command, including logs and certain
+    statistics describing the data shape of the current enlistment.
++
+The output of this command is a `.zip` file that is written into
+a directory adjacent to the worktree in the `src` directory.
+
+Delete
+~~~~~~
+
+delete <enlistment>::
+    This command lets you delete an existing Scalar enlistment from your
+    local file system, unregistering the repository and stopping any file
+    watcher daemons (FSMonitor).
 
 SEE ALSO
 --------
