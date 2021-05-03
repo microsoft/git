@@ -787,6 +787,11 @@ static int cmd_clone(int argc, const char **argv)
 	if (set_recommended_config(config_path))
 		return error(_("could not configure '%s'"), dir);
 
+	/*
+	 * TODO: should we pipe the output and grep for "filtering not
+	 * recognized by server", and suppress the error output in
+	 * that case?
+	 */
 	if ((res = run_git(dir, "fetch", "--quiet", "origin", NULL))) {
 		warning(_("Partial clone failed; Trying full clone"));
 
@@ -880,6 +885,14 @@ static int cmd_diagnose(int argc, const char **argv)
 	    (res = stage_directory(tmp_dir.buf, ".git/objects/info", 0)))
 		goto diagnose_cleanup;
 
+	/*
+	 * TODO: add more stuff:
+	 * LogDirectoryEnumeration(...DotGit.Objects.Root), ScalarConstants.DotGit.Objects.Pack.Root, "packs-local.txt");
+	 * LogLooseObjectCount(...DotGit.Objects.Root), ScalarConstants.DotGit.Objects.Root, "objects-local.txt");
+	 *
+	 * CopyLocalCacheData(archiveFolderPath, gitObjectsRoot);
+	 */
+
 	res = index_to_zip(tmp_dir.buf);
 
 	if (!res)
@@ -914,6 +927,9 @@ static int cmd_register(int argc, const char **argv)
 {
 	if (argc != 1 && argc != 2)
 		usage(_("scalar register [<worktree>]"));
+
+	/* TODO: turn `feature.scalar` into the appropriate settings */
+	/* TODO: enable FSMonitor and other forgotten settings */
 
 	return register_dir(argc < 2 ? NULL : argv[1]);
 }
