@@ -65,6 +65,23 @@ test_expect_success 'scalar clone' '
 	)
 '
 
+SQ="'"
+test_expect_success UNZIP 'scalar diagnose' '
+	scalar diagnose cloned >out &&
+	sed -n "s/.*$SQ\\(.*\\.zip\\)$SQ.*/\\1/p" <out >zip_path &&
+	zip_path=$(cat zip_path) &&
+	test -n "$zip_path" &&
+	unzip -v "$zip_path" &&
+	folder=${zip_path%.zip} &&
+	test_path_is_missing "$folder" &&
+	unzip -p "$zip_path" diagnostics.log >out &&
+	test_file_not_empty out &&
+	unzip -p "$zip_path" packs-local.txt >out &&
+	test_file_not_empty out &&
+	unzip -p "$zip_path" objects-local.txt >out &&
+	test_file_not_empty out
+'
+
 test_expect_success 'scalar reconfigure' '
 	git init one/src &&
 	scalar register one &&
