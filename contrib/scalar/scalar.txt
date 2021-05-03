@@ -16,6 +16,7 @@ scalar register
 scalar unregister
 scalar run ( all | config | commit-graph | fetch | loose-objects | pack-files )
 scalar diagnose
+scalar cache-server ( --get | --set <url> | --list [<remote>] )
 
 DESCRIPTION
 -----------
@@ -145,6 +146,26 @@ diagnose::
 The output of this command is a `.zip` file that is written into
 a directory adjacent to the worktree in the `src` directory.
 
+Cache-server
+~~~~~~~~~~~~
+
+cache-server ( --get | --set <url> | --list [<remote>] )::
+    This command lets you query or set the GVFS-enabled cache server used
+    to fetch missing objects.
+
+--get::
+    This is the default command mode: query the currently-configured cache
+    server URL, if any.
+
+--list::
+    Access the `gvfs/info` endpoint of the specified remote (default:
+    `origin`) to figure out which cache servers are available, if any.
++
+In contrast to the `--get` command mode (which only accesses the local
+repository), this command mode triggers a request via the network that
+potentially requires authentication. If authentication is required, the
+configured credential helper is employed (see linkgit:git-credential[1]
+for details).
 
 SEE ALSO
 --------

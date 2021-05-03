@@ -2420,7 +2420,7 @@ ifndef NO_CURL
 	OBJECTS += http.o http-walker.o remote-curl.o
 endif
 
-SCALAR_SOURCES := contrib/scalar/scalar.c
+SCALAR_SOURCES := contrib/scalar/scalar.c contrib/scalar/json-parser.c
 SCALAR_OBJECTS := $(SCALAR_SOURCES:c=o)
 OBJECTS += $(SCALAR_OBJECTS)
 
