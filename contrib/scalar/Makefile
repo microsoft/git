@@ -29,11 +29,14 @@ docs-scalar: Documentation/scalar.html Documentation/scalar.1
 
 docs:: docs-scalar
 
-scalar$X: scalar.o $(GITLIBS)
-	$(QUIET_LINK)$(CC) $(ALL_CFLAGS) $(ALL_LDFLAGS) -o $@ $< \
-		$(GITLIBS) $(EXTLIBS)
+scalar$X: scalar.o json-parser.o $(GITLIBS)
+	$(QUIET_LINK)$(CC) $(ALL_CFLAGS) $(ALL_LDFLAGS) -o $@ $^ \
+		$(EXTLIBS)
 
-scalar.o: contrib/scalar/scalar.c
+scalar.o: contrib/scalar/scalar.c contrib/scalar/json-parser.h
+	$(QUIET_CC)$(CC) $(ALL_CFLAGS) -o $@ -c $<
+
+json-parser.o: contrib/scalar/json-parser.c contrib/scalar/json-parser.h
 	$(QUIET_CC)$(CC) $(ALL_CFLAGS) -o $@ -c $<
 
 Documentation/scalar.html: contrib/scalar/scalar.txt
