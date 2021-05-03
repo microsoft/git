@@ -697,7 +697,7 @@ all:: $(FUZZ_OBJS)
 
 FUZZ_PROGRAMS += $(patsubst %.o,%,$(FUZZ_OBJS))
 
-SCALAR_OBJS := scalar.o
+SCALAR_OBJS := scalar.o json-parser.o
 
 PROGRAMS += scalar$(X)
 BINDIR_PROGRAMS_NEED_X += scalar
