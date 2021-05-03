@@ -19,6 +19,8 @@ ifndef V
 	QUIET_SUBDIR0  = +@subdir=
 	QUIET_SUBDIR1  = ;$(NO_SUBDIR) echo '   ' SUBDIR $$subdir; \
 			 $(MAKE) $(PRINT_DIR) -C $$subdir
+	QUIET          = @
+
 	export V
 	export QUIET_GEN
 	export QUIET_BUILT_IN
@@ -44,6 +46,7 @@ $(TARGETS): $(GITLIBS) scalar.c
 
 clean:
 	$(RM) $(TARGETS) ../../bin-wrappers/scalar
+	$(RM) scalar.1 scalar.html scalar.xml
 
 ../../bin-wrappers/scalar: ../../wrap-for-bin.sh Makefile
 	@mkdir -p ../../bin-wrappers
@@ -55,4 +58,14 @@ clean:
 test: all
 	$(MAKE) -C t
 
-.PHONY: all clean test FORCE
+docs: scalar.html scalar.1
+
+scalar.html: | scalar.1 # prevent them from trying to build `doc.dep` in parallel
+
+scalar.html scalar.1: scalar.txt
+	$(QUIET_SUBDIR0)../../Documentation$(QUIET_SUBDIR1) \
+		MAN_TXT=../contrib/scalar/scalar.txt \
+		../contrib/scalar/$@
+	$(QUIET)test scalar.1 != "$@" || mv ../../Documentation/$@ .
+
+.PHONY: all clean test docs FORCE
