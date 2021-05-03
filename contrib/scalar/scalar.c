@@ -397,6 +397,54 @@ static int cmd_register(int argc, const char **argv)
 	return register_dir(argc < 2 ? NULL : argv[1]);
 }
 
+static int cmd_run(int argc, const char **argv)
+{
+	struct {
+		const char *arg, *task;
+	} tasks[] = {
+		{ "config", NULL },
+		{ "commit-graph", "commit-graph" },
+		{ "fetch", "prefetch" },
+		{ "loose-objects", "loose-objects" },
+		{ "pack-files", "incremental-repack" },
+		{ NULL, NULL }
+	};
+
+	struct strbuf usage = STRBUF_INIT;
+	int i;
+
+	if (argc == 2) {
+		if (!strcmp("config", argv[1]))
+			return register_dir(NULL);
+
+		if (!strcmp("all", argv[1])) {
+			if (register_dir(NULL))
+				return -1;
+			for (i = 0; tasks[i].arg; i++)
+				if (tasks[i].task &&
+				    run_git(NULL, "maintenance", "run",
+					    "--task", tasks[i].task, NULL))
+					return -1;
+			return 0;
+		}
+
+		for (i = 0; tasks[i].arg; i++)
+			if (!strcmp(tasks[i].arg, argv[1]))
+				return run_git(NULL, "maintenance", "run",
+					       "--task", tasks[i].task, NULL);
+		error(_("no such task: '%s'"), argv[1]);
+	}
+
+	strbuf_addstr(&usage, N_("scalar run <task>\nTasks:\n"));
+	for (i = 0; tasks[i].arg; i++)
+		strbuf_addf(&usage, "\t%s\n", tasks[i].arg);
+
+	fwrite(usage.buf, usage.len, 1, stderr);
+	strbuf_release(&usage);
+
+	return -1;
+}
+
 static int cmd_unregister(int argc, const char **argv)
 {
 	if (argc != 1 && argc != 2)
@@ -414,6 +462,7 @@ struct {
 	{ "list", cmd_list, 0 },
 	{ "register", cmd_register, 1 },
 	{ "unregister", cmd_unregister, 1 },
+	{ "run", cmd_run, 1 },
 	{ NULL, NULL},
 };
 
