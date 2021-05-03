@@ -13,6 +13,8 @@
 #include "help.h"
 #include "archive.h"
 #include "object-store.h"
+#include "simple-ipc.h"
+#include "fsmonitor-ipc.h"
 
 /*
  * Remove the deepest subdirectory in the provided path string. Path must not
@@ -169,6 +171,12 @@ static int set_recommended_config(int reconfigure)
 		{ "core.autoCRLF", "false" },
 		{ "core.safeCRLF", "false" },
 		{ "fetch.showForcedUpdates", "false" },
+#ifdef HAVE_FSMONITOR_DAEMON_BACKEND
+		/*
+		 * Enable the built-in FSMonitor on supported platforms.
+		 */
+		{ "core.fsmonitor", "true" },
+#endif
 		{ NULL, NULL },
 	};
 	int i;
@@ -236,6 +244,56 @@ static int add_or_remove_enlistment(int add)
 		       "scalar.repo", the_repository->worktree, NULL);
 }
 
+static int start_fsmonitor_daemon(void)
+{
+#ifdef HAVE_FSMONITOR_DAEMON_BACKEND
+	struct strbuf err = STRBUF_INIT;
+	struct child_process cp = CHILD_PROCESS_INIT;
+
+	cp.git_cmd = 1;
+	strvec_pushl(&cp.args, "fsmonitor--daemon", "start", NULL);
+	if (!pipe_command(&cp, NULL, 0, NULL, 0, &err, 0)) {
+		strbuf_release(&err);
+		return 0;
+	}
+
+	if (fsmonitor_ipc__get_state() != IPC_STATE__LISTENING) {
+		write_in_full(2, err.buf, err.len);
+		strbuf_release(&err);
+		return error(_("could not start the FSMonitor daemon"));
+	}
+
+	strbuf_release(&err);
+#endif
+
+	return 0;
+}
+
+static int stop_fsmonitor_daemon(void)
+{
+#ifdef HAVE_FSMONITOR_DAEMON_BACKEND
+	struct strbuf err = STRBUF_INIT;
+	struct child_process cp = CHILD_PROCESS_INIT;
+
+	cp.git_cmd = 1;
+	strvec_pushl(&cp.args, "fsmonitor--daemon", "stop", NULL);
+	if (!pipe_command(&cp, NULL, 0, NULL, 0, &err, 0)) {
+		strbuf_release(&err);
+		return 0;
+	}
+
+	if (fsmonitor_ipc__get_state() == IPC_STATE__LISTENING) {
+		write_in_full(2, err.buf, err.len);
+		strbuf_release(&err);
+		return error(_("could not stop the FSMonitor daemon"));
+	}
+
+	strbuf_release(&err);
+#endif
+
+	return 0;
+}
+
 static int register_dir(void)
 {
 	int res = add_or_remove_enlistment(1);
@@ -245,6 +303,9 @@ static int register_dir(void)
 
 	if (!res)
 		res = toggle_maintenance(1);
+
+	if (!res)
+		res = start_fsmonitor_daemon();
 
 	return res;
 }
@@ -257,6 +318,9 @@ static int unregister_dir(void)
 		res = -1;
 
 	if (add_or_remove_enlistment(0) < 0)
+		res = -1;
+
+	if (stop_fsmonitor_daemon() < 0)
 		res = -1;
 
 	return res;
