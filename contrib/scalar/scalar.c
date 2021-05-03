@@ -10,6 +10,7 @@
 #include "refs.h"
 #include "version.h"
 #include "dir.h"
+#include "fsmonitor-ipc.h"
 
 static int run_git(const char *dir, const char *arg, ...)
 {
@@ -148,6 +149,20 @@ static int add_or_remove_enlistment(const char *dir, int add)
 		       "scalar.repo", worktree, NULL);
 }
 
+static int stop_fsmonitor_daemon(const char *dir)
+{
+	int res = 0;
+
+#ifdef HAVE_FSMONITOR_DAEMON_BACKEND
+	res = run_git(dir, "fsmonitor--daemon", "--stop", NULL);
+
+	if (res == 1 && fsmonitor_ipc__get_state() == IPC_STATE__LISTENING)
+		res = error(_("could not stop the FSMonitor daemon"));
+#endif
+
+	return res;
+}
+
 static int register_dir(const char *dir)
 {
 	int res = add_or_remove_enlistment(dir, 1);
@@ -167,7 +182,10 @@ static int register_dir(const char *dir)
 
 static int unregister_dir(const char *dir)
 {
-	int res = add_or_remove_enlistment(dir, 0);
+	int res = stop_fsmonitor_daemon(dir);
+
+	if (!res)
+		res = add_or_remove_enlistment(dir, 0);
 
 	if (!res)
 		res = toggle_maintenance(dir, 0);
