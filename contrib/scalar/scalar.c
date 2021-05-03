@@ -1025,6 +1025,18 @@ static int cmd_cache_server(int argc, const char **argv)
 	return 0;
 }
 
+static int cmd_test(int argc, const char **argv)
+{
+	const char *url = argc > 1 ? argv[1] :
+		"https://dev.azure.com/gvfs/ci/_git/ForTests";
+	char *p = NULL;
+	int res = supports_gvfs_protocol(NULL, url, &p);
+
+	printf("resolve: %d, %s\n", res, p);
+
+	return 0;
+}
+
 struct {
 	const char *name;
 	int (*fn)(int, const char **);
@@ -1037,6 +1049,7 @@ struct {
 	{ "run", cmd_run, 1 },
 	{ "diagnose", cmd_diagnose, 1 },
 	{ "cache-server", cmd_cache_server, 1 },
+	{ "test", cmd_test, 0 },
 	{ NULL, NULL},
 };
 
