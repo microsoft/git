@@ -7,6 +7,7 @@
 #include "parse-options.h"
 #include "config.h"
 #include "run-command.h"
+#include "refs.h"
 
 static int run_git(const char *dir, const char *arg, ...)
 {
@@ -25,6 +26,31 @@ static int run_git(const char *dir, const char *arg, ...)
 
 	strvec_clear(&argv);
 	return res;
+}
+
+static int is_non_empty_dir(const char *path)
+{
+	DIR *dir = opendir(path);
+	struct dirent *entry;
+
+	if (!dir) {
+		if (errno != ENOENT) {
+			error_errno(_("could not open directory '%s'"), path);
+		}
+		return 0;
+	}
+
+	while ((entry = readdir(dir))) {
+		const char *name = entry->d_name;
+
+		if (strcmp(name, ".") && strcmp(name, "..")) {
+			closedir(dir);
+			return 1;
+		}
+	}
+
+	closedir(dir);
+	return 0;
 }
 
 static int set_recommended_config(const char *file)
@@ -147,6 +173,213 @@ static int unregister_dir(const char *dir)
 	return res;
 }
 
+/* printf-style interface, expects `<key>=<value>` argument */
+static int set_config(const char *file, const char *fmt, ...)
+{
+	struct strbuf buf = STRBUF_INIT;
+	char *value;
+	int res;
+	va_list args;
+
+	va_start(args, fmt);
+	strbuf_vaddf(&buf, fmt, args);
+	va_end(args);
+
+	value = strchr(buf.buf, '=');
+	if (value)
+		*(value++) = '\0';
+	res = git_config_set_in_file_gently(file, buf.buf, value);
+	strbuf_release(&buf);
+
+	return res;
+}
+
+static char *remote_default_branch(const char *dir, const char *url)
+{
+	struct child_process cp = CHILD_PROCESS_INIT;
+	struct strbuf out = STRBUF_INIT;
+
+	cp.git_cmd = 1;
+	cp.dir = dir;
+	strvec_pushl(&cp.args, "ls-remote", "--symref", url, "HEAD", NULL);
+	strbuf_addstr(&out, "-\n");
+	if (!pipe_command(&cp, NULL, 0, &out, 0, NULL, 0)) {
+		char *ref = out.buf;
+
+		while ((ref = strstr(ref + 1, "\nref: "))) {
+			const char *p;
+			char *head, *branch;
+
+			ref += strlen("\nref: ");
+			head = strstr(ref, "\tHEAD");
+
+			if (!head || memchr(ref, '\n', head - ref))
+				continue;
+
+			if (skip_prefix(ref, "refs/heads/", &p)) {
+				branch = xstrndup(p, head - p);
+				strbuf_release(&out);
+				return branch;
+			}
+
+			error(_("remote HEAD is not a branch: '%.*s'"),
+			      (int)(head - ref), ref);
+			strbuf_release(&out);
+			return NULL;
+		}
+	}
+	warning(_("failed to get default branch name from remote; "
+		  "using local default"));
+	strbuf_reset(&out);
+
+	child_process_init(&cp);
+	cp.git_cmd = 1;
+	cp.dir = dir;
+	strvec_pushl(&cp.args, "symbolic-ref", "--short", "HEAD", NULL);
+	if (!pipe_command(&cp, NULL, 0, &out, 0, NULL, 0)) {
+		strbuf_trim(&out);
+		return strbuf_detach(&out, NULL);
+	}
+
+	strbuf_release(&out);
+	error(_("failed to get default branch name"));
+	return NULL;
+}
+
+static int cmd_clone(int argc, const char **argv)
+{
+	char *branch = NULL;
+	int no_fetch_commits_and_trees = 0, full_clone = 0, single_branch = 0;
+	struct option clone_options[] = {
+		OPT_STRING('b', "branch", &branch, N_("<branch>"),
+			   N_("branch to checkout after clone")),
+		OPT_BOOL(0, "no-fetch-commits-and-trees",
+			 &no_fetch_commits_and_trees,
+			 N_("skip fetching commits and trees after clone")),
+		OPT_BOOL(0, "full-clone", &full_clone,
+			 N_("when cloning, create full working directory")),
+		OPT_BOOL(0, "single-branch", &single_branch,
+			 N_("only download metadata for the branch that will "
+			    "be checked out")),
+		OPT_END(),
+	};
+	const char * const clone_usage[] = {
+		N_("scalar clone [<options>] [--] <repo> [<dir>]"),
+		NULL
+	};
+	const char *url;
+	char *root = NULL, *dir = NULL, *config_path = NULL;
+	struct strbuf buf = STRBUF_INIT;
+	int res;
+
+	argc = parse_options(argc, argv, NULL, clone_options, clone_usage, 0);
+
+	if (argc == 2) {
+		url = argv[0];
+		root = xstrdup(argv[1]);
+	} else if (argc == 1) {
+		url = argv[0];
+
+		strbuf_addstr(&buf, url);
+		/* Strip trailing slashes, if any */
+		while (buf.len > 0 && is_dir_sep(buf.buf[buf.len - 1]))
+			strbuf_setlen(&buf, buf.len - 1);
+		/* Strip suffix `.git`, if any */
+		strbuf_strip_suffix(&buf, ".git");
+
+		root = find_last_dir_sep(buf.buf);
+		if (!root) {
+			die(_("cannot deduce worktree name from '%s'"), url);
+		}
+		root = xstrdup(root + 1);
+	} else {
+		usage_msg_opt(N_("need a URL"), clone_usage, clone_options);
+	}
+
+	dir = xstrfmt("%s/src", root);
+
+	if (is_non_empty_dir(dir))
+		die(_("'%s' exists and is not empty"), dir);
+
+	strbuf_reset(&buf);
+	if (branch)
+		strbuf_addf(&buf, "init.defaultBranch=%s", branch);
+	else {
+		char *b = repo_default_branch_name(the_repository, 1);
+		strbuf_addf(&buf, "init.defaultBranch=%s", b);
+		free(b);
+	}
+
+	if ((res = run_git(NULL, "-c", buf.buf, "init", "--", dir, NULL)))
+		goto cleanup;
+
+	/* common-main already logs `argv` */
+	trace2_data_string("scalar", the_repository, "dir", dir);
+
+	if (!branch &&
+	    !(branch = remote_default_branch(dir, url))) {
+		res = error(_("failed to get default branch for '%s'"), url);
+		goto cleanup;
+	}
+
+	config_path = xstrfmt("%s/.git/config", dir);
+
+	if (set_config(config_path, "remote.origin.url=%s", url) ||
+	    set_config(config_path, "remote.origin.fetch="
+		    "+refs/heads/%s:refs/remotes/origin/%s",
+		    single_branch ? branch : "*",
+		    single_branch ? branch : "*") ||
+	    set_config(config_path, "remote.origin.promisor=true") ||
+	    set_config(config_path,
+		       "remote.origin.partialCloneFilter=blob:none")) {
+		res = error(_("could not configure remote in '%s'"), dir);
+		goto cleanup;
+	}
+
+	if (!full_clone &&
+	    (res = run_git(dir, "sparse-checkout", "init", "--cone", NULL)))
+		goto cleanup;
+
+	if (set_recommended_config(config_path))
+		return error(_("could not configure '%s'"), dir);
+
+	if ((res = run_git(dir, "fetch", "--quiet", "origin", NULL))) {
+		warning(_("Partial clone failed; Trying full clone"));
+
+		if (set_config(config_path, "remote.origin.promisor") ||
+		    set_config(config_path,
+			       "remote.origin.partialCloneFilter")) {
+			res = error(_("could not configure for full clone"));
+			goto cleanup;
+		}
+
+		if ((res = run_git(dir, "fetch", "--quiet", "origin", NULL)))
+			goto cleanup;
+	}
+
+	if ((res = set_config(config_path, "branch.%s.remote=origin", branch)))
+		goto cleanup;
+	if ((res = set_config(config_path, "branch.%s.merge=refs/heads/%s",
+			      branch, branch)))
+		goto cleanup;
+
+	strbuf_reset(&buf);
+	strbuf_addf(&buf, "origin/%s", branch);
+	res = run_git(dir, "checkout", "-f", "-t", buf.buf, NULL);
+	if (res)
+		goto cleanup;
+
+	res = register_dir(dir);
+
+cleanup:
+	free(root);
+	free(dir);
+	free(config_path);
+	strbuf_release(&buf);
+	free(branch);
+	return res;
+}
+
 static int cmd_list(int argc, const char **argv)
 {
 	if (argc != 1)
@@ -177,6 +410,7 @@ struct {
 	int (*fn)(int, const char **);
 	int needs_git_repo;
 } builtins[] = {
+	{ "clone", cmd_clone, 0 },
 	{ "list", cmd_list, 0 },
 	{ "register", cmd_register, 1 },
 	{ "unregister", cmd_unregister, 1 },
