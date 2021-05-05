@@ -710,9 +710,6 @@ if(CURL_FOUND)
 	target_link_libraries(git-gvfs-helper http_obj common-main ${CURL_LIBRARIES} )
 endif()
 
-add_executable(scalar ${CMAKE_SOURCE_DIR}/contrib/scalar/scalar.c ${CMAKE_SOURCE_DIR}/contrib/scalar/json-parser.c)
-target_link_libraries(scalar common-main)
-
 parse_makefile_for_executables(git_builtin_extra "BUILT_INS")
 
 option(SKIP_DASHED_BUILT_INS "Skip hardlinking the dashed versions of the built-ins")
@@ -931,7 +928,6 @@ if(CURL_FOUND)
 	endif()
 endif()
 
-list(APPEND wrapper_scripts scalar)
 
 foreach(script ${wrapper_scripts})
 	file(STRINGS ${CMAKE_SOURCE_DIR}/wrap-for-bin.sh content NEWLINE_CONSUME)

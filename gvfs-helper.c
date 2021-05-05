@@ -130,7 +130,7 @@
 //            Interactive verb: objects.get
 //
 //                 Fetch 1 or more objects, one at a time, using a
-//                 "/gvfs/objects" GET requests.
+//                 "/gvfs/ojbects" GET requests.
 //
 //                 Each object will be created as a loose object in the ODB.
 //
@@ -201,12 +201,6 @@
 //            [1] Documentation/technical/protocol-common.txt
 //            [2] Documentation/technical/long-running-process-protocol.txt
 //            [3] See GIT_TRACE_PACKET
-//
-//     endpoint
-//
-//            Fetch the given endpoint from the main Git server (specifying
-//            `gvfs/config` as endpoint is idempotent to the `config`
-//            command mentioned above).
 //
 //////////////////////////////////////////////////////////////////
 
@@ -1263,7 +1257,7 @@ static int option_parse_shared_cache_directory(const struct option *opt,
 	else if (!gvfs_shared_cache_pathname.len) {
 		/*
 		 * A shared-cache was requested and we did not inherit one.
-		 * Try it, but let alt_odb_usable() secretly disable it if
+		 * Try it, but let alt_odb_usabe() secretly disable it if
 		 * it cannot create the directory on disk.
 		 */
 		strbuf_addbuf(&gvfs_shared_cache_pathname, &buf_arg);
@@ -1290,7 +1284,7 @@ static int option_parse_shared_cache_directory(const struct option *opt,
 		add_to_alternates_memory(buf_arg.buf);
 
 		/*
-		 * alt_odb_usable() releases gvfs_shared_cache_pathname
+		 * alt_odb_usabe() releases gvfs_shared_cache_pathname
 		 * if it cannot create the directory on disk, so fallback
 		 * to the previous choice when it fails.
 		 */
@@ -1340,7 +1334,7 @@ static void do__http_get__gvfs_config(struct gh__response_status *status,
 /*
  * Find the URL of the cache-server, if we have one.
  *
- * This routine is called by the initialization code and is allowed
+ * This routined is called by the initialization code and is allowed
  * to call die() rather than returning an 'ec'.
  */
 static void select_cache_server(void)
@@ -2457,7 +2451,7 @@ static void install_result(struct gh__request_params *params,
 	if (params->objects_mode == GH__OBJECTS_MODE__PREFETCH) {
 		/*
 		 * The "gvfs/prefetch" API is the only thing that sends
-		 * these multi-part packfiles.  According to the protocol
+		 * these multi-part packfiles.  According to the procotol
 		 * documentation, they will have this x- content type.
 		 *
 		 * However, it appears that there is a BUG in the origin
@@ -2836,7 +2830,7 @@ static void set_cache_server_creds_on_slot(struct active_request_slot *slot,
 	 * [b] If we want to talk to a cache-server, we have get the
 	 *     Basic Auth creds for the main server.  And this may be
 	 *     problematic if the libcurl and/or the credential manager
-	 *     insists on using NTLM and prevents us from getting them.
+	 *     insists on using NTML and prevents us from getting them.
 	 *
 	 * So we never try AUTH-ANY and force Basic Auth (if possible).
 	 */
@@ -3101,20 +3095,18 @@ static void do_req__with_fallback(const char *url_component,
  *
  * Return server's response buffer.  This is probably a raw JSON string.
  */
-static void do__http_get__simple_endpoint(struct gh__response_status *status,
-					  struct strbuf *response,
-					  const char *endpoint,
-					  const char *tr2_label)
+static void do__http_get__gvfs_config(struct gh__response_status *status,
+				      struct strbuf *config_data)
 {
 	struct gh__request_params params = GH__REQUEST_PARAMS_INIT;
 
-	strbuf_addstr(&params.tr2_label, tr2_label);
+	strbuf_addstr(&params.tr2_label, "GET/config");
 
 	params.b_is_post = 0;
 	params.b_write_to_file = 0;
 	/* cache-servers do not handle gvfs/config REST calls */
 	params.b_permit_cache_server_if_defined = 0;
-	params.buffer = response;
+	params.buffer = config_data;
 	params.objects_mode = GH__OBJECTS_MODE__NONE;
 
 	params.object_count = 1; /* a bit of a lie */
@@ -3136,20 +3128,13 @@ static void do__http_get__simple_endpoint(struct gh__response_status *status,
 		 * see any need to report progress on the upload side of
 		 * the GET.  So just report progress on the download side.
 		 */
-		strbuf_addf(&params.progress_base_phase3_msg,
-			    "Receiving %s", endpoint);
+		strbuf_addstr(&params.progress_base_phase3_msg,
+			      "Receiving gvfs/config");
 	}
 
-	do_req__with_fallback(endpoint, &params, status);
+	do_req__with_fallback("gvfs/config", &params, status);
 
 	gh__request_params__release(&params);
-}
-
-static void do__http_get__gvfs_config(struct gh__response_status *status,
-				      struct strbuf *config_data)
-{
-	return do__http_get__simple_endpoint(status, config_data, "gvfs/config",
-					     "GET/config");
 }
 
 static void setup_gvfs_objects_progress(struct gh__request_params *params,
@@ -3324,7 +3309,7 @@ static void cb_find_last(const char *full_path, size_t full_path_len,
  * TODO
  * TODO Since each cache-server maintains its own set of prefetch
  * TODO packs (such that 2 requests may hit 2 different
- * TODO load-balanced servers and get different answers (with or
+ * TODO load-balanced servers and get different anwsers (with or
  * TODO without clock-skew issues)), is it possible for us to miss
  * TODO the absolute fringe of new commits and trees?
  * TODO
@@ -3592,35 +3577,6 @@ static enum gh__error_code do_sub_cmd__config(int argc, const char **argv)
 
 	gh__response_status__release(&status);
 	strbuf_release(&config_data);
-
-	return ec;
-}
-
-static enum gh__error_code do_sub_cmd__endpoint(int argc, const char **argv)
-{
-	struct gh__response_status status = GH__RESPONSE_STATUS_INIT;
-	struct strbuf data = STRBUF_INIT;
-	enum gh__error_code ec = GH__ERROR_CODE__OK;
-	const char *endpoint;
-
-	if (argc != 2)
-		return GH__ERROR_CODE__ERROR;
-	endpoint = argv[1];
-
-	trace2_cmd_mode(endpoint);
-
-	finish_init(0);
-
-	do__http_get__simple_endpoint(&status, &data, endpoint, endpoint);
-	ec = status.ec;
-
-	if (ec == GH__ERROR_CODE__OK)
-		printf("%s\n", data.buf);
-	else
-		error("config: %s", status.error_message.buf);
-
-	gh__response_status__release(&status);
-	strbuf_release(&data);
 
 	return ec;
 }
@@ -4115,9 +4071,6 @@ static enum gh__error_code do_sub_cmd(int argc, const char **argv)
 
 	if (!strcmp(argv[0], "config"))
 		return do_sub_cmd__config(argc, argv);
-
-	if (!strcmp(argv[0], "endpoint"))
-		return do_sub_cmd__endpoint(argc, argv);
 
 	if (!strcmp(argv[0], "prefetch"))
 		return do_sub_cmd__prefetch(argc, argv);
