@@ -13,6 +13,13 @@ PATH=$(pwd)/..:$PATH
 GIT_TEST_MAINT_SCHEDULER="crontab:test-tool crontab ../cron.txt"
 export GIT_TEST_MAINT_SCHEDULER
 
+# Do not write any files outside the trash directory
+Scalar_UNATTENDED=1
+export Scalar_UNATTENDED
+
+GIT_ASKPASS=true
+export GIT_ASKPASS
+
 test_lazy_prereq BUILTIN_FSMONITOR '
 	git version --build-options | grep -q "feature:.*fsmonitor--daemon"
 '
