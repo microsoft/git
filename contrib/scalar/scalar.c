@@ -280,6 +280,37 @@ static int cmd_unregister(int argc, const char **argv)
 	argc = parse_options(argc, argv, NULL, options,
 			     usage, 0);
 
+	/*
+	 * Be forgiving when the enlistment or worktree does not even exist any
+	 * longer; This can be the case if a user deleted the worktree by
+	 * mistake and _still_ wants to unregister the thing.
+	 */
+	if (argc == 1) {
+		struct strbuf path = STRBUF_INIT;
+
+		strbuf_addf(&path, "%s/src/.git", argv[0]);
+		if (!is_directory(path.buf)) {
+			int res = 0;
+
+			strbuf_strip_suffix(&path, "/.git");
+			strbuf_realpath_forgiving(&path, path.buf, 1);
+
+			if (run_git("config", "--global",
+				    "--unset", "--fixed-value",
+				    "scalar.repo", path.buf, NULL) < 0)
+				res = -1;
+
+			if (run_git("config", "--global",
+				    "--unset", "--fixed-value",
+				    "maintenance.repo", path.buf, NULL) < 0)
+				res = -1;
+
+			strbuf_release(&path);
+			return res;
+		}
+		strbuf_release(&path);
+	}
+
 	setup_enlistment_directory(argc, argv, usage, options);
 
 	return unregister_dir();
