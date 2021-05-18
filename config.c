@@ -3202,6 +3202,7 @@ int git_config_set_multivar_in_file_gently(const char *config_filename,
 					   const char *value_pattern,
 					   unsigned flags)
 {
+	static unsigned long timeout_ms = ULONG_MAX;
 	int fd = -1, in_fd = -1;
 	int ret;
 	struct lock_file lock = LOCK_INIT;
@@ -3222,11 +3223,16 @@ int git_config_set_multivar_in_file_gently(const char *config_filename,
 	if (!config_filename)
 		config_filename = filename_buf = git_pathdup("config");
 
+	if ((long)timeout_ms < 0 &&
+	    git_config_get_ulong("core.configWriteLockTimeoutMS", &timeout_ms))
+		timeout_ms = 0;
+
 	/*
 	 * The lock serves a purpose in addition to locking: the new
 	 * contents of .git/config will be written into it.
 	 */
-	fd = hold_lock_file_for_update(&lock, config_filename, 0);
+	fd = hold_lock_file_for_update_timeout(&lock, config_filename, 0,
+					       timeout_ms);
 	if (fd < 0) {
 		error_errno(_("could not lock config file %s"), config_filename);
 		ret = CONFIG_NO_LOCK;
