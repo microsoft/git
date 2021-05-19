@@ -75,6 +75,8 @@ test_expect_success UNZIP 'scalar diagnose' '
 	folder=${zip_path%.zip} &&
 	test_path_is_missing "$folder" &&
 	unzip -p "$zip_path" diagnostics.log >out &&
+	test_file_not_empty out &&
+	unzip -p "$zip_path" packs-local.txt >out &&
 	test_file_not_empty out
 '
 
