@@ -141,6 +141,7 @@ static int set_recommended_config(int reconfigure)
 		{ "commitGraph.changedPaths", "true" },
 		{ "commitGraph.generationVersion", "1" },
 		{ "core.autoCRLF", "false" },
+		{ "core.configLockTimeout", "150" },
 		{ "core.logAllRefUpdates", "true" },
 		{ "core.safeCRLF", "false" },
 		{ "credential.https://dev.azure.com.useHttpPath", "true" },
@@ -186,6 +187,28 @@ static int set_recommended_config(int reconfigure)
 	};
 	int i;
 	char *value;
+
+	/*
+	 * If a user has "core.configWriteLockTimeoutMS" set, try to switch to
+	 * the new (non-deprecated) setting (core.configLockTimeout).
+	 */
+	if (!repo_config_get_string(the_repository, "core.configwritelocktimeoutms",
+				    &value)) {
+		char *dummy = NULL;
+		if (repo_config_get_string(the_repository, "core.configlocktimeout",
+					   &dummy) &&
+		    repo_config_set_gently(the_repository, "core.configlocktimeout",
+					   value))
+			return error(_("could not configure %s=%s"),
+				     "core.configLockTimeout", value);
+		if (repo_config_set_gently(the_repository,
+					   "core.configwritelocktimeoutms",
+					   NULL))
+			return error(_("could not configure %s=%s"),
+				     "core.configWriteLockTimeoutMS", "NULL");
+		free(value);
+		free(dummy);
+	}
 
 	for (i = 0; config[i].key; i++) {
 		if (set_config_if_missing(config + i, reconfigure))
