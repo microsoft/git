@@ -614,6 +614,39 @@ void load_builtin_commands(const char *prefix, struct cmdnames *cmds)
 	die("not implemented");
 }
 
+static void dir_file_stats(struct strbuf *buf, const char *path)
+{
+	DIR *dir = opendir(path);
+	struct dirent *e;
+	struct stat e_stat;
+	struct strbuf file_path = STRBUF_INIT;
+	int base_path_len;
+
+	if (!dir)
+		return;
+
+	strbuf_addstr(buf, "Contents of ");
+	strbuf_add_absolute_path(buf, path);
+	strbuf_addstr(buf, ":\n");
+
+	strbuf_add_absolute_path(&file_path, path);
+	strbuf_addch(&file_path, '/');
+	base_path_len = file_path.len;
+
+	while ((e = readdir(dir)) != NULL)
+		if (!is_dot_or_dotdot(e->d_name) && e->d_type == DT_REG) {
+			strbuf_setlen(&file_path, base_path_len);
+			strbuf_addstr(&file_path, e->d_name);
+			if (!stat(file_path.buf, &e_stat))
+				strbuf_addf(buf, "%-70s %16"PRIuMAX"\n",
+					    e->d_name,
+					    (uintmax_t)e_stat.st_size);
+		}
+
+	strbuf_release(&file_path);
+	closedir(dir);
+}
+
 static int cmd_diagnose(int argc, const char **argv)
 {
 	struct option options[] = {
@@ -654,6 +687,12 @@ static int cmd_diagnose(int argc, const char **argv)
 	fwrite(buf.buf, buf.len, 1, stdout);
 
 	if ((res = stage(tmp_dir.buf, &buf, "diagnostics.log")))
+		goto diagnose_cleanup;
+
+	strbuf_reset(&buf);
+	dir_file_stats(&buf, ".git/objects/pack");
+
+	if ((res = stage(tmp_dir.buf, &buf, "packs-local.txt")))
 		goto diagnose_cleanup;
 
 	if ((res = stage_directory(tmp_dir.buf, ".git", 0)) ||
