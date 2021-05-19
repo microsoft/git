@@ -749,3 +749,12 @@ core.abbrev::
 	If set to "no", no abbreviation is made and the object names
 	are shown in their full length.
 	The minimum length is 4.
+
+core.configWriteLockTimeoutMS::
+	When processes try to write to the config concurrently, it is likely
+	that one process "wins" and the other process(es) fail to lock the
+	config file. By configuring a timeout larger than zero, Git can be
+	told to try to lock the config again a couple times within the
+	specified timeout. If the timeout is configure to zero (which is the
+	default), Git will fail immediately when the config is already
+	locked.
