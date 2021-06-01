@@ -414,7 +414,7 @@ static int stage(const char *git_dir, struct strbuf *buf, const char *path)
 	return res;
 }
 
-static int stage_file(const char *git_dir, const char *path)
+static int stage_file(const char *git_dir, const char *path, size_t skip_chars)
 {
 	struct strbuf buf = STRBUF_INIT;
 	int res;
@@ -422,13 +422,14 @@ static int stage_file(const char *git_dir, const char *path)
 	if (strbuf_read_file(&buf, path, 0) < 0)
 		return error(_("could not read '%s'"), path);
 
-	res = stage(git_dir, &buf, path);
+	res = stage(git_dir, &buf, path + skip_chars);
 
 	strbuf_release(&buf);
 	return res;
 }
 
-static int stage_directory(const char *git_dir, const char *path, int recurse)
+static int stage_directory(const char *git_dir,
+			   const char *path, size_t skip_chars, int recurse)
 {
 	int at_root = !*path;
 	DIR *dir = opendir(at_root ? "." : path);
@@ -451,9 +452,10 @@ static int stage_directory(const char *git_dir, const char *path, int recurse)
 		strbuf_setlen(&buf, len);
 		strbuf_addstr(&buf, e->d_name);
 
-		if ((e->d_type == DT_REG && stage_file(git_dir, buf.buf)) ||
+		if ((e->d_type == DT_REG &&
+		     stage_file(git_dir, buf.buf, skip_chars)) ||
 		    (e->d_type == DT_DIR && recurse &&
-		     stage_directory(git_dir, buf.buf, recurse)))
+		     stage_directory(git_dir, buf.buf, skip_chars, recurse)))
 			res = -1;
 	}
 
@@ -1178,12 +1180,33 @@ static int cmd_diagnose(int argc, const char **argv)
 	if ((res = stage(tmp_dir.buf, &buf, "objects-local.txt")))
 		goto diagnose_cleanup;
 
-	if ((res = stage_directory(tmp_dir.buf, ".git", 0)) ||
-	    (res = stage_directory(tmp_dir.buf, ".git/hooks", 0)) ||
-	    (res = stage_directory(tmp_dir.buf, ".git/info", 0)) ||
-	    (res = stage_directory(tmp_dir.buf, ".git/logs", 1)) ||
-	    (res = stage_directory(tmp_dir.buf, ".git/objects/info", 0)))
+	if ((res = stage_directory(tmp_dir.buf, ".git", 0, 0)) ||
+	    (res = stage_directory(tmp_dir.buf, ".git/hooks", 0, 0)) ||
+	    (res = stage_directory(tmp_dir.buf, ".git/info", 0, 0)) ||
+	    (res = stage_directory(tmp_dir.buf, ".git/logs", 0, 1)) ||
+	    (res = stage_directory(tmp_dir.buf, ".git/objects/info", 0, 0)))
 		goto diagnose_cleanup;
+
+	if (shared_cache) {
+		strbuf_reset(&path);
+		strbuf_addf(&path, "%s/pack", shared_cache);
+		strbuf_reset(&buf);
+		dir_file_stats(&buf, path.buf);
+		if ((res = stage(tmp_dir.buf, &buf, "packs-cached.txt")))
+			goto diagnose_cleanup;
+
+		strbuf_reset(&buf);
+		loose_objs_stats(&buf, shared_cache);
+		if ((res = stage(tmp_dir.buf, &buf, "objects-cached.txt")))
+			goto diagnose_cleanup;
+
+		strbuf_reset(&path);
+		strbuf_addf(&path, "%s/info", shared_cache);
+		if (is_directory(path.buf) &&
+		    (res = stage_directory(tmp_dir.buf,
+					   path.buf, path.len - 4, 0)))
+			goto diagnose_cleanup;
+	}
 
 	res = index_to_zip(tmp_dir.buf);
 
