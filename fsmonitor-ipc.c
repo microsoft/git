@@ -38,7 +38,7 @@ int fsmonitor_ipc__send_query(const char *since_token,
 	struct ipc_client_connect_options options
 		= IPC_CLIENT_CONNECT_OPTIONS_INIT;
 
-	options.wait_if_busy = 1;
+	options.wait_if_busy = 0;
 	options.wait_if_not_found = 0;
 
 	trace2_region_enter("fsm_client", "query", NULL);
@@ -118,7 +118,7 @@ int fsmonitor_ipc__send_command(const char *command,
 
 	strbuf_reset(answer);
 
-	options.wait_if_busy = 1;
+	options.wait_if_busy = 0;
 	options.wait_if_not_found = 0;
 
 	state = ipc_client_try_connect(fsmonitor_ipc__get_path(), &options,
