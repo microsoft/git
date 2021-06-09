@@ -493,7 +493,10 @@ test_expect_success 'register and unregister' '
 
 	git maintenance unregister &&
 	git config --global --get-all maintenance.repo >actual &&
-	test_cmp before actual
+	test_cmp before actual &&
+
+	# Expect unregister to be idempotent.
+	git maintenance unregister
 '
 
 test_expect_success !MINGW 'register and unregister with regex metacharacters' '
