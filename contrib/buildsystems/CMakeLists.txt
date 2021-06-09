@@ -792,6 +792,9 @@ target_link_libraries(git-sh-i18n--envsubst common-main)
 add_executable(git-shell ${CMAKE_SOURCE_DIR}/shell.c)
 target_link_libraries(git-shell common-main)
 
+add_executable(scalar ${CMAKE_SOURCE_DIR}/scalar.c ${CMAKE_SOURCE_DIR}/json-parser.c)
+target_link_libraries(scalar common-main)
+
 if(CURL_FOUND)
 	add_library(http_obj OBJECT ${CMAKE_SOURCE_DIR}/http.c)
 
@@ -1015,7 +1018,7 @@ endif()
 
 #wrapper scripts
 set(wrapper_scripts
-	git git-upload-pack git-receive-pack git-upload-archive git-shell git-remote-ext)
+	git git-upload-pack git-receive-pack git-upload-archive git-shell git-remote-ext scalar)
 
 set(wrapper_test_scripts
 	test-fake-ssh test-tool)

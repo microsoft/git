@@ -10,7 +10,10 @@ group "Run tests" make --quiet -C t T="$(cd t &&
 	tr '\n' ' ')" ||
 handle_failed_tests
 
-# Run the git subtree tests only if main tests succeeded
-test 0 != "$1" || make -C contrib/subtree test
+if test 0 = "$1"
+then
+	# Run the git subtree tests only if main tests succeeded
+	make -C contrib/subtree test
+fi
 
 check_unignored_build_artifacts
