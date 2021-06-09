@@ -8,7 +8,9 @@ scalar - A tool for managing large Git repositories
 SYNOPSIS
 --------
 [verse]
-scalar clone [--single-branch] [--branch <main-branch>] [--full-clone] <url> [<enlistment>]
+scalar clone [--single-branch] [--branch <main-branch>] [--full-clone]
+	[--local-cache-path <path>] [--cache-server-url <url>] [--[no-]src]
+	<url> [<enlistment>]
 scalar list
 scalar register [<enlistment>]
 scalar unregister [<enlistment>]
@@ -16,6 +18,7 @@ scalar run ( all | config | commit-graph | fetch | loose-objects | pack-files ) 
 scalar reconfigure [ --all | <enlistment> ]
 scalar diagnose [<enlistment>]
 scalar delete <enlistment>
+scalar cache-server ( --get | --set <url> | --list [<remote>] ) [<enlistment>]
 
 DESCRIPTION
 -----------
@@ -80,9 +83,23 @@ remote-tracking branch for the branch this option was used for the initial
 cloning. If the HEAD at the remote did not point at any branch when
 `--single-branch` clone was made, no remote-tracking branch is created.
 
+--no-src::
+	Skip adding a `src` directory within the target enlistment.
+
 --[no-]full-clone::
 	A sparse-checkout is initialized by default. This behavior can be
 	turned off via `--full-clone`.
+
+--local-cache-path <path>::
+    Override the path to the local cache root directory; Pre-fetched objects
+    are stored into a repository-dependent subdirectory of that path.
++
+The default is `<drive>:\.scalarCache` on Windows (on the same drive as the
+clone), and `~/.scalarCache` on macOS.
+
+--cache-server-url <url>::
+    Retrieve missing objects from the specified remote, which is expected to
+    understand the GVFS protocol.
 
 List
 ~~~~
@@ -156,6 +173,27 @@ Delete
 delete <enlistment>::
 	This subcommand lets you delete an existing Scalar enlistment from your
 	local file system, unregistering the repository.
+
+Cache-server
+~~~~~~~~~~~~
+
+cache-server ( --get | --set <url> | --list [<remote>] ) [<enlistment>]::
+    This command lets you query or set the GVFS-enabled cache server used
+    to fetch missing objects.
+
+--get::
+    This is the default command mode: query the currently-configured cache
+    server URL, if any.
+
+--list::
+    Access the `gvfs/info` endpoint of the specified remote (default:
+    `origin`) to figure out which cache servers are available, if any.
++
+In contrast to the `--get` command mode (which only accesses the local
+repository), this command mode triggers a request via the network that
+potentially requires authentication. If authentication is required, the
+configured credential helper is employed (see linkgit:git-credential[1]
+for details).
 
 SEE ALSO
 --------
