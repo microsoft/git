@@ -3016,7 +3016,20 @@ static long config_lock_timeout_ms(struct repository *r)
 	static int timeout_ms = 1000;
 
 	if (!configured) {
-		repo_config_get_int(r, "core.configlocktimeout", &timeout_ms);
+		if (repo_config_get_int(r, "core.configlocktimeout", &timeout_ms) &&
+		    /*
+		     * If 'core.configWriteLockTimeoutMS' is set, print a
+		     * deprecation warning suggesting the use of
+		     * 'core.configLockTimeout' instead.
+		     */
+		    !repo_config_get_int(r, "core.configWriteLockTimeoutMS",
+					 &timeout_ms) &&
+		    !git_env_bool("GIT_SUPPRESS_CONFIG_WRITE_LOCK_TIMEOUT_MS_ADVICE", 0)) {
+			advise_if_enabled(ADVICE_USE_CORE_CONFIG_WRITE_LOCK_TIMEOUT_MS_CONFIG,
+					  _("core.configWriteLockTimeoutMS is deprecated;"
+					    "please set core.configLockTimeout instead"));
+			setenv("GIT_SUPPRESS_CONFIG_WRITE_LOCK_TIMEOUT_MS_ADVICE", "1", 1);
+		}
 		configured = 1;
 	}
 
