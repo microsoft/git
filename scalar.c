@@ -70,12 +70,14 @@ static void setup_enlistment_directory(int argc, const char **argv,
 	strbuf_release(&path);
 }
 
+static int git_retries = 3;
+
 static int run_git(const char *arg, ...)
 {
 	struct strvec argv = STRVEC_INIT;
 	va_list args;
 	const char *p;
-	int res;
+	int res, attempts;
 
 	va_start(args, arg);
 	strvec_push(&argv, arg);
@@ -83,7 +85,10 @@ static int run_git(const char *arg, ...)
 		strvec_push(&argv, p);
 	va_end(args);
 
-	res = run_command_v_opt(argv.v, RUN_GIT_CMD);
+	for (attempts = 0, res = 1;
+	     res && attempts < git_retries;
+	     attempts++)
+		res = run_command_v_opt(argv.v, RUN_GIT_CMD);
 
 	strvec_clear(&argv);
 	return res;
@@ -564,6 +569,8 @@ static int cmd_diagnose(int argc, const char **argv)
 	setup_enlistment_directory(argc, argv, usage, options, &diagnostics_root);
 	strbuf_addstr(&diagnostics_root, "/.scalarDiagnostics");
 
+	/* Here, a failure should not repeat itself. */
+	git_retries = 1;
 	res = run_git("diagnose", "--mode=all", "-s", "%Y%m%d_%H%M%S",
 		      "-o", diagnostics_root.buf, NULL);
 
