@@ -100,12 +100,14 @@ static void setup_enlistment_directory(int argc, const char **argv,
 	setup_git_directory();
 }
 
+static int git_retries = 3;
+
 static int run_git(const char *arg, ...)
 {
 	struct strvec argv = STRVEC_INIT;
 	va_list args;
 	const char *p;
-	int res;
+	int res, attempts;
 
 	va_start(args, arg);
 	strvec_push(&argv, arg);
@@ -113,7 +115,10 @@ static int run_git(const char *arg, ...)
 		strvec_push(&argv, p);
 	va_end(args);
 
-	res = run_command_v_opt(argv.v, RUN_GIT_CMD);
+	for (attempts = 0, res = 1;
+	     res && attempts < git_retries;
+	     attempts++)
+		res = run_command_v_opt(argv.v, RUN_GIT_CMD);
 
 	strvec_clear(&argv);
 	return res;
@@ -883,6 +888,7 @@ static int cmd_clone(int argc, const char **argv)
 	char *cache_key = NULL, *shared_cache_path = NULL;
 	struct strbuf buf = STRBUF_INIT;
 	int res;
+	int gvfs_protocol;
 
 	argc = parse_options(argc, argv, NULL, clone_options, clone_usage, 0);
 
@@ -1011,8 +1017,10 @@ static int cmd_clone(int argc, const char **argv)
 		goto cleanup;
 	}
 
-	if (cache_server_url ||
-	    supports_gvfs_protocol(url, &default_cache_server_url)) {
+	gvfs_protocol = cache_server_url ||
+			supports_gvfs_protocol(url, &default_cache_server_url);
+
+	if (gvfs_protocol) {
 		if (!cache_server_url)
 			cache_server_url = default_cache_server_url;
 		if (set_config("core.useGVFSHelper=true") ||
@@ -1047,6 +1055,11 @@ static int cmd_clone(int argc, const char **argv)
 		return error(_("could not configure '%s'"), dir);
 
 	if ((res = run_git("fetch", "--quiet", "origin", NULL))) {
+		if (gvfs_protocol) {
+			res = error(_("failed to prefetch commits and trees"));
+			goto cleanup;
+		}
+
 		warning(_("partial clone failed; attempting full clone"));
 
 		if (set_config("remote.origin.promisor") ||
