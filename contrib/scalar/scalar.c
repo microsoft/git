@@ -117,7 +117,7 @@ static int set_recommended_config(int reconfigure)
 	} config[] = {
 		/* Required */
 		{ "am.keepCR", "true", 1 },
-		{ "core.FSCache", "true", 1 },
+		{ "core.FSCache", "false", 1 },
 		{ "core.multiPackIndex", "true", 1 },
 		{ "core.preloadIndex", "true", 1 },
 		{ "core.untrackedCache", "true", 1 },
