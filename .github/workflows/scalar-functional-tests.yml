@@ -179,7 +179,7 @@ jobs:
           git version --build-options
           cd ../out
           Scalar.FunctionalTests/$BUILD_FRAGMENT/Scalar.FunctionalTests$BUILD_FILE_EXT --test-scalar-on-path --test-git-on-path --timeout=300000 \
-            '--test=GitCommandsTests(SparseMode).AddFileAndCommitOnNewBranchSwitchDeleteFolderAndSwitchBack()'
+            '--test=Scalar.FunctionalTests.Tests.GitCommands.GitCommandsTests(SparseMode).AddFileAndCommitOnNewBranchSwitchDeleteFolderAndSwitchBack()'
 
       - name: Force-stop FSMonitor daemons and Git processes (Windows)
         if: runner.os == 'Windows' && (success() || failure())
