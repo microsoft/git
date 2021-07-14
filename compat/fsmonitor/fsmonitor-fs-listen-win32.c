@@ -111,14 +111,8 @@ static struct one_watch *create_watch(struct fsmonitor_daemon_state *state,
 	DWORD share_mode =
 		FILE_SHARE_WRITE | FILE_SHARE_READ | FILE_SHARE_DELETE;
 	HANDLE hDir;
-	wchar_t wpath[MAX_LONG_PATH];
 
-	if (xutftowcs_long_path(wpath, path) < 0) {
-		error(_("could not convert to wide characters: '%s'"), path);
-		return NULL;
-	}
-
-	hDir = CreateFileW(wpath,
+	hDir = CreateFileA(path,
 			   desired_access, share_mode, NULL, OPEN_EXISTING,
 			   FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OVERLAPPED,
 			   NULL);
