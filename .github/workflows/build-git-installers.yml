@@ -437,10 +437,11 @@ jobs:
             git/.github/macos-installer/*.pkg
   # End build and sign Mac OSX installers
 
-  # Build unsigned Ubuntu package
+  # Build and sign Debian package
   create-linux-artifacts:
     runs-on: ubuntu-latest
     needs: prereqs
+    environment: release
     steps:
       - name: Install git dependencies
         run: |
@@ -509,10 +510,49 @@ jobs:
           # Move Debian package for later artifact upload
           mv "$PKGNAME.deb" "$GITHUB_WORKSPACE"
 
+      - name: Log into Azure
+        uses: azure/login@v1
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: Prepare for GPG signing
+        env:
+          AZURE_VAULT: ${{ secrets.AZURE_VAULT }}
+          GPG_KEY_SECRET_NAME: ${{ secrets.GPG_KEY_SECRET_NAME }}
+          GPG_PASSPHRASE_SECRET_NAME: ${{ secrets.GPG_PASSPHRASE_SECRET_NAME }}
+          GPG_KEYGRIP_SECRET_NAME: ${{ secrets.GPG_KEYGRIP_SECRET_NAME }}
+        run: |
+          # Install debsigs
+          sudo apt install debsigs
+
+          # Download GPG key, passphrase, and keygrip from Azure Key Vault
+          key=$(az keyvault secret show --name $GPG_KEY_SECRET_NAME --vault-name $AZURE_VAULT --query "value")
+          passphrase=$(az keyvault secret show --name $GPG_PASSPHRASE_SECRET_NAME --vault-name $AZURE_VAULT --query "value")
+          keygrip=$(az keyvault secret show --name $GPG_KEYGRIP_SECRET_NAME --vault-name $AZURE_VAULT --query "value")
+
+          # Remove quotes from downloaded values
+          key=$(sed -e 's/^"//' -e 's/"$//' <<<"$key")
+          passphrase=$(sed -e 's/^"//' -e 's/"$//' <<<"$passphrase")
+          keygrip=$(sed -e 's/^"//' -e 's/"$//' <<<"$keygrip")
+
+          # Import GPG key
+          echo "$key" | base64 -d | gpg --import --no-tty --batch --yes
+
+          # Configure GPG
+          echo "allow-preset-passphrase" > ~/.gnupg/gpg-agent.conf
+          gpg-connect-agent RELOADAGENT /bye
+          /usr/lib/gnupg2/gpg-preset-passphrase --preset "$keygrip" <<<"$passphrase"
+
+      - name: Sign Debian package
+        run: |
+          # Sign Debian package
+          version="${{ needs.prereqs.outputs.tag_version }}"
+          debsigs --sign=origin --verify --check microsoft-git_"$version".deb
+
       - name: Upload artifacts
         uses: actions/upload-artifact@v3
         with:
           name: linux-artifacts
           path: |
             *.deb
-  # End build unsigned Debian package
+  # End build and sign Debian package
