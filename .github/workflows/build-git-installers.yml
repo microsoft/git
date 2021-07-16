@@ -558,3 +558,81 @@ jobs:
         name: osx-dmg
         path: git/.github/macos-installer/*.dmg
   # End build and sign Mac OSX installers
+
+  # Build unsigned Ubuntu package
+  ubuntu_build:
+    runs-on: ubuntu-18.04
+    needs: prereqs
+    steps:
+      - name: Install git dependencies
+        run: |
+          set -ex
+
+          sudo apt-get update -q
+          sudo apt-get install -y -q --no-install-recommends gettext libcurl4-gnutls-dev libpcre3-dev asciidoc xmlto
+      - name: Clone git
+        uses: actions/checkout@v2
+        with:
+          path: git
+      - name: Build and package .deb
+        run: |
+          set -ex
+
+          die () {
+              echo "$*" >&2
+              exit 1
+          }
+
+          echo "${{ needs.prereqs.outputs.tag_version }}" >>git/version
+          make -C git GIT-VERSION-FILE
+
+          VERSION="${{ needs.prereqs.outputs.tag_version }}"
+
+          ARCH="$(dpkg-architecture -q DEB_HOST_ARCH)"
+          if test -z "$ARCH"; then
+            die "Could not determine host architecture!"
+          fi
+
+          PKGNAME="microsoft-git_$VERSION"
+          PKGDIR="$(dirname $(pwd))/$PKGNAME"
+
+          rm -rf "$PKGDIR"
+          mkdir -p "$PKGDIR"
+
+          DESTDIR="$PKGDIR" make -C git -j5 V=1 DEVELOPER=1 \
+            USE_LIBPCRE=1 \
+            NO_CROSS_DIRECTORY_HARDLINKS=1 \
+            ASCIIDOC8=1 ASCIIDOC_NO_ROFF=1 \
+            ASCIIDOC='TZ=UTC asciidoc' \
+            prefix=/usr/local \
+            gitexecdir=/usr/local/lib/git-core \
+            libexecdir=/usr/local/lib/git-core \
+            htmldir=/usr/local/share/doc/git/html \
+            install install-doc install-html
+
+          cd ..
+          mkdir "$PKGNAME/DEBIAN"
+
+          # Based on https://packages.ubuntu.com/xenial/vcs/git
+          cat >"$PKGNAME/DEBIAN/control" <<EOF
+          Package: microsoft-git
+          Version: $VERSION
+          Section: vcs
+          Priority: optional
+          Architecture: $ARCH
+          Depends: libcurl3-gnutls, liberror-perl, libexpat1, libpcre2-8-0, perl, perl-modules, zlib1g
+          Maintainer: Git Fundamentals <git-fundamentals@github.com>
+          Description: Git client built from the https://github.com/microsoft/git repository,
+            specialized in supporting monorepo scenarios. Includes the Scalar CLI.
+          EOF
+
+          dpkg-deb --build "$PKGNAME"
+
+          mkdir $GITHUB_WORKSPACE/artifacts
+          mv "$PKGNAME.deb" $GITHUB_WORKSPACE/artifacts/
+      - name: Publish unsigned .deb package
+        uses: actions/upload-artifact@v2
+        with:
+          name: deb-package-unsigned
+          path: artifacts/
+  # End build unsigned Ubuntu package
