@@ -281,3 +281,92 @@ jobs:
           name: win-${{matrix.artifact.name}}-x86_64
           path: artifacts
   # End build Windows installers
+
+  # Build Mac OSX installers & upload artifacts
+  mac_artifacts:
+    runs-on: macos-latest
+    needs: prereqs
+    env:
+      # `gettext` is keg-only
+      LDFLAGS: -L/usr/local/opt/gettext/lib
+      CFLAGS: -I/usr/local/opt/gettext/include
+      # To make use of the catalogs...
+      XML_CATALOG_FILES: /usr/local/etc/xml/catalog
+      # Enable a bit stricter compile flags
+      DEVELOPER: 1
+      # For the osx-installer build
+      OSX_VERSION: 10.15
+      V: 1
+    steps:
+      - name: Install git dependencies
+        run: |
+          set -x
+          brew install automake asciidoc xmlto
+          brew link --force gettext
+      - name: Clone git
+        uses: actions/checkout@v2
+        with:
+          path: 'git'
+      - name: Build GIT-VERSION-FILE and .tar.gz files
+        run: |
+          set -x
+          PATH=/usr/local/bin:$PATH
+
+          # Write to "version" file to force match with trigger payload version
+          echo "${{ needs.prereqs.outputs.tag_version }}" >>git/version
+          make -C git -j$(sysctl -n hw.physicalcpu) GIT-VERSION-FILE dist dist-doc
+      - name: Clone installer repository
+        uses: actions/checkout@v2
+        with:
+          path: 'git_osx_installer'
+          repository: 'derrickstolee/git_osx_installer'
+      - name: Bundle .dmg
+        run: |
+          die () {
+              echo "$*" >&2
+              exit 1
+          }
+
+          # Configure the environment
+          export CURL_LDFLAGS=$(curl-config --libs)
+          export VERSION="${{ needs.prereqs.outputs.tag_version }}"
+
+          dir=git_osx_installer/git-$VERSION
+          test ! -e $dir ||
+            rm $dir ||
+            die "Could not remove $dir"
+          ln -s .. $dir
+
+          mkdir -p git_osx_installer/build &&
+          cp git/git-$VERSION.tar.gz git/git-manpages-$VERSION.tar.gz git_osx_installer/build/ ||
+            die "Could not copy .tar.gz files"
+
+          # drop the -isysroot `GIT_SDK` hack
+          sed -i .bak -e 's/ -isysroot .(SDK_PATH)//' git_osx_installer/Makefile || die "Could not drop the -isysroot hack"
+
+          # make sure that .../usr/local/git/share/man/ exists
+          sed -i .bak -e 's/\(tar .*-C \)\(.*\/share\/man\)$/mkdir -p \2 \&\& &/' git_osx_installer/Makefile || die "Could not edit git_osx_installer/Makefile"
+          cat git_osx_installer/Makefile
+
+          make -C git_osx_installer vars
+
+          PATH=/usr/local/bin:/System/Library/Frameworks:$PATH \
+          make -C git_osx_installer \
+              OSX_VERSION=10.15 C_INCLUDE_PATH="$C_INCLUDE_PATH" V=1 \
+              build/intel-x86_64-catalina/git-$VERSION/osx-built-keychain ||
+            die "Build failed"
+
+          PATH=/usr/local/bin:$PATH \
+          make -C git_osx_installer \
+              OSX_VERSION=10.15 C_INCLUDE_PATH="$C_INCLUDE_PATH" V=1 image ||
+            die "Build failed"
+
+          mkdir -p artifacts
+          mv git_osx_installer/*.dmg artifacts/
+          mv git_osx_installer/disk-image/*.pkg artifacts/
+      - name: Publish OSX installer
+        uses: actions/upload-artifact@v2
+        with:
+          name: osx-installer
+          path: artifacts
+  # End build Mac OSX installers
