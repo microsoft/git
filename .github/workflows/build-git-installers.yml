@@ -680,3 +680,99 @@ jobs:
           name: deb-package-signed
           path: signed
   # End build & sign Ubuntu package
+
+  create-github-release:
+    runs-on: ubuntu-latest
+    needs: [prereqs, windows_artifacts, osx_publish_dmg, ubuntu_sign-artifacts]
+    if: |
+      success() ||
+        (needs.ubuntu_sign-artifacts.result == 'skipped' &&
+        needs.osx_publish_dmg.result == 'success' &&
+        needs.windows_artifacts.result == 'success')
+    steps:
+      - name: Download Windows portable installer
+        uses: actions/download-artifact@v2
+        with:
+          name: win-portable-x86_64
+          path: win-portable-x86_64
+      - name: Download Windows x86_64 installer
+        uses: actions/download-artifact@v2
+        with:
+          name: win-installer-x86_64
+          path: win-installer-x86_64
+      - name: Download Mac dmg
+        uses: actions/download-artifact@v2
+        with:
+          name: osx-dmg
+          path: osx-dmg
+      - name: Download Mac pkg
+        uses: actions/download-artifact@v2
+        with:
+          name: osx-signed-pkg
+          path: osx-pkg
+      - name: Download Ubuntu package (signed)
+        if: needs.prereqs.outputs.deb_signable == 'true'
+        uses: actions/download-artifact@v2
+        with:
+          name: deb-package-signed
+          path: deb-package
+      - name: Download Ubuntu package (unsigned)
+        if: needs.prereqs.outputs.deb_signable != 'true'
+        uses: actions/download-artifact@v2
+        with:
+          name: deb-package-unsigned
+          path: deb-package
+      - uses: actions/github-script@v4
+        with:
+          script: |
+            const fs = require('fs');
+            const path = require('path');
+
+            var releaseMetadata = {
+              owner: context.repo.owner,
+              repo: context.repo.repo
+            };
+
+            // Create the release
+            var tagName = "${{ needs.prereqs.outputs.tag_name }}";
+            var createdRelease = await github.repos.createRelease({
+              ...releaseMetadata,
+              draft: true,
+              tag_name: tagName,
+              name: tagName
+            });
+            releaseMetadata.release_id = createdRelease.data.id;
+
+            // Uploads contents of directory to the release created above
+            async function uploadDirectoryToRelease(directory, includeExtensions=[]) {
+              return fs.promises.readdir(directory)
+                .then(async(files) => Promise.all(
+                  files.filter(file => {
+                    return includeExtensions.length==0 || includeExtensions.includes(path.extname(file).toLowerCase());
+                  })
+                  .map(async (file) => {
+                    var filePath = path.join(directory, file);
+                    github.repos.uploadReleaseAsset({
+                      ...releaseMetadata,
+                      name: file,
+                      headers: {
+                        "content-length": (await fs.promises.stat(filePath)).size
+                      },
+                      data: fs.createReadStream(filePath)
+                    });
+                  }))
+                );
+            }
+
+            await Promise.all([
+              // Upload Windows artifacts
+              uploadDirectoryToRelease('win-installer-x86_64', ['.exe']),
+              uploadDirectoryToRelease('win-portable-x86_64', ['.exe']),
+
+              // Upload Mac artifacts
+              uploadDirectoryToRelease('osx-dmg'),
+              uploadDirectoryToRelease('osx-pkg'),
+
+              // Upload Ubuntu artifacts
+              uploadDirectoryToRelease('deb-package')
+            ]);
