@@ -15,12 +15,16 @@ jobs:
     outputs:
       tag_name: ${{ steps.tag.outputs.name }}           # The full name of the tag, e.g. v2.32.0.vfs.0.0
       tag_version: ${{ steps.tag.outputs.version }}     # The version number (without preceding "v"), e.g. 2.32.0.vfs.0.0
+      deb_signable: ${{ steps.deb.outputs.signable }}   # Whether the credentials needed to sign the .deb package are available
     steps:
       - name: Determine tag to build
         run: |
           echo "::set-output name=name::${GITHUB_REF#refs/tags/}"
           echo "::set-output name=version::${GITHUB_REF#refs/tags/v}"
         id: tag
+      - name: Determine whether signing certificates are present
+        run: echo "::set-output name=signable::$([[ $AZ_SUB != '' && $AZ_CREDS != '' ]] && echo 'true' || echo 'false')"
+        id: deb
       - name: Clone git
         uses: actions/checkout@v2
       - name: Validate the tag identified with trigger
@@ -559,7 +563,7 @@ jobs:
         path: git/.github/macos-installer/*.dmg
   # End build and sign Mac OSX installers
 
-  # Build unsigned Ubuntu package
+  # Build & sign Ubuntu package
   ubuntu_build:
     runs-on: ubuntu-18.04
     needs: prereqs
@@ -635,4 +639,44 @@ jobs:
         with:
           name: deb-package-unsigned
           path: artifacts/
-  # End build unsigned Ubuntu package
+  ubuntu_sign-artifacts:
+    runs-on: windows-latest # Must be run on Windows due to ESRP executable OS compatibility
+    needs: [ubuntu_build, prereqs]
+    if: needs.prereqs.outputs.deb_signable == 'true'
+    env:
+      ARTIFACTS_DIR: artifacts
+    steps:
+      - name: Clone repository
+        uses: actions/checkout@v2
+        with:
+          path: 'git'
+      - name: Download unsigned packages
+        uses: actions/download-artifact@v2
+        with:
+          name: deb-package-unsigned
+          path: unsigned
+      - uses: azure/login@v1
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+      - name: Set up ESRP client
+        shell: pwsh
+        env:
+          AZURE_VAULT: ${{ secrets.AZURE_VAULT }}
+          AUTH_CERT: ${{ secrets.AZURE_VAULT_AUTH_CERT_NAME }}
+          REQUEST_SIGNING_CERT: ${{ secrets.AZURE_VAULT_REQUEST_SIGNING_CERT_NAME }}
+        run: |
+          git\.github\scripts\set-up-esrp.ps1
+      - name: Sign package
+        shell: pwsh
+        env:
+          AZURE_AAD_ID: ${{ secrets.AZURE_AAD_ID }}
+          LINUX_KEY_CODE: ${{ secrets.LINUX_KEY_CODE }}
+          LINUX_OP_CODE: ${{ secrets.LINUX_OPERATION_CODE }}
+        run: |
+          python git\.github\scripts\run-esrp-signing.py unsigned $env:LINUX_KEY_CODE $env:LINUX_OP_CODE
+      - name: Upload signed artifact
+        uses: actions/upload-artifact@v2
+        with:
+          name: deb-package-signed
+          path: signed
+  # End build & sign Ubuntu package
