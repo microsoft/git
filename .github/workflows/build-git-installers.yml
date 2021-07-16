@@ -291,3 +291,148 @@ jobs:
           name: win-${{matrix.artifact.name}}-x86_64
           path: artifacts
   # End build Windows installers
+
+  # Build and sign Mac OSX installers & upload artifacts
+  create-macos-artifacts:
+    strategy:
+      matrix:
+        arch:
+          - name: x86_64
+            runner: macos-latest
+          - name: arm64
+            runner: macos-latest-xl-arm64
+    runs-on: ${{ matrix.arch.runner }}
+    needs: prereqs
+    env:
+      VERSION: "${{ needs.prereqs.outputs.tag_version }}"
+    environment: release
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v3
+        with:
+          path: 'git'
+
+      - name: Install Git dependencies
+        run: |
+          set -x
+          brew install automake asciidoc xmlto docbook
+          brew link --force gettext
+
+      - name: Set up signing/notarization infrastructure
+        env:
+          A1: ${{ secrets.APPLICATION_CERTIFICATE_BASE64 }}
+          A2: ${{ secrets.APPLICATION_CERTIFICATE_PASSWORD }}
+          I1: ${{ secrets.INSTALLER_CERTIFICATE_BASE64 }}
+          I2: ${{ secrets.INSTALLER_CERTIFICATE_PASSWORD }}
+          N1: ${{ secrets.APPLE_TEAM_ID }}
+          N2: ${{ secrets.APPLE_DEVELOPER_ID }}
+          N3: ${{ secrets.APPLE_DEVELOPER_PASSWORD }}
+          N4: ${{ secrets.APPLE_KEYCHAIN_PROFILE }}
+        run: |
+          echo "Setting up signing certificates"
+          security create-keychain -p pwd $RUNNER_TEMP/buildagent.keychain
+          security default-keychain -s $RUNNER_TEMP/buildagent.keychain
+          security unlock-keychain -p pwd $RUNNER_TEMP/buildagent.keychain
+          # Prevent re-locking
+          security set-keychain-settings $RUNNER_TEMP/buildagent.keychain
+
+          echo "$A1" | base64 -D > $RUNNER_TEMP/cert.p12
+          security import $RUNNER_TEMP/cert.p12 \
+            -k $RUNNER_TEMP/buildagent.keychain \
+            -P "$A2" \
+            -T /usr/bin/codesign
+          security set-key-partition-list \
+            -S apple-tool:,apple:,codesign: \
+            -s -k pwd \
+            $RUNNER_TEMP/buildagent.keychain
+
+          echo "$I1" | base64 -D > $RUNNER_TEMP/cert.p12
+          security import $RUNNER_TEMP/cert.p12 \
+            -k $RUNNER_TEMP/buildagent.keychain \
+            -P "$I2" \
+            -T /usr/bin/pkgbuild
+          security set-key-partition-list \
+            -S apple-tool:,apple:,pkgbuild: \
+            -s -k pwd \
+            $RUNNER_TEMP/buildagent.keychain
+
+          echo "Setting up notarytool"
+          xcrun notarytool store-credentials \
+            --team-id "$N1" \
+            --apple-id "$N2" \
+            --password "$N3" \
+            "$N4"
+
+      - name: Build, sign, and notarize artifacts
+        env:
+          A3: ${{ secrets.APPLE_APPLICATION_SIGNING_IDENTITY }}
+          I3: ${{ secrets.APPLE_INSTALLER_SIGNING_IDENTITY }}
+          N4: ${{ secrets.APPLE_KEYCHAIN_PROFILE }}
+        run: |
+          die () {
+            echo "$*" >&2
+            exit 1
+          }
+
+          # Configure the environment
+          set -ex
+          PATH=/usr/local/bin:$PATH
+          export CURL_LDFLAGS=$(curl-config --libs)
+
+          # Write to "version" file to force match with trigger payload version
+          echo "${{ needs.prereqs.outputs.tag_version }}" >>git/version
+
+          # Configure the Git build to pick up gettext
+          homebrew_prefix="$(brew --prefix)"
+          cat >git/config.mak <<EOF
+          LDFLAGS = -L$homebrew_prefix/lib -L/usr/local/opt/gettext/lib
+          CFLAGS = -I$homebrew_prefix/include -I/usr/local/opt/gettext/include
+          EOF
+
+          # On Apple Silicon, homebrew apparently does not install a `gcc` symlink
+          test x86_64 = '${{ matrix.arch.name }}' ||
+          echo 'CC = gcc-13' >>config.mak
+
+          # To make use of the catalogs...
+          export XML_CATALOG_FILES=$homebrew_prefix/etc/xml/catalog
+
+          make -C git -j$(sysctl -n hw.physicalcpu) GIT-VERSION-FILE dist dist-doc
+
+          # Extract tarballs
+          mkdir payload manpages
+          tar -xvf git/git-$VERSION.tar.gz -C payload
+          tar -xvf git/git-manpages-$VERSION.tar.gz -C manpages
+
+          # Lay out payload
+          make -C git/.github/macos-installer V=1 payload
+
+          # Codesign payload
+          cp -R stage/git-${{ matrix.arch.name }}-$VERSION/ \
+            git/.github/macos-installer/build-artifacts
+          make -C git/.github/macos-installer V=1 codesign \
+            APPLE_APP_IDENTITY="$A3" || die "Creating signed payload failed"
+
+          # Build and sign pkg
+          make -C git/.github/macos-installer V=1 pkg \
+            APPLE_INSTALLER_IDENTITY="$I3" \
+            || die "Creating signed pkg failed"
+
+          # Notarize pkg
+          make -C git/.github/macos-installer V=1 notarize \
+            APPLE_INSTALLER_IDENTITY="$I3" APPLE_KEYCHAIN_PROFILE="$N4" \
+            || die "Creating signed and notarized pkg failed"
+
+          # Create DMG
+          make -C git/.github/macos-installer V=1 image || die "Creating DMG failed"
+
+          # Move all artifacts into top-level directory
+          mv git/.github/macos-installer/disk-image/*.pkg git/.github/macos-installer/
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v3
+        with:
+          name: macos-artifacts
+          path: |
+            git/.github/macos-installer/*.dmg
+            git/.github/macos-installer/*.pkg
+  # End build and sign Mac OSX installers
