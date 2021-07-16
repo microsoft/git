@@ -15,12 +15,16 @@ jobs:
     outputs:
       tag_name: ${{ steps.tag.outputs.name }}           # The full name of the tag, e.g. v2.32.0.vfs.0.0
       tag_version: ${{ steps.tag.outputs.version }}     # The version number (without preceding "v"), e.g. 2.32.0.vfs.0.0
+      deb_signable: ${{ steps.deb.outputs.signable }}   # Whether the credentials needed to sign the .deb package are available
     steps:
       - name: Determine tag to build
         run: |
           echo "::set-output name=name::${GITHUB_REF#refs/tags/}"
           echo "::set-output name=version::${GITHUB_REF#refs/tags/v}"
         id: tag
+      - name: Determine whether signing certificates are present
+        run: echo "::set-output name=signable::$([[ $AZ_SUB != '' && $AZ_CREDS != '' ]] && echo 'true' || echo 'false')"
+        id: deb
       - name: Clone git
         uses: actions/checkout@v2
       - name: Validate the tag identified with trigger
@@ -368,7 +372,7 @@ jobs:
           path: artifacts
   # End build Mac OSX installers
 
-  # Build unsigned Ubuntu package
+  # Build & sign Ubuntu package
   ubuntu_build:
     runs-on: ubuntu-18.04
     needs: prereqs
@@ -444,4 +448,45 @@ jobs:
         with:
           name: deb-package-unsigned
           path: artifacts/
-  # End build unsigned Ubuntu package
+  ubuntu_sign-artifacts:
+    runs-on: windows-latest # Must be run on Windows due to ESRP executable OS compatibility
+    needs: [ubuntu_build, prereqs]
+    if: needs.prereqs.outputs.deb_signable == 'true'
+    env:
+      ARTIFACTS_DIR: artifacts
+    steps:
+      - name: Clone repository
+        uses: actions/checkout@v2
+      - name: Download unsigned packages
+        uses: actions/download-artifact@v2
+        with:
+          name: deb-package-unsigned
+          path: ${{ env.ARTIFACTS_DIR }}/unsigned
+      - uses: azure/login@v1
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+      - name: Download ESRP client
+        run: |
+          az storage blob download --subscription "${{ secrets.AZURE_SUBSCRIPTION }}" --account-name msftgitesrp -c microsoft-esrp-client -n microsoft.esrpclient.1.2.76.nupkg -f esrp.zip
+          Expand-Archive -Path esrp.zip -DestinationPath .\esrp
+      - name: Install ESRP certificates
+        run: |
+          az keyvault secret download --subscription "${{ secrets.AZURE_SUBSCRIPTION }}" --vault-name "msft-git-esrp" --name "microsoft-git-esrp-auth-cert" -f auth_cert.pfx
+          Import-PfxCertificate auth_cert.pfx -CertStoreLocation Cert:\LocalMachine\My
+          az keyvault secret download --subscription "${{ secrets.AZURE_SUBSCRIPTION }}" --vault-name "msft-git-esrp" --name "microsoft-git-request-signing-cert" -f request_signing_cert.pfx
+          Import-PfxCertificate request_signing_cert.pfx -CertStoreLocation Cert:\LocalMachine\My
+      - uses: actions/setup-python@v2
+      - name: Run ESRP client
+        env:
+          AZURE_AAD_ID: ${{ secrets.AZURE_AAD_ID }}
+          # We temporarily need two AAD IDs, as we're using an SSL certificate associated
+          # with an older App Registration until we have the required hardware to approve
+          # the new certificate in SSL Admin.
+          AZURE_AAD_ID_TEMP: ${{ secrets.AAD_ID_TEMP }}
+        run: python .github/scripts/sign-debian-packages.py
+      - name: Upload signed artifact
+        uses: actions/upload-artifact@v2
+        with:
+          name: deb-package-signed
+          path: ${{ env.ARTIFACTS_DIR }}/signed
+  # End build & sign Ubuntu package
