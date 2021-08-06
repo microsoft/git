@@ -156,23 +156,7 @@ static int set_recommended_config(int reconfigure)
 		{ "core.FSCache", "true", 1 },
 		{ "core.multiPackIndex", "true", 1 },
 		{ "core.preloadIndex", "true", 1 },
-#ifndef WIN32
 		{ "core.untrackedCache", "true", 1 },
-#else
-		/*
-		 * Unfortunately, Scalar's Functional Tests demonstrated
-		 * that the untracked cache feature is unreliable on Windows
-		 * (which is a bummer because that platform would benefit the
-		 * most from it). For some reason, freshly created files seem
-		 * not to update the directory's `lastModified` time
-		 * immediately, but the untracked cache would need to rely on
-		 * that.
-		 *
-		 * Therefore, with a sad heart, we disable this very useful
-		 * feature on Windows.
-		 */
-		{ "core.untrackedCache", "false", 1 },
-#endif
 		{ "core.bare", "false", 1 },
 		{ "core.logAllRefUpdates", "true", 1 },
 		{ "credential.https://dev.azure.com.useHttpPath", "true", 1 },
@@ -212,12 +196,6 @@ static int set_recommended_config(int reconfigure)
 		{ "maintenance.incremental-repack.enabled", "true" },
 		{ "maintenance.incremental-repack.auto", "0" },
 		{ "maintenance.incremental-repack.schedule", "daily" },
-#ifdef HAVE_FSMONITOR_DAEMON_BACKEND
-		/*
-		 * Enable the built-in FSMonitor on supported platforms.
-		 */
-		{ "core.useBuiltinFSMonitor", "true" },
-#endif
 		{ "core.configWriteLockTimeoutMS", "150" },
 		{ NULL, NULL },
 	};
