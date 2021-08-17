@@ -4203,7 +4203,7 @@ static int record_conflicted_index_entries(struct merge_options *opt)
 			if (ce_skip_worktree(ce)) {
 				struct stat st;
 
-				if (!lstat(path, &st)) {
+				if (!core_virtualfilesystem && !lstat(path, &st)) {
 					char *new_name = unique_path(opt,
 								     path,
 								     "cruft");
