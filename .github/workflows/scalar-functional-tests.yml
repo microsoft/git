@@ -176,7 +176,7 @@ jobs:
           mkdir -p "$TRACE2_BASENAME"
           mkdir -p "$TRACE2_BASENAME/Event"
           mkdir -p "$TRACE2_BASENAME/Perf"
-          export GIT_TRACE_FSMONITOR="$TRACE2_BASENAME/Perf/HackFSMonitorTrace.log"
+          export GIT_TRACE_FSMONITOR="$GIT_TRACE2_PERF/HackFSMonitorTrace.log"
           git version --build-options
           cd ../out
           Scalar.FunctionalTests/$BUILD_FRAGMENT/Scalar.FunctionalTests$BUILD_FILE_EXT --test-scalar-on-path --test-git-on-path --timeout=300000 --full-suite
