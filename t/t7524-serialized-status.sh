@@ -400,7 +400,7 @@ EOF
 
 '
 
-test_expect_failure 'ensure deserialize -v does not crash' '
+test_expect_success 'ensure deserialize -v does not crash' '
 
 	git init -b main verbose_test &&
 	touch verbose_test/a &&
