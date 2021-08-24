@@ -7,6 +7,7 @@
 #include "strvec.h"
 #include "object-store.h"
 #include "packfile.h"
+#include "config.h"
 
 struct archive_dir {
 	const char *path;
@@ -214,6 +215,7 @@ int create_diagnostics_archive(struct strbuf *zip_path, enum diagnose_mode mode)
 	struct strvec archiver_args = STRVEC_INIT;
 	char **argv_copy = NULL;
 	int stdout_fd = -1, archiver_fd = -1;
+	char *cache_server_url = NULL;
 	struct strbuf buf = STRBUF_INIT;
 	int res, i;
 	struct archive_dir archive_dirs[] = {
@@ -249,6 +251,11 @@ int create_diagnostics_archive(struct strbuf *zip_path, enum diagnose_mode mode)
 	get_version_info(&buf, 1);
 
 	strbuf_addf(&buf, "Repository root: %s\n", the_repository->worktree);
+
+	git_config_get_string("gvfs.cache-server", &cache_server_url);
+	strbuf_addf(&buf, "Cache Server: %s\n\n",
+		    cache_server_url ? cache_server_url : "None");
+
 	get_disk_info(&buf);
 	write_or_die(stdout_fd, buf.buf, buf.len);
 	strvec_pushf(&archiver_args,
@@ -306,6 +313,7 @@ diagnose_cleanup:
 	free(argv_copy);
 	strvec_clear(&archiver_args);
 	strbuf_release(&buf);
+	free(cache_server_url);
 
 	return res;
 }
