@@ -194,6 +194,7 @@
 /config-list.h
 /command-list.h
 /hook-list.h
+/scalar
 *.tar.gz
 *.dsc
 *.deb
