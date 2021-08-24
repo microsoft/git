@@ -673,7 +673,7 @@ static int init_shared_object_cache(const char *url,
 static int cmd_clone(int argc, const char **argv)
 {
 	const char *branch = NULL;
-	int full_clone = 0, single_branch = 0;
+	int full_clone = 0, single_branch = 0, dummy = 0;
 	const char *cache_server_url = NULL, *local_cache_root = NULL;
 	char *default_cache_server_url = NULL, *local_cache_root_abs = NULL;
 	struct option clone_options[] = {
@@ -690,6 +690,8 @@ static int cmd_clone(int argc, const char **argv)
 		OPT_STRING(0, "local-cache-path", &local_cache_root,
 			   N_("<path>"),
 			   N_("override the path for the local Scalar cache")),
+		OPT_HIDDEN_BOOL(0, "no-fetch-commits-and-trees",
+				&dummy, N_("no longer used")),
 		OPT_END(),
 	};
 	const char * const clone_usage[] = {
