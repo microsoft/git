@@ -178,7 +178,9 @@ all advice messages.
 		Shown when the user tries to create a worktree from an
 		invalid reference, to tell the user how to create a new unborn
 		branch instead.
-
+	useCoreConfigWriteLockTimeoutMSConfig::
+		Advice shown if the deprecated 'core.configWriteLockTimeoutMS'
+		config setting is in use.
 	useCoreFSMonitorConfig::
 		Advice shown if the deprecated 'core.useBuiltinFSMonitor' config
 		setting is in use.
