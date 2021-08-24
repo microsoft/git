@@ -1,3 +1,9 @@
+index.deleteSparseDirectories::
+	When enabled, the cone mode sparse-checkout feature will delete
+	directories that are outside of the sparse-checkout cone, unless
+	such a directory contains an untracked, non-ignored file. Defaults
+	to true.
+
 index.maxPathLen::
 	Specify the maximum length of a pathname that Git will add to
 	the index or check out. Longer pathnames are rejected. The default
