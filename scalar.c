@@ -47,6 +47,9 @@ static void setup_enlistment_directory(int argc, const char **argv,
 		die(_("need a working directory"));
 
 	strbuf_trim_trailing_dir_sep(&path);
+#ifdef GIT_WINDOWS_NATIVE
+	convert_slashes(path.buf);
+#endif
 
 	/* check if currently in enlistment root with src/ workdir */
 	len = path.len;
@@ -73,21 +76,34 @@ static void setup_enlistment_directory(int argc, const char **argv,
 	strbuf_release(&path);
 }
 
+static int git_retries = 3;
+
 LAST_ARG_MUST_BE_NULL
 static int run_git(const char *arg, ...)
 {
-	struct child_process cmd = CHILD_PROCESS_INIT;
 	va_list args;
 	const char *p;
+	struct strvec argv = STRVEC_INIT;
+	int res = 0, attempts;
 
 	va_start(args, arg);
-	strvec_push(&cmd.args, arg);
+	strvec_push(&argv, arg);
 	while ((p = va_arg(args, const char *)))
-		strvec_push(&cmd.args, p);
+		strvec_push(&argv, p);
 	va_end(args);
 
-	cmd.git_cmd = 1;
-	return run_command(&cmd);
+	for (attempts = 0, res = 1;
+	     res && attempts < git_retries;
+	     attempts++) {
+		struct child_process cmd = CHILD_PROCESS_INIT;
+
+		cmd.git_cmd = 1;
+		strvec_pushv(&cmd.args, argv.v);
+		res = run_command(&cmd);
+	}
+
+	strvec_clear(&argv);
+	return res;
 }
 
 struct scalar_config {
@@ -141,6 +157,7 @@ static int set_recommended_config(int reconfigure)
 		{ "commitGraph.changedPaths", "true" },
 		{ "commitGraph.generationVersion", "1" },
 		{ "core.autoCRLF", "false" },
+		{ "core.configLockTimeout", "150" },
 		{ "core.logAllRefUpdates", "true" },
 		{ "core.safeCRLF", "false" },
 		{ "credential.https://dev.azure.com.useHttpPath", "true" },
@@ -186,6 +203,28 @@ static int set_recommended_config(int reconfigure)
 	};
 	int i;
 	char *value;
+
+	/*
+	 * If a user has "core.configWriteLockTimeoutMS" set, try to switch to
+	 * the new (non-deprecated) setting (core.configLockTimeout).
+	 */
+	if (!repo_config_get_string(the_repository, "core.configwritelocktimeoutms",
+				    &value)) {
+		char *dummy = NULL;
+		if (repo_config_get_string(the_repository, "core.configlocktimeout",
+					   &dummy) &&
+		    repo_config_set_gently(the_repository, "core.configlocktimeout",
+					   value))
+			return error(_("could not configure %s=%s"),
+				     "core.configLockTimeout", value);
+		if (repo_config_set_gently(the_repository,
+					   "core.configwritelocktimeoutms",
+					   NULL))
+			return error(_("could not configure %s=%s"),
+				     "core.configWriteLockTimeoutMS", "NULL");
+		free(value);
+		free(dummy);
+	}
 
 	for (i = 0; config[i].key; i++) {
 		if (set_config_if_missing(config + i, reconfigure))
@@ -607,6 +646,8 @@ static int cmd_diagnose(int argc, const char **argv)
 	setup_enlistment_directory(argc, argv, usage, options, &diagnostics_root);
 	strbuf_addstr(&diagnostics_root, "/.scalarDiagnostics");
 
+	/* Here, a failure should not repeat itself. */
+	git_retries = 1;
 	res = run_git("diagnose", "--mode=all", "-s", "%Y%m%d_%H%M%S",
 		      "-o", diagnostics_root.buf, NULL);
 
@@ -1040,6 +1081,9 @@ int cmd_main(int argc, const char **argv)
 	if (argc > 1) {
 		argv++;
 		argc--;
+
+		if (!strcmp(argv[0], "config"))
+			argv[0] = "reconfigure";
 
 		for (i = 0; builtins[i].name; i++)
 			if (!strcmp(builtins[i].name, argv[0]))
