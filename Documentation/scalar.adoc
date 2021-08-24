@@ -347,6 +347,9 @@ status.aheadBehind=false::
 	message that can be disabled by disabling the `advice.statusAheadBehind`
 	config.
 
+core.configWriteLockTimeoutMS::
+    Sets a timeout to work gracefully around Git config write contention.
+
 The following settings are different based on which platform is in use:
 
 core.untrackedCache=(true|false)::
