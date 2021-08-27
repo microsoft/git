@@ -35,6 +35,7 @@ jobs:
 
     env:
       BUILD_FRAGMENT: bin/Release/netcoreapp3.1
+      GIT_FORCE_UNTRACKED_CACHE: 1
 
     steps:
       - name: Check out Git's source code
