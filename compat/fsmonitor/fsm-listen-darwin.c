@@ -192,7 +192,8 @@ static int ef_is_root_renamed(const FSEventStreamEventFlags ef)
 
 static int ef_is_dropped(const FSEventStreamEventFlags ef)
 {
-	return (ef & kFSEventStreamEventFlagKernelDropped ||
+	return (ef & kFSEventStreamEventFlagMustScanSubDirs ||
+		ef & kFSEventStreamEventFlagKernelDropped ||
 		ef & kFSEventStreamEventFlagUserDropped);
 }
 
@@ -223,6 +224,9 @@ static void fsevent_callback(ConstFSEventStreamRef streamRef,
 		 */
 		path_k = paths[k];
 
+		if (trace_pass_fl(&trace_fsmonitor))
+			log_flags_set(path_k, event_flags[k]);
+
 		/*
 		 * If you want to debug FSEvents, log them to GIT_TRACE_FSMONITOR.
 		 * Please don't log them to Trace2.
@@ -244,9 +248,12 @@ static void fsevent_callback(ConstFSEventStreamRef streamRef,
 		 *     token).
 		 */
 		if (ef_is_dropped(event_flags[k])) {
-			/*
-			 * see also kFSEventStreamEventFlagMustScanSubDirs
-			 */
+			/* TODO REMOVE THIS */
+			trace2_data_string("fsmonitor", NULL, "fsm-listen/dropped/path",
+					   path_k);
+			trace2_data_intmax("fsmonitor", NULL, "fsm-listen/dropped/flags",
+					   event_flags[k]);
+
 			trace_printf_key(&trace_fsmonitor, "event: dropped");
 
 			fsmonitor_force_resync(state);
@@ -300,9 +307,6 @@ static void fsevent_callback(ConstFSEventStreamRef streamRef,
 
 		case IS_WORKDIR_PATH:
 			/* try to queue normal pathnames */
-
-			if (trace_pass_fl(&trace_fsmonitor))
-				log_flags_set(path_k, event_flags[k]);
 
 			/*
 			 * Because of the implicit "binning" (the
