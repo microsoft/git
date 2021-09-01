@@ -436,6 +436,9 @@ int cmd_diff(int argc, const char **argv, const char *prefix)
 	}
 
 	prefix = setup_git_directory_gently(&nongit);
+	
+	prepare_repo_settings(the_repository);
+	the_repository->settings.command_requires_full_index = 0;
 
 	if (!no_index) {
 		/*

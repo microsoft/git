@@ -693,6 +693,11 @@ test_expect_success 'sparse-index is not expanded' '
 	echo >>sparse-index/untracked.txt &&
 	ensure_not_expanded add . &&
 
+	echo "a test change" >> sparse-index/README.md &&
+	ensure_not_expanded diff &&
+	git -C sparse-index add README.md &&
+	ensure_not_expanded diff --staged &&
+
 	ensure_not_expanded checkout -f update-deep &&
 	(
 		sane_unset GIT_TEST_MERGE_ALGORITHM &&
