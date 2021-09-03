@@ -310,6 +310,28 @@ struct untracked_cache;
 struct progress;
 struct pattern_list;
 
+enum sparse_index_mode {
+	/*
+	 * COMPLETELY_FULL: there are no sparse directories
+	 * in the index at all.
+	 */
+	COMPLETELY_FULL = 0,
+
+	/*
+	 * COLLAPSED: the index has already been collapsed to sparse
+	 * directories whereever possible.
+	 */
+	COLLAPSED = 1,
+
+	/*
+	 * PARTIALLY_SPARSE: the sparse directories that exist are
+	 * outside the sparse-checkout boundary, but it is possible
+	 * that some file entries could collapse to sparse directory
+	 * entries.
+	 */
+	PARTIALLY_SPARSE = 2,
+};
+
 struct index_state {
 	struct cache_entry **cache;
 	unsigned int version;
@@ -323,14 +345,8 @@ struct index_state {
 		 drop_cache_tree : 1,
 		 updated_workdir : 1,
 		 updated_skipworktree : 1,
-		 fsmonitor_has_run_once : 1,
-
-		 /*
-		  * sparse_index == 1 when sparse-directory
-		  * entries exist. Requires sparse-checkout
-		  * in cone mode.
-		  */
-		 sparse_index : 1;
+		 fsmonitor_has_run_once : 1;
+	enum sparse_index_mode sparse_index;
 	struct hashmap name_hash;
 	struct hashmap dir_hash;
 	struct object_id oid;
