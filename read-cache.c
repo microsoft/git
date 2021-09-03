@@ -114,7 +114,7 @@ static const char *alternate_index_output;
 static void set_index_entry(struct index_state *istate, int nr, struct cache_entry *ce)
 {
 	if (S_ISSPARSEDIR(ce->ce_mode))
-		istate->sparse_index = 1;
+		istate->sparse_index = COLLAPSED;
 
 	istate->cache[nr] = ce;
 	add_name_hash(istate, ce);
@@ -1874,7 +1874,7 @@ static int read_index_extension(struct index_state *istate,
 		break;
 	case CACHE_EXT_SPARSE_DIRECTORIES:
 		/* no content, only an indicator */
-		istate->sparse_index = 1;
+		istate->sparse_index = COLLAPSED;
 		break;
 	default:
 		if (*ext < 'A' || 'Z' < *ext)
@@ -3191,7 +3191,7 @@ static int do_write_locked_index(struct index_state *istate, struct lock_file *l
 				 unsigned flags)
 {
 	int ret;
-	int was_full = !istate->sparse_index;
+	int was_full = istate->sparse_index == COMPLETELY_FULL;
 
 	ret = convert_to_sparse(istate, 0);
 
