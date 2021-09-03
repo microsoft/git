@@ -9,6 +9,11 @@
 #include "dir.h"
 #include "fsmonitor.h"
 
+struct modify_index_context {
+	struct index_state *write;
+	struct pattern_list *pl;
+};
+
 static struct cache_entry *construct_sparse_dir_entry(
 				struct index_state *istate,
 				const char *sparse_dir,
@@ -231,18 +236,38 @@ static int add_path_to_index(const struct object_id *oid,
 			     struct strbuf *base, const char *path,
 			     unsigned int mode, void *context)
 {
-	struct index_state *istate = (struct index_state *)context;
+	struct modify_index_context *ctx = (struct modify_index_context *)context;
 	struct cache_entry *ce;
 	size_t len = base->len;
 
-	if (S_ISDIR(mode))
-		return READ_TREE_RECURSIVE;
+	if (S_ISDIR(mode)) {
+		size_t baselen = base->len;
+		if (!ctx->pl)
+			return READ_TREE_RECURSIVE;
 
-	strbuf_addstr(base, path);
+		/*
+		 * Have we expanded to a point outside of the sparse-checkout?
+		 */
+		strbuf_addstr(base, path);
+		strbuf_add(base, "/-", 2);
 
-	ce = make_cache_entry(istate, mode, oid, base->buf, 0, 0);
+		if (path_matches_cone_mode_pattern_list(base->buf, base->len, ctx->pl)) {
+			strbuf_setlen(base, baselen);
+			return READ_TREE_RECURSIVE;
+		}
+
+		/*
+		 * The path "{base}{path}/" is a sparse directory. Create the correct
+		 * name for inserting the entry into the idnex.
+		 */
+		strbuf_setlen(base, base->len - 1);
+	} else {
+		strbuf_addstr(base, path);
+	}
+
+	ce = make_cache_entry(ctx->write, mode, oid, base->buf, 0, 0);
 	ce->ce_flags |= CE_SKIP_WORKTREE | CE_EXTENDED;
-	set_index_entry(istate, istate->cache_nr++, ce);
+	set_index_entry(ctx->write, ctx->write->cache_nr++, ce);
 
 	strbuf_setlen(base, len);
 	return 0;
@@ -254,6 +279,7 @@ void expand_to_pattern_list(struct index_state *istate,
 	int i;
 	struct index_state *full;
 	struct strbuf base = STRBUF_INIT;
+	struct modify_index_context ctx;
 
 	/*
 	 * If the index is already full, then keep it full. We will convert
@@ -294,6 +320,9 @@ void expand_to_pattern_list(struct index_state *istate,
 	full->cache_nr = 0;
 	ALLOC_ARRAY(full->cache, full->cache_alloc);
 
+	ctx.write = full;
+	ctx.pl = pl;
+
 	for (i = 0; i < istate->cache_nr; i++) {
 		struct cache_entry *ce = istate->cache[i];
 		struct tree *tree;
@@ -319,7 +348,7 @@ void expand_to_pattern_list(struct index_state *istate,
 		strbuf_add(&base, ce->name, strlen(ce->name));
 
 		read_tree_at(istate->repo, tree, &base, &ps,
-			     add_path_to_index, full);
+			     add_path_to_index, &ctx);
 
 		/* free directory entries. full entries are re-used */
 		discard_cache_entry(ce);
