@@ -294,8 +294,24 @@ void expand_to_pattern_list(struct index_state *istate,
 	 * continue. A NULL pattern set indicates a full expansion to a
 	 * full index.
 	 */
-	if (pl && !pl->use_cone_patterns)
+	if (pl && !pl->use_cone_patterns) {
 		pl = NULL;
+	} else {
+		/*
+		 * We might contract file entries into sparse-directory
+		 * entries, and for that we will need the cache tree to
+		 * be recomputed.
+		 */
+		cache_tree_free(&istate->cache_tree);
+
+		/*
+		 * If there is a problem creating the cache tree, then we
+		 * need to expand to a full index since we cannot satisfy
+		 * the current request as a sparse index.
+		 */
+		if (cache_tree_update(istate, WRITE_TREE_MISSING_OK))
+			pl = NULL;
+	}
 
 	/*
 	 * A NULL pattern set indicates we are expanding a full index, so
@@ -314,8 +330,14 @@ void expand_to_pattern_list(struct index_state *istate,
 	full = xcalloc(1, sizeof(struct index_state));
 	memcpy(full, istate, sizeof(struct index_state));
 
+	/*
+	 * This slightly-misnamed 'full' index might still be sparse if we
+	 * are only modifying the list of sparse directories. This hinges
+	 * on whether we have a non-NULL pattern list.
+	 */
+	full->sparse_index = pl ? PARTIALLY_SPARSE : COMPLETELY_FULL;
+
 	/* then change the necessary things */
-	full->sparse_index = 0;
 	full->cache_alloc = (3 * istate->cache_alloc) / 2;
 	full->cache_nr = 0;
 	ALLOC_ARRAY(full->cache, full->cache_alloc);
@@ -332,6 +354,14 @@ void expand_to_pattern_list(struct index_state *istate,
 			set_index_entry(full, full->cache_nr++, ce);
 			continue;
 		}
+
+		/* We now have a sparse directory entry. Should we expand? */
+		if (pl &&
+		    path_matches_cone_mode_pattern_list(ce->name, ce->ce_namelen, pl) <= 0) {
+			set_index_entry(full, full->cache_nr++, ce);
+			continue;
+		}
+
 		if (!(ce->ce_flags & CE_SKIP_WORKTREE))
 			warning(_("index entry is a directory, but not sparse (%08x)"),
 				ce->ce_flags);
@@ -357,7 +387,7 @@ void expand_to_pattern_list(struct index_state *istate,
 	/* Copy back into original index. */
 	memcpy(&istate->name_hash, &full->name_hash, sizeof(full->name_hash));
 	memcpy(&istate->dir_hash, &full->dir_hash, sizeof(full->dir_hash));
-	istate->sparse_index = 0;
+	istate->sparse_index = pl ? PARTIALLY_SPARSE : COMPLETELY_FULL;
 	free(istate->cache);
 	istate->cache = full->cache;
 	istate->cache_nr = full->cache_nr;
@@ -371,7 +401,7 @@ void expand_to_pattern_list(struct index_state *istate,
 
 	/* Clear and recompute the cache-tree */
 	cache_tree_free(&istate->cache_tree);
-	cache_tree_update(istate, 0);
+	cache_tree_update(istate, WRITE_TREE_MISSING_OK);
 
 	trace2_region_leave("index",
 			    pl ? "expand_to_pattern_list" : "ensure_full_index",
