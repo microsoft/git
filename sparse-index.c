@@ -9,6 +9,11 @@
 #include "dir.h"
 #include "fsmonitor.h"
 
+struct modify_index_context {
+	struct index_state *write;
+	struct pattern_list *pl;
+};
+
 static struct cache_entry *construct_sparse_dir_entry(
 				struct index_state *istate,
 				const char *sparse_dir,
@@ -173,7 +178,7 @@ int convert_to_sparse(struct index_state *istate, int flags)
 	 * If the index is already sparse, empty, or otherwise
 	 * cannot be converted to sparse, do not convert.
 	 */
-	if (istate->sparse_index || !istate->cache_nr ||
+	if (istate->sparse_index == COLLAPSED || !istate->cache_nr ||
 	    !is_sparse_index_allowed(istate, flags))
 		return 0;
 
@@ -214,7 +219,7 @@ int convert_to_sparse(struct index_state *istate, int flags)
 	FREE_AND_NULL(istate->fsmonitor_dirty);
 	FREE_AND_NULL(istate->fsmonitor_last_update);
 
-	istate->sparse_index = 1;
+	istate->sparse_index = COLLAPSED;
 	trace2_region_leave("index", "convert_to_sparse", istate->repo);
 	return 0;
 }
@@ -231,46 +236,114 @@ static int add_path_to_index(const struct object_id *oid,
 			     struct strbuf *base, const char *path,
 			     unsigned int mode, void *context)
 {
-	struct index_state *istate = (struct index_state *)context;
+	struct modify_index_context *ctx = (struct modify_index_context *)context;
 	struct cache_entry *ce;
 	size_t len = base->len;
 
-	if (S_ISDIR(mode))
-		return READ_TREE_RECURSIVE;
+	if (S_ISDIR(mode)) {
+		size_t baselen = base->len;
+		if (!ctx->pl)
+			return READ_TREE_RECURSIVE;
 
-	strbuf_addstr(base, path);
+		/*
+		 * Have we expanded to a point outside of the sparse-checkout?
+		 */
+		strbuf_addstr(base, path);
+		strbuf_add(base, "/-", 2);
 
-	ce = make_cache_entry(istate, mode, oid, base->buf, 0, 0);
+		if (path_matches_cone_mode_pattern_list(base->buf, base->len, ctx->pl)) {
+			strbuf_setlen(base, baselen);
+			return READ_TREE_RECURSIVE;
+		}
+
+		/*
+		 * The path "{base}{path}/" is a sparse directory. Create the correct
+		 * name for inserting the entry into the idnex.
+		 */
+		strbuf_setlen(base, base->len - 1);
+	} else {
+		strbuf_addstr(base, path);
+	}
+
+	ce = make_cache_entry(ctx->write, mode, oid, base->buf, 0, 0);
 	ce->ce_flags |= CE_SKIP_WORKTREE | CE_EXTENDED;
-	set_index_entry(istate, istate->cache_nr++, ce);
+	set_index_entry(ctx->write, ctx->write->cache_nr++, ce);
 
 	strbuf_setlen(base, len);
 	return 0;
 }
 
-void ensure_full_index(struct index_state *istate)
+void expand_to_pattern_list(struct index_state *istate,
+			      struct pattern_list *pl)
 {
 	int i;
 	struct index_state *full;
 	struct strbuf base = STRBUF_INIT;
+	struct modify_index_context ctx;
 
-	if (!istate || !istate->sparse_index)
+	/*
+	 * If the index is already full, then keep it full. We will convert
+	 * it to a sparse index on write, if possible.
+	 */
+	if (!istate || istate->sparse_index == COMPLETELY_FULL)
 		return;
+
+	/*
+	 * If our index is sparse, but our new pattern set does not use
+	 * cone mode patterns, then we need to expand the index before we
+	 * continue. A NULL pattern set indicates a full expansion to a
+	 * full index.
+	 */
+	if (pl && !pl->use_cone_patterns) {
+		pl = NULL;
+	} else {
+		/*
+		 * We might contract file entries into sparse-directory
+		 * entries, and for that we will need the cache tree to
+		 * be recomputed.
+		 */
+		cache_tree_free(&istate->cache_tree);
+
+		/*
+		 * If there is a problem creating the cache tree, then we
+		 * need to expand to a full index since we cannot satisfy
+		 * the current request as a sparse index.
+		 */
+		if (cache_tree_update(istate, WRITE_TREE_MISSING_OK))
+			pl = NULL;
+	}
+
+	/*
+	 * A NULL pattern set indicates we are expanding a full index, so
+	 * we use a special region name that indicates the full expansion.
+	 * This is used by test cases, but also helps to differentiate the
+	 * two cases.
+	 */
+	trace2_region_enter("index",
+			    pl ? "expand_to_pattern_list" : "ensure_full_index",
+			    istate->repo);
 
 	if (!istate->repo)
 		istate->repo = the_repository;
-
-	trace2_region_enter("index", "ensure_full_index", istate->repo);
 
 	/* initialize basics of new index */
 	full = xcalloc(1, sizeof(struct index_state));
 	memcpy(full, istate, sizeof(struct index_state));
 
+	/*
+	 * This slightly-misnamed 'full' index might still be sparse if we
+	 * are only modifying the list of sparse directories. This hinges
+	 * on whether we have a non-NULL pattern list.
+	 */
+	full->sparse_index = pl ? PARTIALLY_SPARSE : COMPLETELY_FULL;
+
 	/* then change the necessary things */
-	full->sparse_index = 0;
 	full->cache_alloc = (3 * istate->cache_alloc) / 2;
 	full->cache_nr = 0;
 	ALLOC_ARRAY(full->cache, full->cache_alloc);
+
+	ctx.write = full;
+	ctx.pl = pl;
 
 	for (i = 0; i < istate->cache_nr; i++) {
 		struct cache_entry *ce = istate->cache[i];
@@ -281,6 +354,14 @@ void ensure_full_index(struct index_state *istate)
 			set_index_entry(full, full->cache_nr++, ce);
 			continue;
 		}
+
+		/* We now have a sparse directory entry. Should we expand? */
+		if (pl &&
+		    path_matches_cone_mode_pattern_list(ce->name, ce->ce_namelen, pl) <= 0) {
+			set_index_entry(full, full->cache_nr++, ce);
+			continue;
+		}
+
 		if (!(ce->ce_flags & CE_SKIP_WORKTREE))
 			warning(_("index entry is a directory, but not sparse (%08x)"),
 				ce->ce_flags);
@@ -297,7 +378,7 @@ void ensure_full_index(struct index_state *istate)
 		strbuf_add(&base, ce->name, strlen(ce->name));
 
 		read_tree_at(istate->repo, tree, &base, &ps,
-			     add_path_to_index, full);
+			     add_path_to_index, &ctx);
 
 		/* free directory entries. full entries are re-used */
 		discard_cache_entry(ce);
@@ -306,7 +387,7 @@ void ensure_full_index(struct index_state *istate)
 	/* Copy back into original index. */
 	memcpy(&istate->name_hash, &full->name_hash, sizeof(full->name_hash));
 	memcpy(&istate->dir_hash, &full->dir_hash, sizeof(full->dir_hash));
-	istate->sparse_index = 0;
+	istate->sparse_index = pl ? PARTIALLY_SPARSE : COMPLETELY_FULL;
 	free(istate->cache);
 	istate->cache = full->cache;
 	istate->cache_nr = full->cache_nr;
@@ -320,9 +401,16 @@ void ensure_full_index(struct index_state *istate)
 
 	/* Clear and recompute the cache-tree */
 	cache_tree_free(&istate->cache_tree);
-	cache_tree_update(istate, 0);
+	cache_tree_update(istate, WRITE_TREE_MISSING_OK);
 
-	trace2_region_leave("index", "ensure_full_index", istate->repo);
+	trace2_region_leave("index",
+			    pl ? "expand_to_pattern_list" : "ensure_full_index",
+			    istate->repo);
+}
+
+void ensure_full_index(struct index_state *istate)
+{
+	expand_to_pattern_list(istate, NULL);
 }
 
 void ensure_correct_sparsity(struct index_state *istate)
