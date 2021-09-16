@@ -1303,6 +1303,16 @@ test_expect_success 'sparse-index is not expanded' '
 	echo >>sparse-index/untracked.txt &&
 	ensure_not_expanded add . &&
 
+	echo >>sparse-index/a &&
+	ensure_not_expanded stash &&
+	ensure_not_expanded stash list &&
+	ensure_not_expanded stash show stash@{0} &&
+	ensure_not_expanded stash drop stash@{0} &&
+
+	ensure_not_expanded stash create &&
+	oid=$(git -C sparse-index stash create) &&
+	ensure_not_expanded stash store -m "test" $oid &&
+	ensure_not_expanded reset --hard &&
 	ensure_not_expanded checkout-index -f a &&
 	ensure_not_expanded checkout-index -f --all &&
 	for ref in update-deep update-folder1 update-folder2 update-deep
