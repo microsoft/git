@@ -554,7 +554,7 @@ static int do_apply_stash(const char *prefix, struct stash_info *info,
 	bases[0] = &info->b_tree;
 
 	ret = merge_recursive_generic(&o, &c_tree, &info->w_tree, 1, bases,
-				      &result);
+				      merge_recursive, &result);
 	if (ret) {
 		rerere(0);
 
