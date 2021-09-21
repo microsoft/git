@@ -4737,7 +4737,8 @@ void merge_incore_recursive(struct merge_options *opt,
 	trace2_region_enter("merge", "incore_recursive", opt->repo);
 
 	/* We set the ancestor label based on the merge_bases */
-	assert(opt->ancestor == NULL);
+	assert(opt->ancestor == NULL ||
+	       !strcmp(opt->ancestor, "constructed merge base"));
 
 	trace2_region_enter("merge", "merge_start", opt->repo);
 	merge_start(opt, result);
