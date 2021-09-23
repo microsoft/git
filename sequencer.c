@@ -699,7 +699,7 @@ static int do_recursive_merge(struct repository *r,
 	o.branch2 = next ? next_label : "(empty tree)";
 	if (is_rebase_i(opts))
 		o.buffer_output = 2;
-	o.show_rename_progress = 1;
+	o.show_rename_progress = isatty(2);
 
 	head_tree = parse_tree_indirect(head);
 	next_tree = next ? repo_get_commit_tree(r, next) : empty_tree(r);
