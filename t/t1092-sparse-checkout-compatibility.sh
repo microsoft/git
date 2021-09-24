@@ -1310,6 +1310,9 @@ test_expect_success 'sparse-index is not expanded' '
 	ensure_not_expanded stash apply stash@{0} &&
 	ensure_not_expanded stash drop stash@{0} &&
 
+	ensure_not_expanded stash -u &&
+	ensure_not_expanded stash pop &&
+
 	ensure_not_expanded stash create &&
 	oid=$(git -C sparse-index stash create) &&
 	ensure_not_expanded stash store -m "test" $oid &&
@@ -1591,28 +1594,6 @@ test_expect_success 'sparse index is not expanded: sparse-checkout' '
 	# or not.
 	ensure_not_expanded sparse-checkout set --skip-checks deep/deeper1 &&
 	ensure_not_expanded sparse-checkout set
-'
-
-# NEEDSWORK: although the full repository's index is _not_ expanded as part of
-# stash, a temporary index, which is _not_ sparse, is created when stashing and
-# applying a stash of untracked files. As a result, the test reports that it
-# finds an instance of `ensure_full_index`, but it does not carry with it the
-# performance implications of expanding the full repository index.
-test_expect_success 'sparse index is not expanded: stash -u' '
-	init_repos &&
-
-	mkdir -p sparse-index/folder1 &&
-	echo >>sparse-index/README.md &&
-	echo >>sparse-index/a &&
-	echo >>sparse-index/folder1/new &&
-
-	GIT_TRACE2_EVENT="$(pwd)/trace2.txt" GIT_TRACE2_EVENT_NESTING=10 \
-		git -C sparse-index stash -u &&
-	test_region index ensure_full_index trace2.txt &&
-
-	GIT_TRACE2_EVENT="$(pwd)/trace2.txt" GIT_TRACE2_EVENT_NESTING=10 \
-		git -C sparse-index stash pop &&
-	test_region index ensure_full_index trace2.txt
 '
 
 # NEEDSWORK: similar to `git add`, untracked files outside of the sparse
