@@ -3,6 +3,7 @@
 #include "commit.h"
 #include "date.h"
 #include "gettext.h"
+#include "gvfs.h"
 #include "hex.h"
 #include "odb.h"
 #include "pkt-line.h"
@@ -50,7 +51,7 @@ static void append_negative_object(struct repository *r,
 	 * The remote end may have advertised objects that we do not have in
 	 * our object database. Skip those, as we cannot use them as boundary.
 	 */
-	if (!odb_has_object(r->objects, oid, 0))
+	if (!gvfs_config_is_set(r, GVFS_MISSING_OK) && !odb_has_object(r->objects, oid, 0))
 		return;
 	oid_array_append(haves, oid);
 }

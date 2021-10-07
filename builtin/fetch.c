@@ -21,6 +21,9 @@
 #include "string-list.h"
 #include "remote.h"
 #include "transport.h"
+#include "gvfs.h"
+#include "gvfs-helper-client.h"
+#include "packfile.h"
 #include "run-command.h"
 #include "parse-options.h"
 #include "sigchain.h"
@@ -1250,6 +1253,13 @@ static int store_updated_refs(struct display_state *display_state,
 
 		opt.exclude_hidden_refs_section = "fetch";
 		rm = ref_map;
+
+		/*
+		 * Before checking connectivity, be really sure we have the
+		 * latest pack-files loaded into memory.
+		 */
+		odb_reprepare(the_repository->objects);
+
 		if (check_connected(iterate_ref_map, &rm, &opt)) {
 			rc = error(_("%s did not send all necessary objects"),
 				   display_state->url);
@@ -1390,6 +1400,7 @@ static int check_exist_and_connected(struct ref *ref_map)
 {
 	struct ref *rm = ref_map;
 	struct check_connected_options opt = CHECK_CONNECTED_INIT;
+	enum odb_has_object_flags flags = ODB_HAS_OBJECT_RECHECK_PACKED;
 	struct ref *r;
 
 	/*
@@ -1411,11 +1422,15 @@ static int check_exist_and_connected(struct ref *ref_map)
 
 	/*
 	 * check_connected() allows objects to merely be promised, but
-	 * we need all direct targets to exist.
+	 * we need all direct targets to exist. A virtualized object store
+	 * may need to fetch those targets through its object providers.
 	 */
+	if (gvfs_virtualize_objects(the_repository))
+		flags |= ODB_HAS_OBJECT_FETCH_PROMISOR;
+
 	for (r = rm; r; r = r->next) {
 		if (!odb_has_object(the_repository->objects, &r->old_oid,
-				    ODB_HAS_OBJECT_RECHECK_PACKED))
+				    flags))
 			return -1;
 	}
 
@@ -2505,7 +2520,7 @@ static int fetch_one(struct remote *remote, int argc, const char **argv,
 int cmd_fetch(int argc,
 	      const char **argv,
 	      const char *prefix,
-	      struct repository *repo UNUSED)
+	      struct repository *repo)
 {
 	struct fetch_config config = {
 		.display_format = DISPLAY_FORMAT_FULL,
@@ -2781,6 +2796,9 @@ int cmd_fetch(int argc,
 		}
 	}
 	string_list_remove_duplicates(&list, 0);
+
+	if (gvfs_config_is_set(repo, GVFS_PREFETCH_DURING_FETCH))
+		gh_client__prefetch(0, NULL);
 
 	if (negotiate_only) {
 		struct oidset acked_commits = OIDSET_INIT;
