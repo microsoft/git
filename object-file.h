@@ -62,7 +62,8 @@ int odb_source_loose_has_object(struct odb_source *source,
 				const struct object_id *oid);
 
 int odb_source_loose_freshen_object(struct odb_source *source,
-				    const struct object_id *oid);
+				    const struct object_id *oid,
+				    int skip_virtualized_objects);
 
 int odb_source_loose_write_object(struct odb_source *source,
 				  const void *buf, size_t len,
@@ -79,6 +80,14 @@ int odb_source_loose_write_stream(struct odb_source *source,
  */
 struct oidtree *odb_source_loose_cache(struct odb_source *source,
 				       const struct object_id *oid);
+
+/*
+ * Add a new object to the loose object cache (possibly after the
+ * cache was populated).  This might be used after dynamically
+ * fetching a missing object.
+ */
+void odb_source_loose_cache_add_new_oid(struct odb_source *source,
+				 const struct object_id *oid);
 
 /*
  * Put in `buf` the name of the file in the local object database that

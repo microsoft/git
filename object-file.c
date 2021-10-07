@@ -15,6 +15,7 @@
 #include "environment.h"
 #include "fsck.h"
 #include "gettext.h"
+#include "gvfs.h"
 #include "hex.h"
 #include "loose.h"
 #include "object-file-convert.h"
@@ -92,17 +93,27 @@ int check_and_freshen_file(const char *fn, int freshen)
 
 static int check_and_freshen_source(struct odb_source *source,
 				    const struct object_id *oid,
-				    int freshen)
+				    int freshen, int skip_virtualized_objects)
 {
 	static struct strbuf path = STRBUF_INIT;
+	int ret, tried_hook = 0;
+
 	odb_loose_path(source, &path, oid);
-	return check_and_freshen_file(path.buf, freshen);
+retry:
+	ret = check_and_freshen_file(path.buf, freshen);
+	if (!ret && gvfs_virtualize_objects(source->odb->repo) &&
+	    !skip_virtualized_objects && !tried_hook) {
+		tried_hook = 1;
+		if (!read_object_process(source->odb->repo, oid))
+			goto retry;
+	}
+	return ret;
 }
 
 int odb_source_loose_has_object(struct odb_source *source,
 				const struct object_id *oid)
 {
-	return check_and_freshen_source(source, oid, 0);
+	return check_and_freshen_source(source, oid, 0, 0);
 }
 
 int format_object_header(char *str, size_t size, enum object_type type,
@@ -992,9 +1003,10 @@ static int write_loose_object(struct odb_source *source,
 }
 
 int odb_source_loose_freshen_object(struct odb_source *source,
-				    const struct object_id *oid)
+				    const struct object_id *oid,
+				    int skip_virtualized_objects)
 {
-	return !!check_and_freshen_source(source, oid, 1);
+	return !!check_and_freshen_source(source, oid, 1, skip_virtualized_objects);
 }
 
 int odb_source_loose_write_stream(struct odb_source *source,
@@ -1076,7 +1088,7 @@ int odb_source_loose_write_stream(struct odb_source *source,
 		die(_("deflateEnd on stream object failed (%d)"), ret);
 	close_loose_object(source, fd, tmp_file.buf);
 
-	if (odb_freshen_object(source->odb, oid)) {
+	if (odb_freshen_object(source->odb, oid, 1)) {
 		unlink_or_warn(tmp_file.buf);
 		goto cleanup;
 	}
@@ -1138,7 +1150,7 @@ int odb_source_loose_write_object(struct odb_source *source,
 	 * it out into .git/objects/??/?{38} file.
 	 */
 	write_object_file_prepare(algo, buf, len, type, oid, hdr, &hdrlen);
-	if (odb_freshen_object(source->odb, oid))
+	if (odb_freshen_object(source->odb, oid, 1))
 		return 0;
 	if (write_loose_object(source, oid, hdr, hdrlen, buf, len, 0, flags))
 		return -1;
@@ -1818,6 +1830,13 @@ struct oidtree *odb_source_loose_cache(struct odb_source *source,
 	*bitmap |= mask;
 	strbuf_release(&buf);
 	return source->loose->cache;
+}
+
+void odb_source_loose_cache_add_new_oid(struct odb_source *source,
+					const struct object_id *oid)
+{
+	struct oidtree *cache = odb_source_loose_cache(source, oid);
+	append_loose_object(oid, NULL, cache);
 }
 
 static void odb_source_loose_clear_cache(struct odb_source_loose *loose)
