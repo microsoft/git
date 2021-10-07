@@ -4,6 +4,8 @@
  * Copyright (C) Linus Torvalds, 2005
  */
 #include "cache.h"
+#include "gvfs.h"
+#include "virtualfilesystem.h"
 #include "config.h"
 #include "diff.h"
 #include "diffcore.h"
@@ -1853,7 +1855,10 @@ static int read_index_extension(struct index_state *istate,
 {
 	switch (CACHE_EXT(ext)) {
 	case CACHE_EXT_TREE:
+		trace2_region_enter("index", "read/extension/cache_tree", NULL);
 		istate->cache_tree = cache_tree_read(data, sz);
+		trace2_data_intmax("index", NULL, "read/extension/cache_tree/bytes", (intmax_t)sz);
+		trace2_region_leave("index", "read/extension/cache_tree", NULL);
 		break;
 	case CACHE_EXT_RESOLVE_UNDO:
 		istate->resolve_undo = resolve_undo_read(data, sz);
@@ -2069,6 +2074,7 @@ static void post_read_index_from(struct index_state *istate)
 	tweak_untracked_cache(istate);
 	tweak_split_index(istate);
 	tweak_fsmonitor(istate);
+	apply_virtualfilesystem(istate);
 }
 
 static size_t estimate_cache_size_from_compressed(unsigned int entries)
@@ -2139,6 +2145,17 @@ static void *load_index_extensions(void *_data)
 	}
 
 	return NULL;
+}
+
+static void *load_index_extensions_threadproc(void *_data)
+{
+	void *result;
+
+	trace2_thread_start("load_index_extensions");
+	result = load_index_extensions(_data);
+	trace2_thread_exit();
+
+	return result;
 }
 
 /*
@@ -2217,12 +2234,17 @@ static void *load_cache_entries_thread(void *_data)
 	struct load_cache_entries_thread_data *p = _data;
 	int i;
 
+	trace2_thread_start("load_cache_entries");
+
 	/* iterate across all ieot blocks assigned to this thread */
 	for (i = p->ieot_start; i < p->ieot_start + p->ieot_blocks; i++) {
 		p->consumed += load_cache_entry_block(p->istate, p->ce_mem_pool,
 			p->offset, p->ieot->entries[i].nr, p->mmap, p->ieot->entries[i].offset, NULL);
 		p->offset += p->ieot->entries[i].nr;
 	}
+
+	trace2_thread_exit();
+
 	return NULL;
 }
 
@@ -2393,7 +2415,7 @@ int do_read_index(struct index_state *istate, const char *path, int must_exist)
 			int err;
 
 			p.src_offset = extension_offset;
-			err = pthread_create(&p.pthread, NULL, load_index_extensions, &p);
+			err = pthread_create(&p.pthread, NULL, load_index_extensions_threadproc, &p);
 			if (err)
 				die(_("unable to create load_index_extensions thread: %s"), strerror(err));
 
@@ -2931,6 +2953,9 @@ static int do_write_index(struct index_state *istate, struct tempfile *tempfile,
 
 	f = hashfd(tempfile->fd, tempfile->filename.buf);
 
+	if (gvfs_config_is_set(GVFS_SKIP_SHA_ON_INDEX))
+		f->skip_hash = 1;
+
 	for (i = removed = extended = 0; i < entries; i++) {
 		if (cache[i]->ce_flags & CE_REMOVE)
 			removed++;
@@ -3097,9 +3122,13 @@ static int do_write_index(struct index_state *istate, struct tempfile *tempfile,
 	if (!strip_extensions && !drop_cache_tree && istate->cache_tree) {
 		struct strbuf sb = STRBUF_INIT;
 
+		trace2_region_enter("index", "write/extension/cache_tree", NULL);
 		cache_tree_write(&sb, istate->cache_tree);
 		err = write_index_ext_header(f, eoie_c, CACHE_EXT_TREE, sb.len) < 0;
 		hashwrite(f, sb.buf, sb.len);
+		trace2_data_intmax("index", NULL, "write/extension/cache_tree/bytes", (intmax_t)sb.len);
+		trace2_region_leave("index", "write/extension/cache_tree", NULL);
+
 		strbuf_release(&sb);
 		if (err)
 			return -1;

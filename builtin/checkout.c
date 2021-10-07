@@ -14,6 +14,7 @@
 #include "lockfile.h"
 #include "merge-recursive.h"
 #include "object-store.h"
+#include "packfile.h"
 #include "parse-options.h"
 #include "refs.h"
 #include "remote.h"
@@ -987,8 +988,16 @@ static void update_refs_for_switch(const struct checkout_opts *opts,
 	remove_branch_state(the_repository, !opts->quiet);
 	strbuf_release(&msg);
 	if (!opts->quiet &&
-	    (new_branch_info->path || (!opts->force_detach && !strcmp(new_branch_info->name, "HEAD"))))
+	    (new_branch_info->path || (!opts->force_detach && !strcmp(new_branch_info->name, "HEAD")))) {
+		unsigned long nr_unpack_entry_at_start;
+
+		trace2_region_enter("tracking", "report_tracking", the_repository);
+		nr_unpack_entry_at_start = get_nr_unpack_entry();
 		report_tracking(new_branch_info);
+		trace2_data_intmax("tracking", NULL, "report_tracking/nr_unpack_entries",
+				   (intmax_t)(get_nr_unpack_entry() - nr_unpack_entry_at_start));
+		trace2_region_leave("tracking", "report_tracking", the_repository);
+	}
 }
 
 static int add_pending_uninteresting_ref(const char *refname,

@@ -5,6 +5,7 @@
  */
 #include "cache.h"
 #include "merge-recursive.h"
+#include "virtualfilesystem.h"
 
 #include "advice.h"
 #include "alloc.h"
@@ -864,15 +865,14 @@ static int would_lose_untracked(struct merge_options *opt, const char *path)
 static int was_dirty(struct merge_options *opt, const char *path)
 {
 	struct cache_entry *ce;
-	int dirty = 1;
 
-	if (opt->priv->call_depth || !was_tracked(opt, path))
-		return !dirty;
+	if (opt->priv->call_depth || !was_tracked(opt, path) ||
+	    is_excluded_from_virtualfilesystem(path, strlen(path), DT_REG) == 1)
+		return 0;
 
 	ce = index_file_exists(opt->priv->unpack_opts.src_index,
 			       path, strlen(path), ignore_case);
-	dirty = verify_uptodate(ce, &opt->priv->unpack_opts) != 0;
-	return dirty;
+	return !ce || verify_uptodate(ce, &opt->priv->unpack_opts) != 0;
 }
 
 static int make_room_for_path(struct merge_options *opt, const char *path)
@@ -1536,7 +1536,7 @@ static int handle_change_delete(struct merge_options *opt,
 		 * path.  We could call update_file_flags() with update_cache=0
 		 * and update_wd=0, but that's a no-op.
 		 */
-		if (change_branch != opt->branch1 || alt_path)
+		if (change_branch != opt->branch1 || alt_path || !file_exists(update_path))
 			ret = update_file(opt, 0, changed, update_path);
 	}
 	free(alt_path);

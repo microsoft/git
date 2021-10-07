@@ -1,5 +1,6 @@
 #include "cache.h"
 #include "object-store.h"
+#include "gvfs-helper-client.h"
 #include "promisor-remote.h"
 #include "config.h"
 #include "transport.h"
@@ -196,7 +197,7 @@ struct promisor_remote *repo_promisor_remote_find(struct repository *r,
 
 int repo_has_promisor_remote(struct repository *r)
 {
-	return !!repo_promisor_remote_find(r, NULL);
+	return core_use_gvfs_helper || !!repo_promisor_remote_find(r, NULL);
 }
 
 static int remove_fetched_oids(struct repository *repo,
@@ -243,6 +244,15 @@ void promisor_remote_get_direct(struct repository *repo,
 
 	if (oid_nr == 0)
 		return;
+	if (core_use_gvfs_helper) {
+		enum gh_client__created ghc = GHC__CREATED__NOTHING;
+
+		trace2_data_intmax("bug", the_repository, "fetch_objects/gvfs-helper", oid_nr);
+		gh_client__queue_oid_array(oids, oid_nr);
+		if (!gh_client__drain_queue(&ghc))
+			return;
+		die(_("failed to fetch missing objects from the remote"));
+	}
 
 	promisor_remote_init(repo);
 
