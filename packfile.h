@@ -68,6 +68,7 @@ extern void (*report_garbage)(unsigned seen_bits, const char *path);
 
 void reprepare_packed_git(struct repository *r);
 void install_packed_git(struct repository *r, struct packed_git *pack);
+void install_packed_git_and_mru(struct repository *r, struct packed_git *pack);
 
 struct packed_git *get_packed_git(struct repository *r);
 struct list_head *get_packed_git_mru(struct repository *r);
@@ -221,5 +222,10 @@ int load_idx(const char *path, const unsigned int hashsz, void *idx_map,
  * turning it into the matching bytes we'd find in a pack.
  */
 int parse_pack_header_option(const char *in, unsigned char *out, unsigned int *len);
+
+/*
+ * Return the number of objects fetched from a packfile.
+ */
+unsigned long get_nr_unpack_entry(void);
 
 #endif
