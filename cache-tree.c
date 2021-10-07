@@ -1,8 +1,10 @@
 #include "cache.h"
+#include "gvfs.h"
 #include "lockfile.h"
 #include "tree.h"
 #include "tree-walk.h"
 #include "cache-tree.h"
+#include "bulk-checkin.h"
 #include "object-store.h"
 #include "replace-object.h"
 #include "promisor-remote.h"
@@ -223,7 +225,7 @@ static void discard_unused_subtrees(struct cache_tree *it)
 	}
 }
 
-int cache_tree_fully_valid(struct cache_tree *it)
+static int cache_tree_fully_valid_1(struct cache_tree *it)
 {
 	int i;
 	if (!it)
@@ -231,7 +233,7 @@ int cache_tree_fully_valid(struct cache_tree *it)
 	if (it->entry_count < 0 || !has_object_file(&it->oid))
 		return 0;
 	for (i = 0; i < it->subtree_nr; i++) {
-		if (!cache_tree_fully_valid(it->down[i]->cache_tree))
+		if (!cache_tree_fully_valid_1(it->down[i]->cache_tree))
 			return 0;
 	}
 	return 1;
@@ -240,6 +242,17 @@ int cache_tree_fully_valid(struct cache_tree *it)
 static int must_check_existence(const struct cache_entry *ce)
 {
 	return !(has_promisor_remote() && ce_skip_worktree(ce));
+}
+
+int cache_tree_fully_valid(struct cache_tree *it)
+{
+	int result;
+
+	trace2_region_enter("cache_tree", "fully_valid", NULL);
+	result = cache_tree_fully_valid_1(it);
+	trace2_region_leave("cache_tree", "fully_valid", NULL);
+
+	return result;
 }
 
 static int update_one(struct cache_tree *it,
@@ -251,7 +264,8 @@ static int update_one(struct cache_tree *it,
 		      int flags)
 {
 	struct strbuf buffer;
-	int missing_ok = flags & WRITE_TREE_MISSING_OK;
+	int missing_ok = gvfs_config_is_set(GVFS_MISSING_OK) ?
+		WRITE_TREE_MISSING_OK : (flags & WRITE_TREE_MISSING_OK);
 	int dryrun = flags & WRITE_TREE_DRY_RUN;
 	int repair = flags & WRITE_TREE_REPAIR;
 	int to_invalidate = 0;
@@ -420,7 +434,29 @@ static int update_one(struct cache_tree *it,
 			continue;
 
 		strbuf_grow(&buffer, entlen + 100);
-		strbuf_addf(&buffer, "%o %.*s%c", mode, entlen, path + baselen, '\0');
+
+		switch (mode) {
+		case 0100644:
+			strbuf_add(&buffer, "100644 ", 7);
+			break;
+		case 0100664:
+			strbuf_add(&buffer, "100664 ", 7);
+			break;
+		case 0100755:
+			strbuf_add(&buffer, "100755 ", 7);
+			break;
+		case 0120000:
+			strbuf_add(&buffer, "120000 ", 7);
+			break;
+		case 0160000:
+			strbuf_add(&buffer, "160000 ", 7);
+			break;
+		default:
+			strbuf_addf(&buffer, "%o ", mode);
+			break;
+		}
+		strbuf_add(&buffer, path + baselen, entlen);
+		strbuf_addch(&buffer, '\0');
 		strbuf_add(&buffer, oid->hash, the_hash_algo->rawsz);
 
 #if DEBUG_CACHE_TREE
@@ -474,8 +510,10 @@ int cache_tree_update(struct index_state *istate, int flags)
 
 	trace_performance_enter();
 	trace2_region_enter("cache_tree", "update", the_repository);
+	begin_odb_transaction();
 	i = update_one(istate->cache_tree, istate->cache, istate->cache_nr,
 		       "", 0, &skip, flags);
+	end_odb_transaction();
 	trace2_region_leave("cache_tree", "update", the_repository);
 	trace_performance_leave("cache_tree_update");
 	if (i < 0)
@@ -812,14 +850,14 @@ void prime_cache_tree(struct repository *r,
 {
 	struct strbuf tree_path = STRBUF_INIT;
 
-	trace2_region_enter("cache-tree", "prime_cache_tree", the_repository);
+	trace2_region_enter("cache-tree", "prime_cache_tree", r);
 	cache_tree_free(&istate->cache_tree);
 	istate->cache_tree = cache_tree();
 
 	prime_cache_tree_rec(r, istate->cache_tree, tree, &tree_path);
 	strbuf_release(&tree_path);
 	istate->cache_changed |= CACHE_TREE_CHANGED;
-	trace2_region_leave("cache-tree", "prime_cache_tree", the_repository);
+	trace2_region_leave("cache-tree", "prime_cache_tree", r);
 }
 
 /*

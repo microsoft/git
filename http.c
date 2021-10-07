@@ -134,13 +134,21 @@ static char *cached_accept_language;
 
 static char *http_ssl_backend;
 
-static int http_schannel_check_revoke = 1;
+static int http_schannel_check_revoke_mode =
+#ifdef CURLSSLOPT_REVOKE_BEST_EFFORT
+	CURLSSLOPT_REVOKE_BEST_EFFORT;
+#else
+	CURLSSLOPT_NO_REVOKE;
+#endif
+
 /*
  * With the backend being set to `schannel`, setting sslCAinfo would override
  * the Certificate Store in cURL v7.60.0 and later, which is not what we want
  * by default.
  */
 static int http_schannel_use_ssl_cainfo;
+
+static int http_auto_client_cert;
 
 size_t fread_buffer(char *ptr, size_t eltsize, size_t nmemb, void *buffer_)
 {
@@ -285,12 +293,29 @@ static int http_options(const char *var, const char *value, void *cb)
 	}
 
 	if (!strcmp("http.schannelcheckrevoke", var)) {
-		http_schannel_check_revoke = git_config_bool(var, value);
+		if (value && !strcmp(value, "best-effort")) {
+			http_schannel_check_revoke_mode =
+#ifdef CURLSSLOPT_REVOKE_BEST_EFFORT
+				CURLSSLOPT_REVOKE_BEST_EFFORT;
+#else
+				CURLSSLOPT_NO_REVOKE;
+			warning(_("%s=%s unsupported by current cURL"),
+				var, value);
+#endif
+		} else
+			http_schannel_check_revoke_mode =
+				(git_config_bool(var, value) ?
+				 0 : CURLSSLOPT_NO_REVOKE);
 		return 0;
 	}
 
 	if (!strcmp("http.schannelusesslcainfo", var)) {
 		http_schannel_use_ssl_cainfo = git_config_bool(var, value);
+		return 0;
+	}
+
+	if (!strcmp("http.sslautoclientcert", var)) {
+		http_auto_client_cert = git_config_bool(var, value);
 		return 0;
 	}
 
@@ -804,13 +829,24 @@ static CURL *get_curl_handle(void)
 	}
 #endif
 
-	if (http_ssl_backend && !strcmp("schannel", http_ssl_backend) &&
-	    !http_schannel_check_revoke) {
+	if (http_ssl_backend && !strcmp("schannel", http_ssl_backend)) {
+		long ssl_options = 0;
+		if (http_schannel_check_revoke_mode) {
 #ifdef GIT_CURL_HAVE_CURLSSLOPT_NO_REVOKE
-		curl_easy_setopt(result, CURLOPT_SSL_OPTIONS, CURLSSLOPT_NO_REVOKE);
+			ssl_options |= http_schannel_check_revoke_mode;
 #else
-		warning(_("CURLSSLOPT_NO_REVOKE not supported with cURL < 7.44.0"));
+			warning(_("CURLSSLOPT_NO_REVOKE not supported with cURL < 7.44.0"));
 #endif
+		}
+
+		if (http_auto_client_cert) {
+#ifdef GIT_CURL_HAVE_CURLSSLOPT_AUTO_CLIENT_CERT
+			ssl_options |= CURLSSLOPT_AUTO_CLIENT_CERT;
+#endif
+		}
+
+		if (ssl_options)
+			curl_easy_setopt(result, CURLOPT_SSL_OPTIONS, ssl_options);
 	}
 
 	if (http_proactive_auth)
@@ -1367,6 +1403,32 @@ void run_active_slot(struct active_request_slot *slot)
 			select(max_fd+1, &readfds, &writefds, &excfds, &select_timeout);
 		}
 	}
+
+	/*
+	 * The value of slot->finished we set before the loop was used
+	 * to set our "finished" variable when our request completed.
+	 *
+	 * 1. The slot may not have been reused for another requst
+	 *    yet, in which case it still has &finished.
+	 *
+	 * 2. The slot may already be in-use to serve another request,
+	 *    which can further be divided into two cases:
+	 *
+	 * (a) If call run_active_slot() hasn't been called for that
+	 *     other request, slot->finished would have been cleared
+	 *     by get_active_slot() and has NULL.
+	 *
+	 * (b) If the request did call run_active_slot(), then the
+	 *     call would have updated slot->finished at the beginning
+	 *     of this function, and with the clearing of the member
+	 *     below, we would find that slot->finished is now NULL.
+	 *
+	 * In all cases, slot->finished has no useful information to
+	 * anybody at this point.  Some compilers warn us for
+	 * attempting to smuggle a pointer that is about to become
+	 * invalid, i.e. &finished.  We clear it here to assure them.
+	 */
+	slot->finished = NULL;
 }
 
 static void release_active_slot(struct active_request_slot *slot)
