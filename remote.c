@@ -22,6 +22,7 @@
 #include "setup.h"
 #include "string-list.h"
 #include "strvec.h"
+#include "trace2.h"
 #include "commit-reach.h"
 #include "advice.h"
 #include "connect.h"
@@ -2423,8 +2424,16 @@ int format_tracking_info(struct branch *branch, struct strbuf *sb,
 		if (is_upstream && (!push_ref || !strcmp(upstream_ref, push_ref)))
 			is_push = 1;
 
+		trace2_region_enter("tracking", "stat_tracking_pair", NULL);
 		cmp = stat_branch_pair(branch->refname, full_ref,
 				       &ours, &theirs, abf);
+		trace2_data_intmax("tracking", NULL, "stat_tracking_pair/ab_flags", abf);
+		trace2_data_intmax("tracking", NULL, "stat_tracking_pair/ab_result", cmp);
+		if (cmp >= 0 && abf == AHEAD_BEHIND_FULL) {
+		    trace2_data_intmax("tracking", NULL, "stat_tracking_pair/ab_ahead", ours);
+		    trace2_data_intmax("tracking", NULL, "stat_tracking_pair/ab_behind", theirs);
+		}
+		trace2_region_leave("tracking", "stat_tracking_pair", NULL);
 
 		if (cmp < 0) {
 			if (is_upstream) {
