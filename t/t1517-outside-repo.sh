@@ -130,11 +130,12 @@ do
 	credential-osxkeychain | cvsexportcommit | cvsimport | cvsserver | \
 	daemon | \
 	difftool--helper | format-rev | fsck-objects |  get-tar-commit-id | \
-	gui | gui--askpass | \
+	gui | gui--askpass | gvfs-helper | \
 	http-backend | http-fetch | http-push | init-db | \
 	mktag | p4 | p4.py | pickaxe | remote-ftp | remote-ftps | \
 	remote-http | remote-https | replay | send-email | \
 	sh-i18n--envsubst | shell | show | stage | survey | \
+	update-microsoft-git | \
 	upload-archive--writer | upload-pack | whatchanged)
 		h_expect_outcome=expect_failure
 		all_expect_outcome=expect_failure
