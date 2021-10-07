@@ -13,6 +13,7 @@
 #include "abspath.h"
 #include "advice.h"
 #include "date.h"
+#include "gvfs.h"
 #include "branch.h"
 #include "config.h"
 #include "parse.h"
@@ -42,6 +43,7 @@
 #include "wildmatch.h"
 #include "ws.h"
 #include "write-or-die.h"
+#include "transport.h"
 
 struct config_source {
 	struct config_source *prev;
@@ -1621,8 +1623,22 @@ int git_default_core_config(const char *var, const char *value,
 		return 0;
 	}
 
+	if (!strcmp(var, "core.gvfs")) {
+		gvfs_load_config_value(value);
+		return 0;
+	}
+
+	if (!strcmp(var, "core.usegvfshelper")) {
+		core_use_gvfs_helper = git_config_bool(var, value);
+		return 0;
+	}
+
 	if (!strcmp(var, "core.sparsecheckout")) {
-		core_apply_sparse_checkout = git_config_bool(var, value);
+		/* virtual file system relies on the sparse checkout logic so force it on */
+		if (core_virtualfilesystem)
+			core_apply_sparse_checkout = 1;
+		else
+			core_apply_sparse_checkout = git_config_bool(var, value);
 		return 0;
 	}
 
@@ -1648,6 +1664,11 @@ int git_default_core_config(const char *var, const char *value,
 
 	if (!strcmp(var, "core.maxtreedepth")) {
 		max_allowed_tree_depth = git_config_int(var, value, ctx->kvi);
+		return 0;
+	}
+
+	if (!strcmp(var, "core.virtualizeobjects")) {
+		core_virtualize_objects = git_config_bool(var, value);
 		return 0;
 	}
 
@@ -1763,6 +1784,37 @@ static int git_default_mailmap_config(const char *var, const char *value)
 	return 0;
 }
 
+static int git_default_gvfs_config(const char *var, const char *value)
+{
+	if (!strcmp(var, "gvfs.cache-server")) {
+		char *v2 = NULL;
+
+		if (!git_config_string(&v2, var, value) && v2 && *v2) {
+			free(gvfs_cache_server_url);
+			gvfs_cache_server_url = transport_anonymize_url(v2);
+		}
+		free(v2);
+		return 0;
+	}
+
+	if (!strcmp(var, "gvfs.sharedcache") && value && *value) {
+		strbuf_setlen(&gvfs_shared_cache_pathname, 0);
+		strbuf_addstr(&gvfs_shared_cache_pathname, value);
+		if (strbuf_normalize_path(&gvfs_shared_cache_pathname) < 0) {
+			/*
+			 * Pretend it wasn't set.  This will cause us to
+			 * fallback to ".git/objects" effectively.
+			 */
+			strbuf_release(&gvfs_shared_cache_pathname);
+			return 0;
+		}
+		strbuf_trim_trailing_dir_sep(&gvfs_shared_cache_pathname);
+		return 0;
+	}
+
+	return 0;
+}
+
 static int git_default_attr_config(const char *var, const char *value)
 {
 	if (!strcmp(var, "attr.tree")) {
@@ -1829,6 +1881,9 @@ int git_default_config(const char *var, const char *value,
 
 	if (starts_with(var, "sparse."))
 		return git_default_sparse_config(var, value);
+
+	if (starts_with(var, "gvfs."))
+		return git_default_gvfs_config(var, value);
 
 	/* Add other config variables here and to Documentation/config.txt. */
 	return 0;
@@ -2706,6 +2761,44 @@ int repo_config_get_max_percent_split_change(struct repository *r)
 	}
 
 	return -1; /* default value */
+}
+
+int repo_config_get_virtualfilesystem(struct repository *r)
+{
+	/* Run only once. */
+	static int virtual_filesystem_result = -1;
+	if (virtual_filesystem_result >= 0)
+		return virtual_filesystem_result;
+
+	if (repo_config_get_pathname(r, "core.virtualfilesystem", &core_virtualfilesystem))
+		core_virtualfilesystem = xstrdup_or_null(getenv("GIT_VIRTUALFILESYSTEM_TEST"));
+
+	if (core_virtualfilesystem && !*core_virtualfilesystem)
+		FREE_AND_NULL(core_virtualfilesystem);
+
+	if (core_virtualfilesystem) {
+		/*
+		 * Some git commands spawn helpers and redirect the index to a different
+		 * location.  These include "difftool -d" and the sequencer
+		 * (i.e. `git rebase -i`, `git cherry-pick` and `git revert`) and others.
+		 * In those instances we don't want to update their temporary index with
+		 * our virtualization data.
+		 */
+		char *default_index_file = xstrfmt("%s/%s", the_repository->gitdir, "index");
+		int should_run_hook = !strcmp(default_index_file, the_repository->index_file);
+
+		free(default_index_file);
+		if (should_run_hook) {
+			/* virtual file system relies on the sparse checkout logic so force it on */
+			core_apply_sparse_checkout = 1;
+			virtual_filesystem_result = 1;
+			return 1;
+		}
+		FREE_AND_NULL(core_virtualfilesystem);
+	}
+
+	virtual_filesystem_result = 0;
+	return 0;
 }
 
 int repo_config_get_index_threads(struct repository *r, int *dest)
