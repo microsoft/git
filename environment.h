@@ -11,6 +11,8 @@ struct strvec;
 extern char comment_line_char;
 extern int auto_comment_line_char;
 
+extern int core_virtualize_objects;
+
 /*
  * Wrapper of getenv() that returns a strdup value. This value is kept
  * in argv to be freed later.
@@ -144,9 +146,14 @@ int get_shared_repository(void);
 void reset_shared_repository(void);
 
 extern int core_preload_index;
+extern const char *core_virtualfilesystem;
+extern int core_gvfs;
 extern int precomposed_unicode;
 extern int protect_hfs;
 extern int protect_ntfs;
+extern int core_use_gvfs_helper;
+extern const char *gvfs_cache_server_url;
+extern struct strbuf gvfs_shared_cache_pathname;
 
 extern int core_apply_sparse_checkout;
 extern int core_sparse_checkout_cone;
