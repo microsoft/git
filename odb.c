@@ -6,7 +6,10 @@
 #include "dir.h"
 #include "environment.h"
 #include "gettext.h"
+#include "gvfs.h"
+#include "gvfs-helper-client.h"
 #include "hex.h"
+#include "hook.h"
 #include "khash.h"
 #include "lockfile.h"
 #include "loose.h"
@@ -16,15 +19,20 @@
 #include "odb.h"
 #include "packfile.h"
 #include "path.h"
+#include "pkt-line.h"
 #include "promisor-remote.h"
 #include "quote.h"
 #include "replace-object.h"
 #include "run-command.h"
 #include "setup.h"
+#include "sigchain.h"
 #include "strbuf.h"
 #include "strvec.h"
+#include "sub-process.h"
 #include "submodule.h"
 #include "tmp-objdir.h"
+#include "trace2.h"
+#include "trace.h"
 #include "trace2.h"
 #include "write-or-die.h"
 
@@ -86,16 +94,65 @@ int odb_mkstemp(struct object_database *odb,
 	return xmkstemp_mode(temp_filename->buf, mode);
 }
 
+static int gvfs_matched_shared_cache_to_alternate;
+
 /*
  * Return non-zero iff the path is usable as an alternate object database.
  */
 static bool odb_is_source_usable(struct object_database *o, const char *path)
 {
+	extern struct strbuf gvfs_shared_cache_pathname;
 	int r;
 	struct strbuf normalized_objdir = STRBUF_INIT;
 	bool usable = false;
 
 	strbuf_realpath(&normalized_objdir, o->sources->path, 1);
+
+	if (!strcmp(path, gvfs_shared_cache_pathname.buf)) {
+		/*
+		 * `gvfs.sharedCache` is the preferred alternate that we
+		 * will use with `gvfs-helper.exe` to dynamically fetch
+		 * missing objects.  It is set during git_default_config().
+		 *
+		 * Make sure the directory exists on disk before we let the
+		 * stock code discredit it.
+		 */
+		struct strbuf buf_pack_foo = STRBUF_INIT;
+		enum scld_error scld;
+
+		/*
+		 * Force create the "<odb>" and "<odb>/pack" directories, if
+		 * not present on disk.  Append an extra bogus directory to
+		 * get safe_create_leading_directories() to see "<odb>/pack"
+		 * as a leading directory of something deeper (which it
+		 * won't create).
+		 */
+		strbuf_addf(&buf_pack_foo, "%s/pack/foo", path);
+
+		scld = safe_create_leading_directories(o->repo, buf_pack_foo.buf);
+		if (scld != SCLD_OK && scld != SCLD_EXISTS) {
+			error_errno(_("could not create shared-cache ODB '%s'"),
+				    gvfs_shared_cache_pathname.buf);
+
+			strbuf_release(&buf_pack_foo);
+
+			/*
+			 * Pretend no shared-cache was requested and
+			 * effectively fallback to ".git/objects" for
+			 * fetching missing objects.
+			 */
+			strbuf_release(&gvfs_shared_cache_pathname);
+			return 0;
+		}
+
+		/*
+		 * We know that there is an alternate (either from
+		 * .git/objects/info/alternates or from a memory-only
+		 * entry) associated with the shared-cache directory.
+		 */
+		gvfs_matched_shared_cache_to_alternate++;
+		strbuf_release(&buf_pack_foo);
+	}
 
 	/* Detect cases where alternate disappeared */
 	if (!is_directory(path)) {
@@ -614,6 +671,7 @@ int odb_for_each_alternate(struct object_database *odb,
 
 void odb_prepare_alternates(struct object_database *odb)
 {
+	extern struct strbuf gvfs_shared_cache_pathname;
 	struct strvec sources = STRVEC_INIT;
 
 	if (odb->loaded_alternates)
@@ -624,6 +682,35 @@ void odb_prepare_alternates(struct object_database *odb)
 	for (size_t i = 0; i < sources.nr; i++)
 		odb_add_alternate_recursively(odb, sources.v[i], 0);
 
+	if (gvfs_shared_cache_pathname.len &&
+	    !gvfs_matched_shared_cache_to_alternate) {
+		/*
+		 * There is no entry in .git/objects/info/alternates for
+		 * the requested shared-cache directory.  Therefore, the
+		 * odb-list does not contain this directory.
+		 *
+		 * Force this directory into the odb-list as an in-memory
+		 * alternate.  Implicitly create the directory on disk, if
+		 * necessary.
+		 *
+		 * See GIT_ALTERNATE_OBJECT_DIRECTORIES for another example
+		 * of this kind of usage.
+		 *
+		 * Note: This has the net-effect of allowing Git to treat
+		 * `gvfs.sharedCache` as an unofficial alternate.  This
+		 * usage should be discouraged for compatbility reasons
+		 * with other tools in the overall Git ecosystem (that
+		 * won't know about this trick).  It would be much better
+		 * for us to update .git/objects/info/alternates instead.
+		 * The code here is considered a backstop.
+		 */
+		parse_alternates(gvfs_shared_cache_pathname.buf, '\n', NULL, &sources);
+		odb_source_read_alternates(odb->sources, &sources);
+		for (size_t i = 0; i < sources.nr; i++)
+			odb_add_alternate_recursively(odb, sources.v[i], 0);
+
+	}
+
 	odb->loaded_alternates = 1;
 
 	strvec_clear(&sources);
@@ -633,6 +720,128 @@ int odb_has_alternates(struct object_database *odb)
 {
 	odb_prepare_alternates(odb);
 	return !!odb->sources->next;
+}
+
+#define CAP_GET    (1u<<0)
+
+static int subprocess_map_initialized;
+static struct hashmap subprocess_map;
+
+struct read_object_process {
+	struct subprocess_entry subprocess;
+	unsigned int supported_capabilities;
+};
+
+static int start_read_object_fn(struct subprocess_entry *subprocess)
+{
+	struct read_object_process *entry = (struct read_object_process *)subprocess;
+	static int versions[] = {1, 0};
+	static struct subprocess_capability capabilities[] = {
+		{ "get", CAP_GET },
+		{ NULL, 0 }
+	};
+
+	return subprocess_handshake(subprocess, "git-read-object", versions,
+				    NULL, capabilities,
+				    &entry->supported_capabilities);
+}
+
+int read_object_process(struct repository *r, const struct object_id *oid)
+{
+	int err;
+	struct read_object_process *entry;
+	struct child_process *process;
+	struct strbuf status = STRBUF_INIT;
+	const char *cmd = find_hook(r, "read-object");
+	uint64_t start;
+
+	if (!cmd)
+		die(_("could not find the `read-object` hook"));
+
+	start = getnanotime();
+
+	trace2_region_enter("subprocess", "read_object",r);
+
+	if (!subprocess_map_initialized) {
+		subprocess_map_initialized = 1;
+		hashmap_init(&subprocess_map, (hashmap_cmp_fn)cmd2process_cmp,
+			     NULL, 0);
+		entry = NULL;
+	} else {
+		entry = (struct read_object_process *) subprocess_find_entry(&subprocess_map, cmd);
+	}
+
+	if (!entry) {
+		entry = xmalloc(sizeof(*entry));
+		entry->supported_capabilities = 0;
+
+		if (subprocess_start(&subprocess_map, &entry->subprocess, cmd,
+				     start_read_object_fn)) {
+			free(entry);
+			err = -1;
+			goto leave_region;
+		}
+	}
+	process = &entry->subprocess.process;
+
+	if (!(CAP_GET & entry->supported_capabilities)) {
+		err = -1;
+		goto leave_region;
+	}
+
+	sigchain_push(SIGPIPE, SIG_IGN);
+
+	err = packet_write_fmt_gently(process->in, "command=get\n");
+	if (err)
+		goto done;
+
+	err = packet_write_fmt_gently(process->in, "sha1=%s\n", oid_to_hex(oid));
+	if (err)
+		goto done;
+
+	err = packet_flush_gently(process->in);
+	if (err)
+		goto done;
+
+	err = subprocess_read_status(process->out, &status);
+	err = err ? err : strcmp(status.buf, "success");
+
+done:
+	sigchain_pop(SIGPIPE);
+
+	if (err || errno == EPIPE) {
+		err = err ? err : errno;
+		if (!strcmp(status.buf, "error")) {
+			/* The process signaled a problem with the file. */
+		}
+		else if (!strcmp(status.buf, "abort")) {
+			/*
+			 * The process signaled a permanent problem. Don't try to read
+			 * objects with the same command for the lifetime of the current
+			 * Git process.
+			 */
+			entry->supported_capabilities &= ~CAP_GET;
+		}
+		else {
+			/*
+			 * Something went wrong with the read-object process.
+			 * Force shutdown and restart if needed.
+			 */
+			error("external process '%s' failed", cmd);
+			subprocess_stop(&subprocess_map,
+					(struct subprocess_entry *)entry);
+			free(entry);
+		}
+	}
+
+	trace_performance_since(start, "read_object_process");
+
+leave_region:
+	trace2_region_leave_printf("subprocess", "read_object", r,
+				   "result %d", err);
+
+	strbuf_release(&status);
+	return err;
 }
 
 int obj_read_use_lock = 0;
@@ -682,6 +891,8 @@ static int do_oid_object_info_extended(struct object_database *odb,
 	const struct cached_object *co;
 	const struct object_id *real = oid;
 	int already_retried = 0;
+	int tried_hook = 0;
+	int tried_gvfs_helper = 0;
 
 	if (flags & OBJECT_INFO_LOOKUP_REPLACE)
 		real = lookup_replace_object(odb->repo, oid);
@@ -689,6 +900,7 @@ static int do_oid_object_info_extended(struct object_database *odb,
 	if (is_null_oid(real))
 		return -1;
 
+retry:
 	co = find_cached_object(odb, real);
 	if (co) {
 		if (oi) {
@@ -710,6 +922,7 @@ static int do_oid_object_info_extended(struct object_database *odb,
 	odb_prepare_alternates(odb);
 
 	while (1) {
+		extern int core_use_gvfs_helper;
 		struct odb_source *source;
 
 		/* Most likely it's a loose object. */
@@ -719,12 +932,45 @@ static int do_oid_object_info_extended(struct object_database *odb,
 				return 0;
 		}
 
+		if (core_use_gvfs_helper && !tried_gvfs_helper) {
+			enum gh_client__created ghc;
+
+			if (flags & OBJECT_INFO_SKIP_FETCH_OBJECT)
+				return -1;
+
+			gh_client__get_immediate(real, &ghc);
+			tried_gvfs_helper = 1;
+
+			/*
+			 * Retry the lookup IIF `gvfs-helper` created one
+			 * or more new packfiles or loose objects.
+			 */
+			if (ghc != GHC__CREATED__NOTHING)
+				continue;
+
+			/*
+			 * If `gvfs-helper` fails, we just want to return -1.
+			 * But allow the other providers to have a shot at it.
+			 * (At least until we have a chance to consolidate
+			 * them.)
+			 */
+		}
+
 		/* Not a loose object; someone else may have just packed it. */
 		if (!(flags & OBJECT_INFO_QUICK)) {
 			odb_reprepare(odb->repo->objects);
 			for (source = odb->sources; source; source = source->next)
 				if (!packfile_store_read_object_info(source->packfiles, real, oi, flags))
 					return 0;
+			if (gvfs_virtualize_objects(odb->repo) && !tried_hook) {
+				// TODO Assert or at least trace2 if gvfs-helper
+				// TODO was tried and failed and then read-object-hook
+				// TODO is successful at getting this object.
+				tried_hook = 1;
+				// TODO BUG? Should 'oid' be 'real' ?
+				if (!read_object_process(odb->repo, oid))
+					goto retry;
+			}
 		}
 
 		/*
@@ -905,6 +1151,9 @@ void *odb_read_object(struct object_database *odb,
 	unsigned flags = OBJECT_INFO_DIE_IF_CORRUPT | OBJECT_INFO_LOOKUP_REPLACE;
 	void *data;
 
+	if (gvfs_config_is_set(odb->repo, GVFS_MISSING_OK))
+		flags &= ~OBJECT_INFO_DIE_IF_CORRUPT;
+
 	oi.typep = type;
 	oi.sizep = size;
 	oi.contentp = &data;
@@ -979,7 +1228,8 @@ int odb_has_object(struct object_database *odb, const struct object_id *oid,
 }
 
 int odb_freshen_object(struct object_database *odb,
-		       const struct object_id *oid)
+		       const struct object_id *oid,
+		       int skip_virtualized_objects)
 {
 	struct odb_source *source;
 
@@ -988,7 +1238,7 @@ int odb_freshen_object(struct object_database *odb,
 		if (packfile_store_freshen_object(source->packfiles, oid))
 			return 1;
 
-		if (odb_source_loose_freshen_object(source, oid))
+		if (odb_source_loose_freshen_object(source, oid, skip_virtualized_objects))
 			return 1;
 	}
 
