@@ -171,8 +171,12 @@ extern char *apply_default_whitespace;
 extern char *apply_default_ignorewhitespace;
 extern unsigned long pack_size_limit_cfg;
 
+extern char *core_virtualfilesystem;
 extern int protect_hfs;
 extern int protect_ntfs;
+extern int core_use_gvfs_helper;
+extern char *gvfs_cache_server_url;
+extern struct strbuf gvfs_shared_cache_pathname;
 
 enum rebase_setup_type {
 	AUTOREBASE_NEVER = 0,
@@ -221,5 +225,6 @@ extern int auto_comment_line_char;
 extern bool warn_on_auto_comment_char;
 #endif /* !WITH_BREAKING_CHANGES */
 
+extern int core_virtualize_objects;
 # endif /* USE_THE_REPOSITORY_VARIABLE */
 #endif /* ENVIRONMENT_H */
