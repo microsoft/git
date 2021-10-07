@@ -121,7 +121,7 @@ static inline unsigned create_ce_flags(unsigned stage)
 #define ce_namelen(ce) ((ce)->ce_namelen)
 #define ce_size(ce) cache_entry_size(ce_namelen(ce))
 #define ce_stage(ce) ((CE_STAGEMASK & (ce)->ce_flags) >> CE_STAGESHIFT)
-#define ce_uptodate(ce) ((ce)->ce_flags & CE_UPTODATE)
+#define ce_uptodate(ce) (((ce)->ce_flags & CE_UPTODATE) || ((ce)->ce_flags & CE_FSMONITOR_VALID))
 #define ce_skip_worktree(ce) ((ce)->ce_flags & CE_SKIP_WORKTREE)
 #define ce_mark_uptodate(ce) ((ce)->ce_flags |= CE_UPTODATE)
 #define ce_intent_to_add(ce) ((ce)->ce_flags & CE_INTENT_TO_ADD)
@@ -388,6 +388,7 @@ int strcmp_offset(const char *s1, const char *s2, size_t *first_change);
 int index_dir_exists(struct index_state *istate, const char *name, int namelen);
 void adjust_dirname_case(struct index_state *istate, char *name);
 struct cache_entry *index_file_exists(struct index_state *istate, const char *name, int namelen, int igncase);
+struct cache_entry *index_file_next_match(struct index_state *istate, struct cache_entry *ce, int igncase);
 
 /*
  * Searches for an entry defined by name and namelen in the given index.
