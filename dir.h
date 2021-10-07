@@ -384,6 +384,15 @@ enum pattern_match_result {
 };
 
 /*
+ * Test if a given path is contained in the given pattern list.
+ *
+ * The given pattern list _must_ use cone mode patterns.
+ */
+enum pattern_match_result path_matches_cone_mode_pattern_list(
+				const char *pathname, int pathlen,
+				struct pattern_list *pl);
+
+/*
  * Scan the list of patterns to determine if the ordered list
  * of patterns matches on 'pathname'.
  *

@@ -45,7 +45,8 @@ void hashflush(struct hashfile *f)
 	unsigned offset = f->offset;
 
 	if (offset) {
-		the_hash_algo->update_fn(&f->ctx, f->buffer, offset);
+		if (!f->skip_hash)
+			the_hash_algo->update_fn(&f->ctx, f->buffer, offset);
 		flush(f, f->buffer, offset);
 		f->offset = 0;
 	}
@@ -64,7 +65,16 @@ int finalize_hashfile(struct hashfile *f, unsigned char *result,
 	int fd;
 
 	hashflush(f);
-	the_hash_algo->final_fn(f->buffer, &f->ctx);
+
+	/*
+	 * If we skip the hash function, be sure to create an empty hash
+	 * for the results.
+	 */
+	if (f->skip_hash)
+		memset(f->buffer, 0, the_hash_algo->rawsz);
+	else
+		the_hash_algo->final_fn(f->buffer, &f->ctx);
+
 	if (result)
 		hashcpy(result, f->buffer);
 	if (flags & CSUM_HASH_IN_STREAM)
@@ -158,6 +168,7 @@ static struct hashfile *hashfd_internal(int fd, const char *name,
 	f->buffer_len = buffer_len;
 	f->buffer = xmalloc(buffer_len);
 	f->check_buffer = NULL;
+	f->skip_hash = 0;
 
 	return f;
 }

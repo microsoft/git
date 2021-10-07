@@ -12,6 +12,7 @@
 
 #include "builtin.h"
 #include "repository.h"
+#include "gvfs.h"
 #include "config.h"
 #include "tempfile.h"
 #include "lockfile.h"
@@ -597,6 +598,9 @@ int cmd_gc(int argc, const char **argv, const char *prefix)
 	if (quiet)
 		strvec_push(&repack, "-q");
 
+	if ((!auto_gc || (auto_gc && gc_auto_threshold > 0)) && gvfs_config_is_set(GVFS_BLOCK_COMMANDS))
+		die(_("'git gc' is not supported on a GVFS repo"));
+
 	if (auto_gc) {
 		/*
 		 * Auto-gc should be least intrusive as possible.
@@ -993,6 +997,8 @@ static int write_loose_object_to_stdin(const struct object_id *oid,
 	return ++(d->count) > d->batch_size;
 }
 
+static const char *object_dir = NULL;
+
 static int pack_loose(struct maintenance_run_opts *opts)
 {
 	struct repository *r = the_repository;
@@ -1000,11 +1006,14 @@ static int pack_loose(struct maintenance_run_opts *opts)
 	struct write_loose_object_data data;
 	struct child_process pack_proc = CHILD_PROCESS_INIT;
 
+	if (!object_dir)
+		object_dir = r->objects->odb->path;
+
 	/*
 	 * Do not start pack-objects process
 	 * if there are no loose objects.
 	 */
-	if (!for_each_loose_file_in_objdir(r->objects->odb->path,
+	if (!for_each_loose_file_in_objdir(object_dir,
 					   bail_on_loose,
 					   NULL, NULL, NULL))
 		return 0;
@@ -1014,7 +1023,7 @@ static int pack_loose(struct maintenance_run_opts *opts)
 	strvec_push(&pack_proc.args, "pack-objects");
 	if (opts->quiet)
 		strvec_push(&pack_proc.args, "--quiet");
-	strvec_pushf(&pack_proc.args, "%s/pack/loose", r->objects->odb->path);
+	strvec_pushf(&pack_proc.args, "%s/pack/loose", object_dir);
 
 	pack_proc.in = -1;
 
@@ -1027,7 +1036,7 @@ static int pack_loose(struct maintenance_run_opts *opts)
 	data.count = 0;
 	data.batch_size = 50000;
 
-	for_each_loose_file_in_objdir(r->objects->odb->path,
+	for_each_loose_file_in_objdir(object_dir,
 				      write_loose_object_to_stdin,
 				      NULL,
 				      NULL,
@@ -1267,6 +1276,8 @@ static int maintenance_run_tasks(struct maintenance_run_opts *opts)
 	char *lock_path = xstrfmt("%s/maintenance", r->objects->odb->path);
 
 	if (hold_lock_file_for_update(&lk, lock_path, LOCK_NO_DEREF) < 0) {
+		struct stat st;
+		struct strbuf lock_dot_lock = STRBUF_INIT;
 		/*
 		 * Another maintenance command is running.
 		 *
@@ -1277,6 +1288,25 @@ static int maintenance_run_tasks(struct maintenance_run_opts *opts)
 		if (!opts->auto_flag && !opts->quiet)
 			warning(_("lock file '%s' exists, skipping maintenance"),
 				lock_path);
+
+		/*
+		 * Check timestamp on .lock file to see if we should
+		 * delete it to recover from a fail state.
+		 */
+		strbuf_addstr(&lock_dot_lock, lock_path);
+		strbuf_addstr(&lock_dot_lock, ".lock");
+		if (lstat(lock_dot_lock.buf, &st))
+			warning_errno(_("unable to stat '%s'"), lock_dot_lock.buf);
+		else {
+			if (st.st_mtime < time(NULL) - (6 * 60 * 60)) {
+				if (unlink(lock_dot_lock.buf))
+					warning_errno(_("unable to delete stale lock file"));
+				else
+					warning(_("deleted stale lock file"));
+			}
+		}
+
+		strbuf_release(&lock_dot_lock);
 		free(lock_path);
 		return 0;
 	}
@@ -1405,6 +1435,7 @@ static int maintenance_run(int argc, const char **argv, const char *prefix)
 {
 	int i;
 	struct maintenance_run_opts opts;
+	const char *tmp_obj_dir = NULL;
 	struct option builtin_maintenance_run_options[] = {
 		OPT_BOOL(0, "auto", &opts.auto_flag,
 			 N_("run tasks based on the state of the repository")),
@@ -1438,6 +1469,18 @@ static int maintenance_run(int argc, const char **argv, const char *prefix)
 	if (argc != 0)
 		usage_with_options(builtin_maintenance_run_usage,
 				   builtin_maintenance_run_options);
+
+	/*
+	 * To enable the VFS for Git/Scalar shared object cache, use
+	 * the gvfs.sharedcache config option to redirect the
+	 * maintenance to that location.
+	 */
+	if (!git_config_get_value("gvfs.sharedcache", &tmp_obj_dir) &&
+	    tmp_obj_dir) {
+		object_dir = xstrdup(tmp_obj_dir);
+		setenv(DB_ENVIRONMENT, object_dir, 1);
+	}
+
 	return maintenance_run_tasks(&opts);
 }
 
@@ -1961,7 +2004,7 @@ static int schtasks_schedule_task(const char *exec_path, enum schedule_priority 
 	      "</Settings>\n"
 	      "<Actions Context=\"Author\">\n"
 	      "<Exec>\n"
-	      "<Command>\"%s\\git.exe\"</Command>\n"
+	      "<Command>\"%s\\headless-git.exe\"</Command>\n"
 	      "<Arguments>--exec-path=\"%s\" for-each-repo --config=maintenance.repo maintenance run --schedule=%s</Arguments>\n"
 	      "</Exec>\n"
 	      "</Actions>\n"

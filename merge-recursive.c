@@ -5,6 +5,7 @@
  */
 #include "cache.h"
 #include "merge-recursive.h"
+#include "virtualfilesystem.h"
 
 #include "advice.h"
 #include "alloc.h"
@@ -864,15 +865,14 @@ static int would_lose_untracked(struct merge_options *opt, const char *path)
 static int was_dirty(struct merge_options *opt, const char *path)
 {
 	struct cache_entry *ce;
-	int dirty = 1;
 
-	if (opt->priv->call_depth || !was_tracked(opt, path))
-		return !dirty;
+	if (opt->priv->call_depth || !was_tracked(opt, path) ||
+	    is_excluded_from_virtualfilesystem(path, strlen(path), DT_REG) == 1)
+		return 0;
 
 	ce = index_file_exists(opt->priv->unpack_opts.src_index,
 			       path, strlen(path), ignore_case);
-	dirty = verify_uptodate(ce, &opt->priv->unpack_opts) != 0;
-	return dirty;
+	return !ce || verify_uptodate(ce, &opt->priv->unpack_opts) != 0;
 }
 
 static int make_room_for_path(struct merge_options *opt, const char *path)
@@ -993,7 +993,7 @@ static int update_file_flags(struct merge_options *opt,
 			char *lnk = xmemdupz(buf, size);
 			safe_create_leading_directories_const(path);
 			unlink(path);
-			if (symlink(lnk, path))
+			if (create_symlink(&opt->priv->orig_index, lnk, path))
 				ret = err(opt, _("failed to symlink '%s': %s"),
 					  path, strerror(errno));
 			free(lnk);
@@ -1535,7 +1535,7 @@ static int handle_change_delete(struct merge_options *opt,
 		 * path.  We could call update_file_flags() with update_cache=0
 		 * and update_wd=0, but that's a no-op.
 		 */
-		if (change_branch != opt->branch1 || alt_path)
+		if (change_branch != opt->branch1 || alt_path || !file_exists(update_path))
 			ret = update_file(opt, 0, changed, update_path);
 	}
 	free(alt_path);
@@ -3806,6 +3806,7 @@ int merge_recursive_generic(struct merge_options *opt,
 			    const struct object_id *merge,
 			    int num_merge_bases,
 			    const struct object_id **merge_bases,
+			    recursive_merge_fn_t merge_fn,
 			    struct commit **result)
 {
 	int clean;
@@ -3829,8 +3830,7 @@ int merge_recursive_generic(struct merge_options *opt,
 	}
 
 	repo_hold_locked_index(opt->repo, &lock, LOCK_DIE_ON_ERROR);
-	clean = merge_recursive(opt, head_commit, next_commit, ca,
-				result);
+	clean = merge_fn(opt, head_commit, next_commit, ca, result);
 	if (clean < 0) {
 		rollback_lock_file(&lock);
 		return clean;

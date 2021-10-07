@@ -155,6 +155,7 @@ init_repos () {
 	git -C sparse-index reset --hard &&
 
 	# initialize sparse-checkout definitions
+	git -C sparse-checkout config index.sparse false &&
 	git -C sparse-checkout sparse-checkout init --cone &&
 	git -C sparse-checkout sparse-checkout set deep &&
 	git -C sparse-index sparse-checkout init --cone --sparse-index &&
@@ -453,6 +454,43 @@ test_expect_success 'diff --cached' '
 	test_all_match git add README.md &&
 	test_all_match git diff &&
 	test_all_match git diff --cached
+'
+
+test_expect_success 'diff partially-staged' '
+	init_repos &&
+
+	write_script edit-contents <<-\EOF &&
+	echo text >>$1
+	EOF
+
+	# Add file within cone
+	test_all_match git sparse-checkout set deep &&
+	run_on_all ../edit-contents deep/testfile &&
+	test_all_match git add deep/testfile &&
+	run_on_all ../edit-contents deep/testfile &&
+
+	test_all_match git diff &&
+	test_all_match git diff --staged &&
+
+	# Add file outside cone
+	test_all_match git reset --hard &&
+	run_on_all mkdir newdirectory &&
+	run_on_all ../edit-contents newdirectory/testfile &&
+	test_all_match git sparse-checkout set newdirectory &&
+	test_all_match git add newdirectory/testfile &&
+	run_on_all ../edit-contents newdirectory/testfile &&
+	test_all_match git sparse-checkout set &&
+
+	test_all_match git diff &&
+	test_all_match git diff --staged &&
+
+	# Merge conflict outside cone
+	test_all_match git reset --hard &&
+	test_all_match git checkout merge-left &&
+	test_all_match test_must_fail git merge merge-right &&
+
+	test_all_match git diff &&
+	test_all_match git diff --staged
 '
 
 # NEEDSWORK: sparse-checkout behaves differently from full-checkout when
@@ -912,7 +950,9 @@ test_expect_success 'read-tree --merge with directory-file conflicts' '
 test_expect_success 'merge, cherry-pick, and rebase' '
 	init_repos &&
 
-	for OPERATION in "merge -m merge" cherry-pick "rebase --apply" "rebase --merge"
+	# microsoft/git specific: we need to use "quiet" mode
+	# to avoid different stderr for some rebases.
+	for OPERATION in "merge -m merge" cherry-pick "rebase -q --apply" "rebase -q --merge"
 	do
 		test_all_match git checkout -B temp update-deep &&
 		test_all_match git $OPERATION update-folder1 &&
@@ -1151,6 +1191,34 @@ test_expect_success 'clean' '
 	test_sparse_match test_path_is_dir folder1
 '
 
+test_expect_success 'show (cached blobs/trees)' '
+	init_repos &&
+
+	test_all_match git show :a &&
+	test_all_match git show :deep/a &&
+	test_sparse_match git show :folder1/a &&
+
+	# Asking "git show" for directories in the index
+	# does not work as implemented. The error message is
+	# different for a full checkout and a sparse checkout
+	# when the directory is outside of the cone.
+	test_all_match test_must_fail git show :deep/ &&
+	test_must_fail git -C full-checkout show :folder1/ &&
+	test_must_fail git -C sparse-checkout show :folder1/ &&
+
+	# The sparse index actually has "folder1" inside, so
+	# "git show :folder1/" succeeds when it did not before.
+	git -C sparse-index show :folder1/ >actual &&
+	git -C sparse-index show HEAD:folder1 >expect &&
+
+	# The output of "git show" includes the way we
+	# referenced the objects, so strip that out.
+	test_line_count = 4 actual &&
+	tail -n 2 actual >actual-trunc &&
+	tail -n 2 expect >expect-trunc &&
+	test_cmp expect-trunc actual-trunc
+'
+
 test_expect_success 'submodule handling' '
 	init_repos &&
 
@@ -1265,6 +1333,25 @@ test_expect_success 'sparse-index is not expanded' '
 	echo >>sparse-index/untracked.txt &&
 	ensure_not_expanded add . &&
 
+	ensure_not_expanded show :a &&
+	ensure_not_expanded show :deep/a &&
+
+	echo >>sparse-index/a &&
+	ensure_not_expanded stash &&
+	ensure_not_expanded stash list &&
+	ensure_not_expanded stash show stash@{0} &&
+	ensure_not_expanded stash apply stash@{0} &&
+	ensure_not_expanded stash drop stash@{0} &&
+
+	ensure_not_expanded stash -u &&
+	ensure_not_expanded stash pop &&
+
+	ensure_not_expanded stash create &&
+	oid=$(git -C sparse-index stash create) &&
+	ensure_not_expanded stash store -m "test" $oid &&
+	ensure_not_expanded reset --hard &&
+	ensure_not_expanded stash pop &&
+
 	ensure_not_expanded checkout-index -f a &&
 	ensure_not_expanded checkout-index -f --all &&
 	for ref in update-deep update-folder1 update-folder2 update-deep
@@ -1278,6 +1365,11 @@ test_expect_success 'sparse-index is not expanded' '
 	ensure_not_expanded reset --keep base &&
 	ensure_not_expanded reset --merge update-deep &&
 	ensure_not_expanded reset --hard &&
+
+	echo a test change >>sparse-index/README.md &&
+	ensure_not_expanded diff &&
+	git -C sparse-index add README.md &&
+	ensure_not_expanded diff --staged &&
 
 	ensure_not_expanded reset base -- deep/a &&
 	ensure_not_expanded reset base -- nonexistent-file &&
@@ -1514,6 +1606,45 @@ test_expect_success 'ls-files' '
 
 	# Double-check index expansion is avoided
 	ensure_not_expanded ls-files --sparse
+'
+
+test_expect_success 'sparse index is not expanded: sparse-checkout' '
+	init_repos &&
+
+	ensure_not_expanded sparse-checkout set deep/deeper2 &&
+	ensure_not_expanded sparse-checkout set deep/deeper1 &&
+	ensure_not_expanded sparse-checkout set deep &&
+	ensure_not_expanded sparse-checkout add folder1 &&
+	ensure_not_expanded sparse-checkout set deep/deeper1 &&
+	ensure_not_expanded sparse-checkout set folder2 &&
+
+	echo >>sparse-index/folder2/a &&
+	git -C sparse-index add folder2/a &&
+	ensure_not_expanded sparse-checkout add folder1 &&
+
+	# Skip checks here, since deep/deeper1 is inside a sparse directory
+	# that must be expanded to check whether `deep/deeper1` is a file
+	# or not.
+	ensure_not_expanded sparse-checkout set --skip-checks deep/deeper1 &&
+	ensure_not_expanded sparse-checkout set
+'
+
+# NEEDSWORK: similar to `git add`, untracked files outside of the sparse
+# checkout definition are successfully stashed and unstashed.
+test_expect_success 'stash -u outside sparse checkout definition' '
+	init_repos &&
+
+	write_script edit-contents <<-\EOF &&
+	echo text >>$1
+	EOF
+
+	run_on_sparse mkdir -p folder1 &&
+	run_on_all ../edit-contents folder1/new &&
+	test_all_match git stash -u &&
+	test_all_match git status --porcelain=v2 &&
+
+	test_all_match git stash pop -q &&
+	test_all_match git status --porcelain=v2
 '
 
 # NEEDSWORK: a sparse-checkout behaves differently from a full checkout

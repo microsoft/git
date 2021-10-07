@@ -301,7 +301,7 @@ int cmd_rm(int argc, const char **argv, const char *prefix)
 	for (i = 0; i < active_nr; i++) {
 		const struct cache_entry *ce = active_cache[i];
 
-		if (!include_sparse &&
+		if (!include_sparse && !core_virtualfilesystem &&
 		    (ce_skip_worktree(ce) ||
 		     !path_in_sparse_checkout(ce->name, &the_index)))
 			continue;
@@ -338,7 +338,11 @@ int cmd_rm(int argc, const char **argv, const char *prefix)
 				    *original ? original : ".");
 		}
 
-		if (only_match_skip_worktree.nr) {
+		/*
+		 * When using a virtual filesystem, we might re-add a path
+		 * that is currently virtual and we want that to succeed.
+		 */
+		if (!core_virtualfilesystem && only_match_skip_worktree.nr) {
 			advise_on_updating_sparse_paths(&only_match_skip_worktree);
 			ret = 1;
 		}

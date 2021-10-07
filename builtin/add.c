@@ -47,6 +47,7 @@ static int chmod_pathspec(struct pathspec *pathspec, char flip, int show_only)
 		int err;
 
 		if (!include_sparse &&
+		    !core_virtualfilesystem &&
 		    (ce_skip_worktree(ce) ||
 		     !path_in_sparse_checkout(ce->name, &the_index)))
 			continue;
@@ -97,7 +98,8 @@ static void update_callback(struct diff_queue_struct *q,
 		struct diff_filepair *p = q->queue[i];
 		const char *path = p->one->path;
 
-		if (!include_sparse && !path_in_sparse_checkout(path, &the_index))
+		if (!include_sparse && !core_virtualfilesystem &&
+		    !path_in_sparse_checkout(path, &the_index))
 			continue;
 
 		switch (fix_unmerged_status(p, data)) {
@@ -141,7 +143,16 @@ int add_files_to_cache(const char *prefix,
 	rev.diffopt.format_callback_data = &data;
 	rev.diffopt.flags.override_submodule_config = 1;
 	rev.max_count = 0; /* do not compare unmerged paths with stage #2 */
+
+	/*
+	 * Use an ODB transaction to optimize adding multiple objects.
+	 * This function is invoked from commands other than 'add', which
+	 * may not have their own transaction active.
+	 */
+	begin_odb_transaction();
 	run_diff_files(&rev, DIFF_RACY_IS_MODIFIED);
+	end_odb_transaction();
+
 	clear_pathspec(&rev.prune_data);
 	return !!data.add_errors;
 }
@@ -206,8 +217,9 @@ static int refresh(int verbose, const struct pathspec *pathspec)
 		if (!seen[i]) {
 			const char *path = pathspec->items[i].original;
 
-			if (matches_skip_worktree(pathspec, i, &skip_worktree_seen) ||
-			    !path_in_sparse_checkout(path, &the_index)) {
+			if (!core_virtualfilesystem &&
+			    (matches_skip_worktree(pathspec, i, &skip_worktree_seen) ||
+			     !path_in_sparse_checkout(path, &the_index))) {
 				string_list_append(&only_match_skip_worktree,
 						   pathspec->items[i].original);
 			} else {
@@ -217,7 +229,11 @@ static int refresh(int verbose, const struct pathspec *pathspec)
 		}
 	}
 
-	if (only_match_skip_worktree.nr) {
+	/*
+	 * When using a virtual filesystem, we might re-add a path
+	 * that is currently virtual and we want that to succeed.
+	 */
+	if (!core_virtualfilesystem && only_match_skip_worktree.nr) {
 		advise_on_updating_sparse_paths(&only_match_skip_worktree);
 		ret = 1;
 	}
@@ -588,6 +604,10 @@ int cmd_add(int argc, const char **argv, const char *prefix)
 	die_in_unpopulated_submodule(&the_index, prefix);
 	die_path_inside_submodule(&the_index, &pathspec);
 
+	enable_fscache(0);
+	/* We do not really re-read the index but update the up-to-date flags */
+	preload_index(&the_index, &pathspec, 0);
+
 	if (add_new_files) {
 		int baselen;
 
@@ -635,7 +655,11 @@ int cmd_add(int argc, const char **argv, const char *prefix)
 			if (seen[i])
 				continue;
 
-			if (!include_sparse &&
+			/*
+			 * When using a virtual filesystem, we might re-add a path
+			 * that is currently virtual and we want that to succeed.
+			 */
+			if (!include_sparse && !core_virtualfilesystem &&
 			    matches_skip_worktree(&pathspec, i, &skip_worktree_seen)) {
 				string_list_append(&only_match_skip_worktree,
 						   pathspec.items[i].original);
@@ -659,7 +683,6 @@ int cmd_add(int argc, const char **argv, const char *prefix)
 			}
 		}
 
-
 		if (only_match_skip_worktree.nr) {
 			advise_on_updating_sparse_paths(&only_match_skip_worktree);
 			exit_status = 1;
@@ -670,7 +693,7 @@ int cmd_add(int argc, const char **argv, const char *prefix)
 		string_list_clear(&only_match_skip_worktree, 0);
 	}
 
-	plug_bulk_checkin();
+	begin_odb_transaction();
 
 	if (add_renormalize)
 		exit_status |= renormalize_tracked_files(&pathspec, flags);
@@ -682,7 +705,7 @@ int cmd_add(int argc, const char **argv, const char *prefix)
 
 	if (chmod_arg && pathspec.nr)
 		exit_status |= chmod_pathspec(&pathspec, chmod_arg[0], show_only);
-	unplug_bulk_checkin();
+	end_odb_transaction();
 
 finish:
 	if (write_locked_index(&the_index, &lock_file,
@@ -690,6 +713,7 @@ finish:
 		die(_("Unable to write new index file"));
 
 	dir_clear(&dir);
+	enable_fscache(0);
 	UNLEAK(pathspec);
 	return exit_status;
 }

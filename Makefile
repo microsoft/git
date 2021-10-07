@@ -398,6 +398,10 @@ include shared.mak
 # Define GIT_USER_AGENT if you want to change how git identifies itself during
 # network interactions.  The default is "git/$(GIT_VERSION)".
 #
+# Define GIT_BUILT_FROM_COMMIT if you want to force the commit hash identified
+# in 'git version --build-options' to a specific value. The default is the
+# commit hash of the current HEAD.
+#
 # Define DEFAULT_HELP_FORMAT to "man", "info" or "html"
 # (defaults to "man") if you want to have a different default when
 # "git help" is called without a parameter specifying the format.
@@ -477,8 +481,14 @@ include shared.mak
 #
 # If your platform supports a built-in fsmonitor backend, set
 # FSMONITOR_DAEMON_BACKEND to the "<name>" of the corresponding
-# `compat/fsmonitor/fsm-listen-<name>.c` that implements the
-# `fsm_listen__*()` routines.
+# `compat/fsmonitor/fsm-listen-<name>.c` and
+# `compat/fsmonitor/fsm-health-<name>.c` files
+# that implement the `fsm_listen__*()` and `fsm_health__*()` routines.
+#
+# If your platform has OS-specific ways to tell if a repo is incompatible with
+# fsmonitor (whether the hook or IPC daemon version), set FSMONITOR_OS_SETTINGS
+# to the "<name>" of the corresponding `compat/fsmonitor/fsm-settings-<name>.c`
+# that implements the `fsm_os_settings__*()` routines.
 #
 # Define DEVELOPER to enable more compiler warnings. Compiler version
 # and family are auto detected, but could be overridden by defining
@@ -707,6 +717,7 @@ TEST_BUILTINS_OBJS += test-advise.o
 TEST_BUILTINS_OBJS += test-bitmap.o
 TEST_BUILTINS_OBJS += test-bloom.o
 TEST_BUILTINS_OBJS += test-chmtime.o
+TEST_BUILTINS_OBJS += test-cmp.o
 TEST_BUILTINS_OBJS += test-config.o
 TEST_BUILTINS_OBJS += test-crontab.o
 TEST_BUILTINS_OBJS += test-csprng.o
@@ -728,6 +739,7 @@ TEST_BUILTINS_OBJS += test-getcwd.o
 TEST_BUILTINS_OBJS += test-hash-speed.o
 TEST_BUILTINS_OBJS += test-hash.o
 TEST_BUILTINS_OBJS += test-hashmap.o
+TEST_BUILTINS_OBJS += test-iconv.o
 TEST_BUILTINS_OBJS += test-index-version.o
 TEST_BUILTINS_OBJS += test-json-writer.o
 TEST_BUILTINS_OBJS += test-lazy-init-name-hash.o
@@ -945,6 +957,8 @@ LIB_OBJS += gettext.o
 LIB_OBJS += gpg-interface.o
 LIB_OBJS += graph.o
 LIB_OBJS += grep.o
+LIB_OBJS += gvfs.o
+LIB_OBJS += gvfs-helper-client.o
 LIB_OBJS += hash-lookup.o
 LIB_OBJS += hashmap.o
 LIB_OBJS += help.o
@@ -1092,6 +1106,7 @@ LIB_OBJS += utf8.o
 LIB_OBJS += varint.o
 LIB_OBJS += version.o
 LIB_OBJS += versioncmp.o
+LIB_OBJS += virtualfilesystem.o
 LIB_OBJS += walker.o
 LIB_OBJS += wildmatch.o
 LIB_OBJS += worktree.o
@@ -1099,6 +1114,8 @@ LIB_OBJS += wrapper.o
 LIB_OBJS += write-or-die.o
 LIB_OBJS += ws.o
 LIB_OBJS += wt-status.o
+LIB_OBJS += wt-status-deserialize.o
+LIB_OBJS += wt-status-serialize.o
 LIB_OBJS += xdiff-interface.o
 LIB_OBJS += zlib.o
 
@@ -1214,6 +1231,7 @@ BUILTIN_OBJS += builtin/tag.o
 BUILTIN_OBJS += builtin/unpack-file.o
 BUILTIN_OBJS += builtin/unpack-objects.o
 BUILTIN_OBJS += builtin/update-index.o
+BUILTIN_OBJS += builtin/update-microsoft-git.o
 BUILTIN_OBJS += builtin/update-ref.o
 BUILTIN_OBJS += builtin/update-server-info.o
 BUILTIN_OBJS += builtin/upload-archive.o
@@ -1470,6 +1488,9 @@ else
 		CURL_CFLAGS = $(eval CURL_CFLAGS := $$(shell $$(CURL_CONFIG) --cflags))$(CURL_CFLAGS)
 	endif
 	BASIC_CFLAGS += $(CURL_CFLAGS)
+
+	PROGRAM_OBJS += gvfs-helper.o
+	TEST_PROGRAMS_NEED_X += test-gvfs-protocol
 
 	REMOTE_CURL_PRIMARY = git-remote-http$X
 	REMOTE_CURL_ALIASES = git-remote-https$X git-remote-ftp$X git-remote-ftps$X
@@ -2005,6 +2026,12 @@ endif
 ifdef FSMONITOR_DAEMON_BACKEND
 	COMPAT_CFLAGS += -DHAVE_FSMONITOR_DAEMON_BACKEND
 	COMPAT_OBJS += compat/fsmonitor/fsm-listen-$(FSMONITOR_DAEMON_BACKEND).o
+	COMPAT_OBJS += compat/fsmonitor/fsm-health-$(FSMONITOR_DAEMON_BACKEND).o
+endif
+
+ifdef FSMONITOR_OS_SETTINGS
+	COMPAT_CFLAGS += -DHAVE_FSMONITOR_OS_SETTINGS
+	COMPAT_OBJS += compat/fsmonitor/fsm-settings-$(FSMONITOR_OS_SETTINGS).o
 endif
 
 ifeq ($(TCLTK_PATH),)
@@ -2021,6 +2048,10 @@ endif
 
 ifndef PAGER_ENV
 PAGER_ENV = LESS=FRX LV=-c
+endif
+
+ifneq (,$(INCLUDE_SCALAR))
+EXTRA_PROGRAMS += contrib/scalar/scalar$X
 endif
 
 ifdef NO_INSTALL_HARDLINKS
@@ -2147,6 +2178,15 @@ GIT-USER-AGENT: FORCE
 		echo '$(GIT_USER_AGENT_SQ)' >GIT-USER-AGENT; \
 	fi
 
+GIT_BUILT_FROM_COMMIT = $(eval GIT_BUILT_FROM_COMMIT := $$(shell \
+	GIT_CEILING_DIRECTORIES="$$(CURDIR)/.." \
+	git rev-parse -q --verify HEAD 2>/dev/null))$(GIT_BUILT_FROM_COMMIT)
+GIT-BUILT-FROM-COMMIT: FORCE
+	@if test x'$(GIT_BUILT_FROM_COMMIT)' != x"`cat GIT-BUILT-FROM-COMMIT 2>/dev/null`" ; then \
+		echo >&2 "    * new built-from commit"; \
+		echo '$(GIT_BUILT_FROM_COMMIT)' >GIT-BUILT-FROM-COMMIT; \
+	fi
+
 ifdef DEFAULT_HELP_FORMAT
 BASIC_CFLAGS += -DDEFAULT_HELP_FORMAT='"$(DEFAULT_HELP_FORMAT)"'
 endif
@@ -2261,13 +2301,11 @@ PAGER_ENV_CQ_SQ = $(subst ','\'',$(PAGER_ENV_CQ))
 pager.sp pager.s pager.o: EXTRA_CPPFLAGS = \
 	-DPAGER_ENV='$(PAGER_ENV_CQ_SQ)'
 
-version.sp version.s version.o: GIT-VERSION-FILE GIT-USER-AGENT
+version.sp version.s version.o: GIT-VERSION-FILE GIT-USER-AGENT GIT-BUILT-FROM-COMMIT
 version.sp version.s version.o: EXTRA_CPPFLAGS = \
 	'-DGIT_VERSION="$(GIT_VERSION)"' \
 	'-DGIT_USER_AGENT=$(GIT_USER_AGENT_CQ_SQ)' \
-	'-DGIT_BUILT_FROM_COMMIT="$(shell \
-		GIT_CEILING_DIRECTORIES="$(CURDIR)/.." \
-		git rev-parse -q --verify HEAD 2>/dev/null)"'
+	'-DGIT_BUILT_FROM_COMMIT="$(GIT_BUILT_FROM_COMMIT)"'
 
 $(BUILT_INS): git$X
 	$(QUIET_BUILT_IN)$(RM) $@ && \
@@ -2523,7 +2561,7 @@ ifndef NO_CURL
 	OBJECTS += http.o http-walker.o remote-curl.o
 endif
 
-SCALAR_SOURCES := contrib/scalar/scalar.c
+SCALAR_SOURCES := contrib/scalar/scalar.c contrib/scalar/json-parser.c
 SCALAR_OBJECTS := $(SCALAR_SOURCES:c=o)
 OBJECTS += $(SCALAR_OBJECTS)
 
@@ -2614,7 +2652,7 @@ gettext.sp gettext.s gettext.o: GIT-PREFIX
 gettext.sp gettext.s gettext.o: EXTRA_CPPFLAGS = \
 	-DGIT_LOCALE_PATH='"$(localedir_relative_SQ)"'
 
-http-push.sp http.sp http-walker.sp remote-curl.sp imap-send.sp: SP_EXTRA_FLAGS += \
+http-push.sp http.sp http-walker.sp remote-curl.sp imap-send.sp gvfs-helper.sp: SP_EXTRA_FLAGS += \
 	-DCURL_DISABLE_TYPECHECK
 
 pack-revindex.sp: SP_EXTRA_FLAGS += -Wno-memcpy-max-count
@@ -2633,6 +2671,13 @@ compat/nedmalloc/nedmalloc.sp compat/nedmalloc/nedmalloc.o: EXTRA_CPPFLAGS = \
 	-DNDEBUG -DREPLACE_SYSTEM_ALLOCATOR
 compat/nedmalloc/nedmalloc.sp: SP_EXTRA_FLAGS += -Wno-non-pointer-null
 endif
+
+headless-git.o: compat/win32/headless.c GIT-CFLAGS
+	$(QUIET_CC)$(CC) $(ALL_CFLAGS) $(COMPAT_CFLAGS) \
+		-fno-stack-protector -o $@ -c -Wall -Wwrite-strings $<
+
+headless-git$X: headless-git.o git.res GIT-LDFLAGS
+	$(QUIET_LINK)$(CC) $(ALL_CFLAGS) $(ALL_LDFLAGS) -mwindows -o $@ $< git.res
 
 git-%$X: %.o GIT-LDFLAGS $(GITLIBS)
 	$(QUIET_LINK)$(CC) $(ALL_CFLAGS) -o $@ $(ALL_LDFLAGS) $(filter %.o,$^) $(LIBS)
@@ -2662,6 +2707,13 @@ contrib/scalar/scalar$X: $(SCALAR_OBJECTS) GIT-LDFLAGS $(GITLIBS)
 	$(QUIET_LINK)$(CC) $(ALL_CFLAGS) -o $@ $(ALL_LDFLAGS) \
 		$(filter %.o,$^) $(LIBS)
 
+bin-wrappers/scalar: contrib/scalar/Makefile
+	$(QUIET_SUBDIR0)contrib/scalar $(QUIET_SUBDIR1) ../../bin-wrappers/scalar
+
+git-gvfs-helper$X: gvfs-helper.o http.o GIT-LDFLAGS $(GITLIBS)
+	$(QUIET_LINK)$(CC) $(ALL_CFLAGS) -o $@ $(ALL_LDFLAGS) $(filter %.o,$^) \
+		$(CURL_LIBCURL) $(EXPAT_LIBEXPAT) $(LIBS)
+
 $(LIB_FILE): $(LIB_OBJS)
 	$(QUIET_AR)$(RM) $@ && $(AR) $(ARFLAGS) $@ $^
 
@@ -2687,14 +2739,23 @@ Documentation/GIT-EXCLUDED-PROGRAMS: FORCE
 .PHONY: doc man man-perl html info pdf
 doc: man-perl
 	$(MAKE) -C Documentation all
+ifneq (,$(INCLUDE_SCALAR))
+	$(QUIET_SUBDIR0)contrib/scalar $(QUIET_SUBDIR1) scalar.html scalar.1
+endif
 
 man: man-perl
 	$(MAKE) -C Documentation man
+ifneq (,$(INCLUDE_SCALAR))
+	$(QUIET_SUBDIR0)contrib/scalar $(QUIET_SUBDIR1) scalar.1
+endif
 
 man-perl: perl/build/man/man3/Git.3pm
 
 html:
 	$(MAKE) -C Documentation html
+ifneq (,$(INCLUDE_SCALAR))
+	$(QUIET_SUBDIR0)contrib/scalar $(QUIET_SUBDIR1) scalar.html
+endif
 
 info:
 	$(MAKE) -C Documentation info
@@ -2866,6 +2927,9 @@ GIT-BUILD-OPTIONS: FORCE
 ifdef FSMONITOR_DAEMON_BACKEND
 	@echo FSMONITOR_DAEMON_BACKEND=\''$(subst ','\'',$(subst ','\'',$(FSMONITOR_DAEMON_BACKEND)))'\' >>$@+
 endif
+ifdef FSMONITOR_OS_SETTINGS
+	@echo FSMONITOR_OS_SETTINGS=\''$(subst ','\'',$(subst ','\'',$(FSMONITOR_OS_SETTINGS)))'\' >>$@+
+endif
 ifdef TEST_OUTPUT_DIRECTORY
 	@echo TEST_OUTPUT_DIRECTORY=\''$(subst ','\'',$(subst ','\'',$(TEST_OUTPUT_DIRECTORY)))'\' >>$@+
 endif
@@ -2927,6 +2991,10 @@ endif
 
 test_bindir_programs := $(patsubst %,bin-wrappers/%,$(BINDIR_PROGRAMS_NEED_X) $(BINDIR_PROGRAMS_NO_X) $(TEST_PROGRAMS_NEED_X))
 
+ifneq (,$(INCLUDE_SCALAR))
+test_bindir_programs += bin-wrappers/scalar
+endif
+
 all:: $(TEST_PROGRAMS) $(test_bindir_programs)
 
 bin-wrappers/%: wrap-for-bin.sh
@@ -2947,6 +3015,9 @@ export TEST_NO_MALLOC_CHECK
 
 test: all
 	$(MAKE) -C t/ all
+ifneq (,$(INCLUDE_SCALAR))
+	$(MAKE) -C contrib/scalar/t
+endif
 
 perf: all
 	$(MAKE) -C t/perf/ all
@@ -3078,6 +3149,9 @@ install: all
 	$(INSTALL) $(INSTALL_STRIP) $(install_bindir_xprograms) '$(DESTDIR_SQ)$(bindir_SQ)'
 	$(INSTALL) $(BINDIR_PROGRAMS_NO_X) '$(DESTDIR_SQ)$(bindir_SQ)'
 
+ifneq (,$(INCLUDE_SCALAR))
+	$(INSTALL) contrib/scalar/scalar$X '$(DESTDIR_SQ)$(bindir_SQ)'
+endif
 ifdef MSVC
 	# We DO NOT install the individual foo.o.pdb files because they
 	# have already been rolled up into the exe's pdb file.
@@ -3170,6 +3244,10 @@ install-doc: install-man-perl
 
 install-man: install-man-perl
 	$(MAKE) -C Documentation install-man
+ifneq (,$(INCLUDE_SCALAR))
+	$(MAKE) -C contrib/scalar scalar.1
+	$(INSTALL) contrib/scalar/scalar.1 '$(DESTDIR_SQ)$(mandir_SQ)/man1'
+endif
 
 install-man-perl: man-perl
 	$(INSTALL) -d -m 755 '$(DESTDIR_SQ)$(mandir_SQ)/man3'
@@ -3178,6 +3256,10 @@ install-man-perl: man-perl
 
 install-html:
 	$(MAKE) -C Documentation install-html
+ifneq (,$(INCLUDE_SCALAR))
+	$(MAKE) -C contrib/scalar scalar.html
+	$(INSTALL) contrib/scalar/scalar.html '$(DESTDIR_SQ)$(htmldir)'
+endif
 
 install-info:
 	$(MAKE) -C Documentation install-info
@@ -3222,7 +3304,7 @@ dist: git-archive$(X) configure
 	@$(MAKE) -C git-gui TARDIR=../.dist-tmp-dir/git-gui dist-version
 	./git-archive --format=tar \
 		$(GIT_ARCHIVE_EXTRA_FILES) \
-		--prefix=$(GIT_TARNAME)/ HEAD^{tree} > $(GIT_TARNAME).tar
+		--prefix=$(GIT_TARNAME)/ HEAD > $(GIT_TARNAME).tar
 	@$(RM) -r .dist-tmp-dir
 	gzip -f -9 $(GIT_TARNAME).tar
 
@@ -3292,6 +3374,7 @@ cocciclean:
 clean: profile-clean coverage-clean cocciclean
 	$(RM) *.res
 	$(RM) $(OBJECTS)
+	$(RM) headless-git.o
 	$(RM) $(LIB_FILE) $(XDIFF_LIB) $(REFTABLE_LIB) $(REFTABLE_TEST_LIB)
 	$(RM) $(ALL_PROGRAMS) $(SCRIPT_LIB) $(BUILT_INS) git$X
 	$(RM) $(TEST_PROGRAMS)
@@ -3316,18 +3399,25 @@ ifndef NO_TCLTK
 	$(MAKE) -C gitk-git clean
 	$(MAKE) -C git-gui clean
 endif
+ifneq (,$(INCLUDE_SCALAR))
+	$(MAKE) -C contrib/scalar clean
+endif
 	$(RM) GIT-VERSION-FILE GIT-CFLAGS GIT-LDFLAGS GIT-BUILD-OPTIONS
 	$(RM) GIT-USER-AGENT GIT-PREFIX
 	$(RM) GIT-SCRIPT-DEFINES GIT-PERL-DEFINES GIT-PERL-HEADER GIT-PYTHON-VARS
 ifdef MSVC
 	$(RM) $(patsubst %.o,%.o.pdb,$(OBJECTS))
+	$(RM) headless-git.o.pdb
 	$(RM) $(patsubst %.exe,%.pdb,$(OTHER_PROGRAMS))
+	$(RM) $(patsubst %.exe,%.ilk,$(OTHER_PROGRAMS))
 	$(RM) $(patsubst %.exe,%.iobj,$(OTHER_PROGRAMS))
 	$(RM) $(patsubst %.exe,%.ipdb,$(OTHER_PROGRAMS))
 	$(RM) $(patsubst %.exe,%.pdb,$(PROGRAMS))
+	$(RM) $(patsubst %.exe,%.ilk,$(PROGRAMS))
 	$(RM) $(patsubst %.exe,%.iobj,$(PROGRAMS))
 	$(RM) $(patsubst %.exe,%.ipdb,$(PROGRAMS))
 	$(RM) $(patsubst %.exe,%.pdb,$(TEST_PROGRAMS))
+	$(RM) $(patsubst %.exe,%.ilk,$(TEST_PROGRAMS))
 	$(RM) $(patsubst %.exe,%.iobj,$(TEST_PROGRAMS))
 	$(RM) $(patsubst %.exe,%.ipdb,$(TEST_PROGRAMS))
 	$(RM) compat/vcbuild/MSVC-DEFS-GEN

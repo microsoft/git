@@ -53,6 +53,12 @@ struct merge_options {
 	struct merge_options_internal *priv;
 };
 
+typedef int (*recursive_merge_fn_t)(struct merge_options *opt,
+				    struct commit *h1,
+				    struct commit *h2,
+				    struct commit_list *merge_bases,
+				    struct commit **result);
+
 void init_merge_options(struct merge_options *opt, struct repository *repo);
 
 /* parse the option in s and update the relevant field of opt */
@@ -105,7 +111,7 @@ int merge_recursive(struct merge_options *opt,
 
 /*
  * merge_recursive_generic can operate on trees instead of commits, by
- * wrapping the trees into virtual commits, and calling merge_recursive().
+ * wrapping the trees into virtual commits, and calling the provided merge_fn.
  * It also writes out the in-memory index to disk if the merge is successful.
  *
  * Outputs:
@@ -120,6 +126,7 @@ int merge_recursive_generic(struct merge_options *opt,
 			    const struct object_id *merge,
 			    int num_merge_bases,
 			    const struct object_id **merge_bases,
+			    recursive_merge_fn_t merge_fn,
 			    struct commit **result);
 
 #endif

@@ -500,6 +500,13 @@ test_expect_success 'path limiting with import-marks does not lose unmodified fi
 	grep file0 actual
 '
 
+test_expect_success 'path limiting works' '
+	git fast-export simple -- file >actual &&
+	sed -ne "s/^M .* //p" <actual | sort -u >actual.files &&
+	echo file >expect &&
+	test_cmp expect actual.files
+'
+
 test_expect_success 'avoid corrupt stream with non-existent mark' '
 	test_create_repo avoid_non_existent_mark &&
 	(
@@ -780,6 +787,17 @@ test_expect_success 'fast-export --first-parent outputs all revisions output by 
 		test_cmp expected actual &&
 		test_line_count = 4 actual
 	)
+'
+
+cat > expected << EOF
+reset refs/heads/master
+from $(git rev-parse master)
+
+EOF
+
+test_expect_failure 'refs are updated even if no commits need to be exported' '
+	git fast-export master..master > actual &&
+	test_cmp expected actual
 '
 
 test_done

@@ -4203,7 +4203,7 @@ static int record_conflicted_index_entries(struct merge_options *opt)
 			if (ce_skip_worktree(ce)) {
 				struct stat st;
 
-				if (!lstat(path, &st)) {
+				if (!core_virtualfilesystem && !lstat(path, &st)) {
 					char *new_name = unique_path(opt,
 								     path,
 								     "cruft");
@@ -4737,7 +4737,8 @@ void merge_incore_recursive(struct merge_options *opt,
 	trace2_region_enter("merge", "incore_recursive", opt->repo);
 
 	/* We set the ancestor label based on the merge_bases */
-	assert(opt->ancestor == NULL);
+	assert(opt->ancestor == NULL ||
+	       !strcmp(opt->ancestor, "constructed merge base"));
 
 	trace2_region_enter("merge", "merge_start", opt->repo);
 	merge_start(opt, result);
