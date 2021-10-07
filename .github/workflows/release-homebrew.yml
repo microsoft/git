@@ -1,0 +1,122 @@
+name: Update Homebrew Tap
+on:
+  release:
+    types: [released]
+
+permissions:
+  id-token: write # required for Azure login via OIDC
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    environment: release
+    steps:
+    - id: version
+      name: Compute version number
+      run: |
+        echo "result=$(echo $GITHUB_REF | sed -e "s/^refs\/tags\/v//")" >>$GITHUB_OUTPUT
+    - id: hash
+      name: Look up release asset digest
+      env:
+        GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        GH_REPO: ${{ github.repository }}
+        TAG_NAME: v${{ steps.version.outputs.result }}
+        # Regex (Oniguruma) used by jq's `test()` to pick the macOS
+        # installer asset. Kept permissive to match `git-(.*)\.pkg` from
+        # the previous mjcheetham/asset-hash invocation.
+        ASSET_PATTERN: 'git-(.*)\.pkg'
+      run: |
+        set -euo pipefail
+
+        # GitHub has been observed to occasionally serve the unicorn
+        # error page with a 200 status code for release-asset downloads,
+        # leading to bogus checksums when the asset is hashed locally
+        # (see microsoft/homebrew-git#102). Use the digest reported by
+        # the Releases API instead, and log every intermediate value so
+        # any future API misbehaviour can be diagnosed from the workflow
+        # run alone.
+
+        echo "::group::Fetching release metadata"
+        echo "Repository: $GH_REPO"
+        echo "Tag:        $TAG_NAME"
+        echo "Endpoint:   repos/$GH_REPO/releases/tags/$TAG_NAME"
+        release_json=$(gh api \
+          -H "Accept: application/vnd.github+json" \
+          -H "X-GitHub-Api-Version: 2022-11-28" \
+          "repos/$GH_REPO/releases/tags/$TAG_NAME")
+        jq '{id, tag_name, name, html_url, draft, prerelease,
+             published_at, asset_count: (.assets | length)}' \
+          <<<"$release_json"
+        echo "::endgroup::"
+
+        echo "::group::Release assets"
+        jq -r '.assets[]
+          | "\(.id)\t\(.name)\tsize=\(.size)\tdigest=\(.digest // "<none>")"' \
+          <<<"$release_json"
+        echo "::endgroup::"
+
+        echo "::group::Matching asset (pattern: $ASSET_PATTERN)"
+        asset_json=$(jq --arg pat "$ASSET_PATTERN" '
+          [ .assets[] | select(.name | test($pat)) ] as $matches
+          | if ($matches | length) == 0 then
+              error("no asset matches pattern \($pat)")
+            elif ($matches | length) > 1 then
+              error("multiple assets match pattern \($pat): " +
+                    ([$matches[].name] | join(", ")))
+            else $matches[0] end' <<<"$release_json")
+        jq '{id, name, label, content_type, state, size, digest,
+             download_count, created_at, updated_at,
+             browser_download_url, url}' <<<"$asset_json"
+        echo "::endgroup::"
+
+        digest=$(jq -r '.digest // ""' <<<"$asset_json")
+        case "$digest" in
+        sha256:*)
+          sha256=${digest#sha256:}
+          ;;
+        "")
+          echo "::error::Asset has no 'digest' field; GitHub API may" \
+               "not have populated it for this release." >&2
+          exit 1
+          ;;
+        *)
+          echo "::error::Asset digest is not sha256: '$digest'" >&2
+          exit 1
+          ;;
+        esac
+
+        if ! printf '%s' "$sha256" | grep -Eq '^[0-9a-f]{64}$'; then
+          echo "::error::Asset digest is not a 64-char hex string:" \
+               "'$sha256'" >&2
+          exit 1
+        fi
+
+        echo "Asset SHA-256: $sha256"
+        echo "result=$sha256" >>"$GITHUB_OUTPUT"
+    - name: Log into Azure
+      uses: azure/login@v3
+      with:
+        client-id: ${{ secrets.AZURE_CLIENT_ID }}
+        tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+        subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+    - name: Retrieve token
+      id: token
+      run: |
+        az keyvault secret show \
+          --name ${{ secrets.HOMEBREW_TOKEN_SECRET_NAME }} \
+          --vault-name ${{ secrets.AZURE_VAULT }} \
+          --query "value" -o tsv >token &&
+        # avoid outputting the token under `set -x` by using `sed` instead of `echo`
+        sed s/^/::add-mask::/ <token &&
+        sed s/^/result=/ <token >>$GITHUB_OUTPUT &&
+        rm token
+    - name: Update scalar Cask
+      uses: mjcheetham/update-homebrew@v1.5.1
+      with:
+        token: ${{ steps.token.outputs.result }}
+        tap: microsoft/git
+        name: microsoft-git
+        type: cask
+        version: ${{ steps.version.outputs.result }}
+        sha256: ${{ steps.hash.outputs.result }}
+        alwaysUsePullRequest: false
