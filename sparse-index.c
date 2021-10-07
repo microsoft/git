@@ -274,7 +274,7 @@ static int add_path_to_index(const struct object_id *oid,
 	size_t len = base->len;
 
 	if (S_ISDIR(mode)) {
-		int dtype;
+		int dtype = DT_DIR;
 		size_t baselen = base->len;
 		if (!ctx->pl)
 			return READ_TREE_RECURSIVE;
@@ -398,7 +398,7 @@ void expand_index(struct index_state *istate, struct pattern_list *pl)
 		struct cache_entry *ce = istate->cache[i];
 		struct tree *tree;
 		struct pathspec ps;
-		int dtype;
+		int dtype = DT_UNKNOWN;
 
 		if (!S_ISSPARSEDIR(ce->ce_mode)) {
 			set_index_entry(full, full->cache_nr++, ce);
@@ -676,6 +676,7 @@ void clear_skip_worktree_from_present_files(struct index_state *istate)
 	struct repo_config_values *cfg = repo_config_values(the_repository);
 
 	if (!cfg->apply_sparse_checkout ||
+	    core_virtualfilesystem ||
 	    cfg->sparse_expect_files_outside_of_patterns)
 		return;
 

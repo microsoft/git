@@ -895,7 +895,7 @@ int odb_source_loose_write_stream(struct odb_source_loose *loose,
 		die(_("deflateEnd on stream object failed (%d)"), ret);
 	close_loose_object(loose, fd, tmp_file.buf);
 
-	if (odb_freshen_object(loose->base.odb, oid)) {
+	if (odb_freshen_object(loose->base.odb, oid, 1)) {
 		unlink_or_warn(tmp_file.buf);
 		goto cleanup;
 	}
