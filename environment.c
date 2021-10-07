@@ -72,9 +72,12 @@ int grafts_replace_parents = 1;
 int core_apply_sparse_checkout;
 int core_sparse_checkout_cone;
 int sparse_expect_files_outside_of_patterns;
+int core_gvfs;
+const char *core_virtualfilesystem;
 int merge_log_config = -1;
 int precomposed_unicode = -1; /* see probe_utf8_pathname_composition() */
 unsigned long pack_size_limit_cfg;
+int core_virtualize_objects;
 enum log_refs_config log_all_ref_updates = LOG_REFS_UNSET;
 
 #ifndef PROTECT_HFS_DEFAULT
@@ -86,6 +89,9 @@ int protect_hfs = PROTECT_HFS_DEFAULT;
 #define PROTECT_NTFS_DEFAULT 1
 #endif
 int protect_ntfs = PROTECT_NTFS_DEFAULT;
+int core_use_gvfs_helper;
+const char *gvfs_cache_server_url;
+struct strbuf gvfs_shared_cache_pathname = STRBUF_INIT;
 
 /*
  * The character that begins a commented line in user-editable file

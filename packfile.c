@@ -762,6 +762,12 @@ void install_packed_git(struct repository *r, struct packed_git *pack)
 	hashmap_add(&r->objects->pack_map, &pack->packmap_ent);
 }
 
+void install_packed_git_and_mru(struct repository *r, struct packed_git *pack)
+{
+	install_packed_git(r, pack);
+	list_add(&pack->mru, &r->objects->packed_git_mru);
+}
+
 void (*report_garbage)(unsigned seen_bits, const char *path);
 
 static void report_helper(const struct string_list *list,
@@ -1666,6 +1672,13 @@ static void *read_object(struct repository *r,
 	return content;
 }
 
+static unsigned long g_nr_unpack_entry;
+
+unsigned long get_nr_unpack_entry(void)
+{
+	return g_nr_unpack_entry;
+}
+
 void *unpack_entry(struct repository *r, struct packed_git *p, off_t obj_offset,
 		   enum object_type *final_type, unsigned long *final_size)
 {
@@ -1678,6 +1691,8 @@ void *unpack_entry(struct repository *r, struct packed_git *p, off_t obj_offset,
 	struct unpack_entry_stack_ent *delta_stack = small_delta_stack;
 	int delta_stack_nr = 0, delta_stack_alloc = UNPACK_ENTRY_STACK_PREALLOC;
 	int base_from_cache = 0;
+
+	g_nr_unpack_entry++;
 
 	write_pack_access_log(p, obj_offset);
 
