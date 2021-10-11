@@ -211,11 +211,23 @@ jobs:
           sed -i -e \
             's/recently_seen="\$(get_recently_seen)"/recently_seen="bogus-to-keep-pestering"/' \
             $b/git-extra/git-update-git-for-windows
-      - name: Set the installer Publisher to the Git Fundamentals team
+      - name: Update installer metadata for microsoft/git
         shell: bash
         run: |
           b=/usr/src/build-extra &&
-          sed -i -e 's/^\(AppPublisher=\).*/\1The Git Fundamentals Team at GitHub/' $b/installer/install.iss
+
+          # Remove '.vfs' from version
+          version=$(echo ${{ needs.prereqs.outputs.tag_version }} | sed s/.vfs//g) &&
+
+          # Replace AppPublisher and AppVersion with correct values
+          sed -i -e "s/^\(AppPublisher=\).*/\1Microsoft/" $b/installer/install.iss &&
+          sed -i -e "s/^\(AppVersion=\).*/\1$version/" $b/installer/install.iss &&
+
+          # Add 'ArchitecturesAllowed' and 'LicenseFile' after 'AppVersion'
+          sed -i -e '/^AppVersion=.*/a\
+          ArchitecturesAllowed=x64\
+          LicenseFile={#SourcePath}\\..\\COPYING
+          ' $b/installer/install.iss
       - name: Let the installer configure Visual Studio to use the installed Git
         shell: bash
         run: |
