@@ -73,7 +73,7 @@ jobs:
       - name: Clone build-extra
         shell: bash
         run: |
-          git clone --single-branch -b main https://github.com/git-for-windows/build-extra /usr/src/build-extra
+          git clone --filter=blob:none --single-branch -b main https://github.com/git-for-windows/build-extra /usr/src/build-extra
       - name: Clone git
         shell: bash
         run: |
@@ -170,7 +170,7 @@ jobs:
       - name: Clone build-extra
         shell: bash
         run: |
-          git clone --single-branch -b main https://github.com/git-for-windows/build-extra /usr/src/build-extra
+          git clone --filter=blob:none --single-branch -b main https://github.com/git-for-windows/build-extra /usr/src/build-extra
       - name: Prepare home directory for code-signing
         env:
           CODESIGN_P12: ${{secrets.CODESIGN_P12}}
@@ -196,7 +196,7 @@ jobs:
           EOF
 
           sed -i -e '/^#include "file-list.iss"/a\
-          Source: {#SourcePath}\\..\\'$filename'; DestDir: {app}\\mingw64\\bin; Flags: replacesameversion; AfterInstall: DeleteFromVirtualStore' \
+          Source: {#SourcePath}\\..\\git-update-git-for-windows.config; DestDir: {app}\\mingw64\\bin; Flags: replacesameversion; AfterInstall: DeleteFromVirtualStore' \
             -e '/^Type: dirifempty; Name: {app}\\{#MINGW_BITNESS}$/i\
           Type: files; Name: {app}\\{#MINGW_BITNESS}\\bin\\git-update-git-for-windows.config\
           Type: dirifempty; Name: {app}\\{#MINGW_BITNESS}\\bin' \
@@ -206,12 +206,11 @@ jobs:
         run: |
           set -x
 
-          b=/usr/src/build-extra &&
+          b=/mingw64/bin &&
 
-          sed -i -e \
-            's/recently_seen="\$(get_recently_seen)"/recently_seen="bogus-to-keep-pestering"/' \
-            $b/git-extra/git-update-git-for-windows
-      - name: Update installer metadata for microsoft/git
+          sed -i -e '6 a use_recently_seen=no' \
+            $b/git-update-git-for-windows
+      - name: Set the installer Publisher to the Git Fundamentals team
         shell: bash
         run: |
           b=/usr/src/build-extra &&
@@ -321,7 +320,7 @@ jobs:
       # Enable a bit stricter compile flags
       DEVELOPER: 1
       # For the osx-installer build
-      OSX_VERSION: 10.6
+      OSX_VERSION: 10.15
       V: 1
     steps:
       - name: Install git dependencies
@@ -378,13 +377,13 @@ jobs:
 
           PATH=/usr/local/bin:/System/Library/Frameworks:$PATH \
           make -C git_osx_installer \
-              OSX_VERSION=10.6 C_INCLUDE_PATH="$C_INCLUDE_PATH" V=1 \
-              build/intel-universal-snow-leopard/git-$VERSION/osx-built-keychain ||
+              OSX_VERSION=10.15 C_INCLUDE_PATH="$C_INCLUDE_PATH" V=1 \
+              build/intel-x86_64-catalina/git-$VERSION/osx-built-keychain ||
             die "Build failed"
 
           PATH=/usr/local/bin:$PATH \
           make -C git_osx_installer \
-              OSX_VERSION=10.6 C_INCLUDE_PATH="$C_INCLUDE_PATH" V=1 image ||
+              OSX_VERSION=10.15 C_INCLUDE_PATH="$C_INCLUDE_PATH" V=1 image ||
             die "Build failed"
 
           mkdir -p artifacts

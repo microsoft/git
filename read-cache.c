@@ -70,6 +70,11 @@
  */
 #define CACHE_ENTRY_PATH_LENGTH 80
 
+enum index_search_mode {
+	NO_EXPAND_SPARSE = 0,
+	EXPAND_SPARSE = 1
+};
+
 static inline struct cache_entry *mem_pool__ce_alloc(struct mem_pool *mem_pool, size_t len)
 {
 	struct cache_entry *ce;
@@ -567,7 +572,7 @@ int cache_name_stage_compare(const char *name1, int len1, int stage1, const char
 static int index_name_stage_pos(struct index_state *istate,
 				const char *name, int namelen,
 				int stage,
-				int search_sparse)
+				enum index_search_mode search_mode)
 {
 	int first, last;
 
@@ -586,7 +591,7 @@ static int index_name_stage_pos(struct index_state *istate,
 		first = next+1;
 	}
 
-	if (search_sparse && istate->sparse_index &&
+	if (search_mode == EXPAND_SPARSE && istate->sparse_index &&
 	    first > 0) {
 		/* Note: first <= istate->cache_nr */
 		struct cache_entry *ce = istate->cache[first - 1];
@@ -602,7 +607,7 @@ static int index_name_stage_pos(struct index_state *istate,
 		    ce_namelen(ce) < namelen &&
 		    !strncmp(name, ce->name, ce_namelen(ce))) {
 			ensure_full_index(istate);
-			return index_name_stage_pos(istate, name, namelen, stage, search_sparse);
+			return index_name_stage_pos(istate, name, namelen, stage, search_mode);
 		}
 	}
 
@@ -611,12 +616,12 @@ static int index_name_stage_pos(struct index_state *istate,
 
 int index_name_pos(struct index_state *istate, const char *name, int namelen)
 {
-	return index_name_stage_pos(istate, name, namelen, 0, 1);
+	return index_name_stage_pos(istate, name, namelen, 0, EXPAND_SPARSE);
 }
 
 int index_entry_exists(struct index_state *istate, const char *name, int namelen)
 {
-	return index_name_stage_pos(istate, name, namelen, 0, 0) >= 0;
+	return index_name_stage_pos(istate, name, namelen, 0, NO_EXPAND_SPARSE) >= 0;
 }
 
 int remove_index_entry_at(struct index_state *istate, int pos)
@@ -1243,7 +1248,7 @@ static int has_dir_name(struct index_state *istate,
 			 */
 		}
 
-		pos = index_name_stage_pos(istate, name, len, stage, 1);
+		pos = index_name_stage_pos(istate, name, len, stage, EXPAND_SPARSE);
 		if (pos >= 0) {
 			/*
 			 * Found one, but not so fast.  This could
@@ -1340,7 +1345,7 @@ static int add_index_entry_with_check(struct index_state *istate, struct cache_e
 		strcmp(ce->name, istate->cache[istate->cache_nr - 1]->name) > 0)
 		pos = index_pos_to_insert_pos(istate->cache_nr);
 	else
-		pos = index_name_stage_pos(istate, ce->name, ce_namelen(ce), ce_stage(ce), 1);
+		pos = index_name_stage_pos(istate, ce->name, ce_namelen(ce), ce_stage(ce), EXPAND_SPARSE);
 
 	/*
 	 * Cache tree path should be invalidated only after index_name_stage_pos,
@@ -1382,7 +1387,7 @@ static int add_index_entry_with_check(struct index_state *istate, struct cache_e
 		if (!ok_to_replace)
 			return error(_("'%s' appears as both a file and as a directory"),
 				     ce->name);
-		pos = index_name_stage_pos(istate, ce->name, ce_namelen(ce), ce_stage(ce), 1);
+		pos = index_name_stage_pos(istate, ce->name, ce_namelen(ce), ce_stage(ce), EXPAND_SPARSE);
 		pos = -pos-1;
 	}
 	return pos + 1;
@@ -2376,7 +2381,8 @@ int do_read_index(struct index_state *istate, const char *path, int must_exist)
 	if (!istate->repo)
 		istate->repo = the_repository;
 	prepare_repo_settings(istate->repo);
-	if (istate->repo->settings.command_requires_full_index)
+	if (!istate->repo->settings.sparse_index ||
+	    istate->repo->settings.command_requires_full_index)
 		ensure_full_index(istate);
 
 	return istate->cache_nr;

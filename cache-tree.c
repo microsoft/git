@@ -800,15 +800,12 @@ out:
 	return ret;
 }
 
-static void prime_cache_tree_sparse_dir(struct repository *r,
-					struct cache_tree *it,
-					struct tree *tree,
-					struct strbuf *tree_path)
+static void prime_cache_tree_sparse_dir(struct cache_tree *it,
+					struct tree *tree)
 {
 
 	oidcpy(&it->oid, &tree->object.oid);
 	it->entry_count = 1;
-	return;
 }
 
 static void prime_cache_tree_rec(struct repository *r,
@@ -816,10 +813,10 @@ static void prime_cache_tree_rec(struct repository *r,
 				 struct tree *tree,
 				 struct strbuf *tree_path)
 {
-	struct strbuf subtree_path = STRBUF_INIT;
 	struct tree_desc desc;
 	struct name_entry entry;
 	int cnt;
+	int base_path_len = tree_path->len;
 
 	oidcpy(&it->oid, &tree->object.oid);
 
@@ -836,30 +833,36 @@ static void prime_cache_tree_rec(struct repository *r,
 				parse_tree(subtree);
 			sub = cache_tree_sub(it, entry.path);
 			sub->cache_tree = cache_tree();
-			strbuf_reset(&subtree_path);
-			strbuf_grow(&subtree_path, tree_path->len + entry.pathlen + 1);
-			strbuf_addbuf(&subtree_path, tree_path);
-			strbuf_add(&subtree_path, entry.path, entry.pathlen);
-			strbuf_addch(&subtree_path, '/');
 
 			/*
-			* If a sparse index is in use, the directory being processed may be
-			* sparse. To confirm that, we can check whether an entry with that
-			* exact name exists in the index. If it does, the created subtree
-			* should be sparse. Otherwise, cache tree expansion should continue
-			* as normal.
-			*/
+			 * Recursively-constructed subtree path is only needed when working
+			 * in a sparse index (where it's used to determine whether the
+			 * subtree is a sparse directory in the index).
+			 */
+			if (r->index->sparse_index) {
+				strbuf_setlen(tree_path, base_path_len);
+				strbuf_grow(tree_path, base_path_len + entry.pathlen + 1);
+				strbuf_add(tree_path, entry.path, entry.pathlen);
+				strbuf_addch(tree_path, '/');
+			}
+
+			/*
+			 * If a sparse index is in use, the directory being processed may be
+			 * sparse. To confirm that, we can check whether an entry with that
+			 * exact name exists in the index. If it does, the created subtree
+			 * should be sparse. Otherwise, cache tree expansion should continue
+			 * as normal.
+			 */
 			if (r->index->sparse_index &&
-			    index_entry_exists(r->index, subtree_path.buf, subtree_path.len))
-				prime_cache_tree_sparse_dir(r, sub->cache_tree, subtree, &subtree_path);
+			    index_entry_exists(r->index, tree_path->buf, tree_path->len))
+				prime_cache_tree_sparse_dir(sub->cache_tree, subtree);
 			else
-				prime_cache_tree_rec(r, sub->cache_tree, subtree, &subtree_path);
+				prime_cache_tree_rec(r, sub->cache_tree, subtree, tree_path);
 			cnt += sub->cache_tree->entry_count;
 		}
 	}
-	it->entry_count = cnt;
 
-	strbuf_release(&subtree_path);
+	it->entry_count = cnt;
 }
 
 void prime_cache_tree(struct repository *r,
