@@ -31,6 +31,9 @@ static int fsmonitor__start_timeout_sec = 60;
 #define FSMONITOR__ANNOUNCE_STARTUP "fsmonitor.announcestartup"
 static int fsmonitor__announce_startup = 0;
 
+#define FSMONITOR__COOKIE_WAIT "fsmonitor.cookiewait"
+static int fsmonitor__cookie_wait = 3;
+
 static int fsmonitor_config(const char *var, const char *value, void *cb)
 {
 	if (!strcmp(var, FSMONITOR__IPC_THREADS)) {
@@ -58,6 +61,16 @@ static int fsmonitor_config(const char *var, const char *value, void *cb)
 			return error(_("value of '%s' not bool or int: %d"),
 				     var, i);
 		fsmonitor__announce_startup = i;
+		return 0;
+	}
+
+	if (!strcmp(var, FSMONITOR__COOKIE_WAIT)) {
+		int is_bool;
+		int i = git_config_bool_or_int(var, value, &is_bool);
+		if (i < 0)
+			return error(_("value of '%s' not bool or int: %d"),
+				     var, i);
+		fsmonitor__cookie_wait = i;
 		return 0;
 	}
 
@@ -711,7 +724,7 @@ static int do_handle_client(struct fsmonitor_daemon_state *state,
 			 * We have a V2 valid token:
 			 *     "builtin:<token_id>:<seq_nr>"
 			 */
-			do_cookie = 1;
+			do_cookie = fsmonitor__cookie_wait;
 		}
 	}
 
@@ -735,12 +748,13 @@ static int do_handle_client(struct fsmonitor_daemon_state *state,
 	 * assume that there might be some very, very recent activity
 	 * on the FS still in flight.
 	 */
-	if (do_cookie) {
+	while (do_cookie--) {
 		cookie_result = with_lock__wait_for_cookie(state);
 		if (cookie_result != FCIR_SEEN) {
 			error(_("fsmonitor: cookie_result '%d' != SEEN"),
 			      cookie_result);
 			do_trivial = 1;
+			break;
 		}
 	}
 
