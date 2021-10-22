@@ -91,5 +91,5 @@ jobs:
         run: |
           for id in ${{ secrets.BIONIC_REPO_ID }} ${{ secrets.HIRSUTE_REPO_ID }}
           do
-            repoclient -v v3 -c config.json package add --check --wait 300 "${{steps.get-asset.outputs.name}}" -r $id
+            repoclient -v v2 -c config.json package add --check --wait 300 "${{steps.get-asset.outputs.name}}" -r $id
           done
