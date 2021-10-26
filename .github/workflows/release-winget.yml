@@ -12,8 +12,8 @@ jobs:
           github-token: ${{secrets.GITHUB_TOKEN}}
           script: |
             const { data } = await github.repos.getRelease({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
+                owner: 'microsoft',
+                repo: 'git',
                 release_id: 'latest'
               })
             const assets = data.assets.filter(asset => asset.name.endsWith('.exe'))
