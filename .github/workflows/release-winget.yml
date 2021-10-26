@@ -1,33 +1,27 @@
 name: "release-winget"
-on: push
+on: release
 
 jobs:
   release:
     runs-on: windows-latest
     steps:
-      - name: Get url and version
-        id: get-url-and-version
-        uses: actions/github-script@v3
-        with:
-          github-token: ${{secrets.GITHUB_TOKEN}}
-          script: |
-            const { data } = await github.repos.getRelease({
-                owner: 'microsoft',
-                repo: 'git',
-                release_id: 'latest'
-              })
-            const assets = data.assets.filter(asset => asset.name.endsWith('.exe'))
-
-            core.setOutput('url', assets[0].url)
-            core.setOutput('version', data.tag_name)
-
-      - name: Publish manifest
+      - name: Publish manifest with winget-create
         run: |
+          # Get correct release asset
+          $assets = ${{github.event.release.assets}}
+          $asset
+
+          for($i = 0; $i -lt $assets.length; $i++){ 
+              if ($assets[$i] -match '.exe$') {
+                  $asset = $assets[$i]
+              }
+          }
+
           # Remove 'v' and 'vfs' from the version
-          "${{steps.get-url-and-version.outputs.version}}" -match '\d.*'
+          $assets.tag_name -match '\d.*'
           $version = $Matches[0] -replace ".vfs",""
 
           # Download and run wingetcreate
-          iwr https://aka.ms/wingetcreate/latest -OutFile wingetcreate.exe
-          .\wingetcreate.exe update Microsoft.Git -u "${{steps.get-url-and-version.outputs.url}}" -v $version --out manifests --token "${{ secrets.WINGET_TOKEN }}"
+          Invoke-WebRequest https://aka.ms/wingetcreate/latest -OutFile wingetcreate.exe
+          .\wingetcreate.exe update Microsoft.Git -u $asset.browser_download_url -v $version --o manifests -t "${{ secrets.WINGET_TOKEN }}" -s
         shell: powershell
