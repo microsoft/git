@@ -1,39 +1,33 @@
 name: "release-winget"
-on:
-  release:
-    types: [released]
+on: push
 
 jobs:
   release:
-    runs-on: ubuntu-latest
+    runs-on: windows-latest
     steps:
-    - id: update-winget
-      name: Update winget repository
-      uses: mjcheetham/update-winget@v1.4
-      with:
-        id: Microsoft.Git
-        token: ${{ secrets.WINGET_TOKEN }}
-        releaseAsset: Git-([0-9.vfs]*)\-64-bit.exe
-        manifestText: |
-          PackageIdentifier: {{id}}
-          PackageVersion: {{version:s/\.[A-Za-z]+\././}}
-          PackageName: Microsoft Git
-          Publisher: The Git Client Team at GitHub
-          Moniker: microsoft-git
-          PackageUrl: https://aka.ms/ms-git
-          Tags:
-          - microsoft-git
-          License: GPLv2
-          ShortDescription: |
-            Git distribution to support monorepo scenarios.
-            Note: This is not Git for Windows. Unless you are working in a monorepo and require
-            specific Git modifications, please run `winget install git` to start using Git for Windows.
-          Installers:
-          - Architecture: x64
-            InstallerUrl: {{url}}
-            InstallerType: inno
-            InstallerSha256: {{sha256}}
-          PackageLocale: en-US
-          ManifestType: singleton
-          ManifestVersion: 1.0.0
-        alwaysUsePullRequest: true
+      - name: Get url
+        id: get-url
+        uses: actions/github-script@v3
+        with:
+          github-token: ${{secrets.GITHUB_TOKEN}}
+          script: |
+            const { data } = await github.repos.getRelease({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                release_id: 'latest'
+              })
+            const assets = data.assets.filter(asset => asset.name.endsWith('.exe'))
+
+            core.setOutput('url', assets[0].url)
+            core.setOutput('version', data.tag_name)
+
+      - name: Publish manifest
+        run: |
+          # Remove 'v' and 'vfs' from the version
+          "${{steps.get-url.outputs.version}}" -match '\d.*'
+          $version = $Matches[0]
+
+          # Download and run wingetcreate
+          iwr https://aka.ms/wingetcreate/latest -OutFile wingetcreate.exe
+          .\wingetcreate.exe update Microsoft.Git -u "${{steps.get-url.outputs.url}}" -v $version --out manifests --token "${{ secrets.WINGET_TOKEN }}" --submit
+        shell: powershell
