@@ -5,7 +5,7 @@ jobs:
   release:
     runs-on: windows-latest
     steps:
-      - name: Get url
+      - name: Get url and version
         id: get-url
         uses: actions/github-script@v3
         with:
@@ -24,10 +24,10 @@ jobs:
       - name: Publish manifest
         run: |
           # Remove 'v' and 'vfs' from the version
-          "${{steps.get-url.outputs.version}}" -match '\d.*'
+          "${{steps.get-url-and-version.outputs.version}}" -match '\d.*'
           $version = $Matches[0]
 
           # Download and run wingetcreate
           iwr https://aka.ms/wingetcreate/latest -OutFile wingetcreate.exe
-          .\wingetcreate.exe update Microsoft.Git -u "${{steps.get-url.outputs.url}}" -v $version --out manifests --token "${{ secrets.WINGET_TOKEN }}" #--submit
+          .\wingetcreate.exe update Microsoft.Git -u "${{steps.get-url-and-version.outputs.url}}" -v $version --out manifests --token "${{ secrets.WINGET_TOKEN }}"
         shell: powershell
