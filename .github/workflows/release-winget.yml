@@ -29,5 +29,5 @@ jobs:
 
           # Download and run wingetcreate
           iwr https://aka.ms/wingetcreate/latest -OutFile wingetcreate.exe
-          .\wingetcreate.exe update Microsoft.Git -u "${{steps.get-url.outputs.url}}" -v $version --out manifests #--token "${{ secrets.WINGET_TOKEN }}" --submit
+          .\wingetcreate.exe update Microsoft.Git -u "${{steps.get-url.outputs.url}}" -v $version --out manifests --token "${{ secrets.WINGET_TOKEN }}" #--submit
         shell: powershell
