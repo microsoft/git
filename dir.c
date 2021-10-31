@@ -1514,6 +1514,13 @@ static int path_in_sparse_checkout_1(const char *path,
 	const char *end, *slash;
 
 	/*
+	 * When using a virtual filesystem, there aren't really patterns
+	 * to follow, but be extra careful to skip this check.
+	 */
+	if (core_virtualfilesystem)
+		return 1;
+
+	/*
 	 * We default to accepting a path if the path is empty, there are no
 	 * patterns, or the patterns are of the wrong type.
 	 */
