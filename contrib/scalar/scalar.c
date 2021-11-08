@@ -183,6 +183,7 @@ static int set_recommended_config(int reconfigure)
 		{ "commitGraph.generationVersion", "1" },
 		{ "core.autoCRLF", "false" },
 		{ "core.safeCRLF", "false" },
+		{ "fetch.showForcedUpdates", "false" },
 		{ "maintenance.gc.enabled", "false" },
 		{ "maintenance.prefetch.enabled", "true" },
 		{ "maintenance.prefetch.auto", "0" },
