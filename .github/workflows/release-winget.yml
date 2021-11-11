@@ -5,35 +5,19 @@ on:
 
 jobs:
   release:
-    runs-on: ubuntu-latest
+    runs-on: windows-latest
     steps:
-    - id: update-winget
-      name: Update winget repository
-      uses: mjcheetham/update-winget@v1.4.1
-      with:
-        id: Microsoft.Git
-        token: ${{ secrets.WINGET_TOKEN }}
-        releaseAsset: Git-([0-9.vfs]*)\-64-bit.exe
-        manifestText: |
-          PackageIdentifier: {{id}}
-          PackageVersion: {{version:s/\.[A-Za-z]+\././}}
-          PackageName: Microsoft Git
-          Publisher: The Git Client Team at GitHub
-          Moniker: microsoft-git
-          PackageUrl: https://aka.ms/ms-git
-          Tags:
-          - microsoft-git
-          License: GPLv2
-          ShortDescription: |
-            Git distribution to support monorepo scenarios.
-            Note: This is not Git for Windows. Unless you are working in a monorepo and require
-            specific Git modifications, please run `winget install git` to start using Git for Windows.
-          Installers:
-          - Architecture: x64
-            InstallerUrl: {{url}}
-            InstallerType: inno
-            InstallerSha256: {{sha256}}
-          PackageLocale: en-US
-          ManifestType: singleton
-          ManifestVersion: 1.0.0
-        alwaysUsePullRequest: true
+      - name: Publish manifest with winget-create
+        run: |
+          # Get correct release asset
+          $github = Get-Content '${{ github.event_path }}' | ConvertFrom-Json
+          $asset = $github.release.assets | Where-Object -Property name -match '.exe$'
+
+          # Remove 'v' and 'vfs' from the version
+          $assets.tag_name -match '\d.*'
+          $version = $Matches[0] -replace ".vfs",""
+
+          # Download and run wingetcreate
+          Invoke-WebRequest https://aka.ms/wingetcreate/latest -OutFile wingetcreate.exe
+          .\wingetcreate.exe update Microsoft.Git -u $asset.browser_download_url -v $version -o manifests -t "${{ secrets.WINGET_TOKEN }}" -s
+        shell: powershell
