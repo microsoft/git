@@ -52,6 +52,4 @@ case " $MAKE_TARGETS " in
 *" all "*) make -C contrib/subtree test;;
 esac
 
-make -C contrib/scalar $MAKE_TARGETS
-
 save_good_tree
