@@ -12,9 +12,8 @@ handle_failed_tests
 
 if test 0 = "$1"
 then
-	# Run the git subtree & scalar tests only if main tests succeeded
-	make -C contrib/subtree test &&
-	make -C contrib/scalar test
+	# Run the git subtree tests only if main tests succeeded
+	make -C contrib/subtree test
 fi
 
 check_unignored_build_artifacts
