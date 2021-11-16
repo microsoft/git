@@ -32,4 +32,14 @@ clean:
 test: all
 	$(MAKE) -C t
 
-.PHONY: $(GITLIBS) all clean test FORCE
+INSTALL = install
+prefix = $(HOME)
+bindir = $(prefix)/bin
+DESTDIR_SQ = $(subst ','\'',$(DESTDIR))
+bindir_SQ = $(subst ','\'',$(bindir))
+
+install:
+	$(INSTALL) -d -m 755 '$(DESTDIR_SQ)$(bindir_SQ)'
+	$(INSTALL) scalar$(X) '$(DESTDIR_SQ)$(bindir_SQ)'
+
+.PHONY: $(GITLIBS) all clean test install FORCE
