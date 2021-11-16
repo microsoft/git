@@ -54,6 +54,23 @@ test_expect_success 'run [--auto|--quiet]' '
 	test_subcommand git gc --no-quiet <run-no-quiet.txt
 '
 
+test_expect_success 'lock file behavior' '
+	test_when_finished git config --unset maintenance.commit-graph.schedule &&
+	git config maintenance.commit-graph.schedule hourly &&
+
+	touch .git/objects/maintenance.lock &&
+	git maintenance run --schedule=hourly --no-quiet 2>err &&
+	grep "lock file .* exists, skipping maintenance" err &&
+
+	test-tool chmtime =-22000 .git/objects/maintenance.lock &&
+	git maintenance run --schedule=hourly --no-quiet 2>err &&
+	grep "deleted stale lock file" err &&
+	test_path_is_missing .git/objects/maintenance.lock &&
+
+	git maintenance run --schedule=hourly 2>err &&
+	test_must_be_empty err
+'
+
 test_expect_success 'maintenance.auto config option' '
 	GIT_TRACE2_EVENT="$(pwd)/default" git commit --quiet --allow-empty -m 1 &&
 	test_subcommand git maintenance run --auto --quiet <default &&
