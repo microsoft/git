@@ -1304,6 +1304,8 @@ static int maintenance_run_tasks(struct maintenance_run_opts *opts)
 	char *lock_path = xstrfmt("%s/maintenance", r->objects->odb->path);
 
 	if (hold_lock_file_for_update(&lk, lock_path, LOCK_NO_DEREF) < 0) {
+		struct stat st;
+		struct strbuf lock_dot_lock = STRBUF_INIT;
 		/*
 		 * Another maintenance command is running.
 		 *
@@ -1314,6 +1316,25 @@ static int maintenance_run_tasks(struct maintenance_run_opts *opts)
 		if (!opts->auto_flag && !opts->quiet)
 			warning(_("lock file '%s' exists, skipping maintenance"),
 				lock_path);
+
+		/*
+		 * Check timestamp on .lock file to see if we should
+		 * delete it to recover from a fail state.
+		 */
+		strbuf_addstr(&lock_dot_lock, lock_path);
+		strbuf_addstr(&lock_dot_lock, ".lock");
+		if (lstat(lock_dot_lock.buf, &st))
+			warning_errno(_("unable to stat '%s'"), lock_dot_lock.buf);
+		else {
+			if (st.st_mtime < time(NULL) - (6 * 60 * 60)) {
+				if (unlink(lock_dot_lock.buf))
+					warning_errno(_("unable to delete stale lock file"));
+				else
+					warning(_("deleted stale lock file"));
+			}
+		}
+
+		strbuf_release(&lock_dot_lock);
 		free(lock_path);
 		return 0;
 	}
