@@ -146,8 +146,8 @@ You will need to compile and install `microsoft/git` from source:
 ```shell
 git clone https://github.com/microsoft/git microsoft-git
 cd microsoft-git
-make -j12 prefix=/usr/local INCLUDE_SCALAR=YesPlease
-sudo make -j12 prefix=/usr/local INCLUDE_SCALAR=YesPlease install
+make -j12 prefix=/usr/local
+sudo make -j12 prefix=/usr/local install
 ```
 
 For more assistance building Git from source, see
