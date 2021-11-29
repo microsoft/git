@@ -1204,7 +1204,19 @@ test_expect_success 'show (cached blobs/trees)' '
 	# when the directory is outside of the cone.
 	test_all_match test_must_fail git show :deep/ &&
 	test_must_fail git -C full-checkout show :folder1/ &&
-	test_sparse_match test_must_fail git show :folder1/
+	test_must_fail git -C sparse-checkout show :folder1/ &&
+
+	# The sparse index actually has "folder1" inside, so
+	# "git show :folder1/" succeeds when it did not before.
+	git -C sparse-index show :folder1/ >actual &&
+	git -C sparse-index show HEAD:folder1 >expect &&
+
+	# The output of "git show" includes the way we
+	# referenced the objects, so strip that out.
+	test_line_count = 4 actual &&
+	tail -n 2 actual >actual-trunc &&
+	tail -n 2 expect >expect-trunc &&
+	test_cmp expect-trunc actual-trunc
 '
 
 test_expect_success 'submodule handling' '
@@ -1320,6 +1332,9 @@ test_expect_success 'sparse-index is not expanded' '
 	ensure_not_expanded add extra.txt &&
 	echo >>sparse-index/untracked.txt &&
 	ensure_not_expanded add . &&
+
+	ensure_not_expanded show :a &&
+	ensure_not_expanded show :deep/a &&
 
 	echo >>sparse-index/a &&
 	ensure_not_expanded stash &&
