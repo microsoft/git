@@ -402,6 +402,10 @@ include shared.mak
 # Define GIT_USER_AGENT if you want to change how git identifies itself during
 # network interactions.  The default is "git/$(GIT_VERSION)".
 #
+# Define GIT_BUILT_FROM_COMMIT if you want to force the commit hash identified
+# in 'git version --build-options' to a specific value. The default is the
+# commit hash of the current HEAD.
+#
 # Define DEFAULT_HELP_FORMAT to "man", "info" or "html"
 # (defaults to "man") if you want to have a different default when
 # "git help" is called without a parameter specifying the format.
@@ -2226,6 +2230,15 @@ GIT-USER-AGENT: FORCE
 		echo '$(GIT_USER_AGENT_SQ)' >GIT-USER-AGENT; \
 	fi
 
+GIT_BUILT_FROM_COMMIT = $(eval GIT_BUILT_FROM_COMMIT := $$(shell \
+	GIT_CEILING_DIRECTORIES="$$(CURDIR)/.." \
+	git rev-parse -q --verify HEAD 2>/dev/null))$(GIT_BUILT_FROM_COMMIT)
+GIT-BUILT-FROM-COMMIT: FORCE
+	@if test x'$(GIT_BUILT_FROM_COMMIT)' != x"`cat GIT-BUILT-FROM-COMMIT 2>/dev/null`" ; then \
+		echo >&2 "    * new built-from commit"; \
+		echo '$(GIT_BUILT_FROM_COMMIT)' >GIT-BUILT-FROM-COMMIT; \
+	fi
+
 ifdef DEFAULT_HELP_FORMAT
 BASIC_CFLAGS += -DDEFAULT_HELP_FORMAT='"$(DEFAULT_HELP_FORMAT)"'
 endif
@@ -2340,13 +2353,11 @@ PAGER_ENV_CQ_SQ = $(subst ','\'',$(PAGER_ENV_CQ))
 pager.sp pager.s pager.o: EXTRA_CPPFLAGS = \
 	-DPAGER_ENV='$(PAGER_ENV_CQ_SQ)'
 
-version.sp version.s version.o: GIT-VERSION-FILE GIT-USER-AGENT
+version.sp version.s version.o: GIT-VERSION-FILE GIT-USER-AGENT GIT-BUILT-FROM-COMMIT
 version.sp version.s version.o: EXTRA_CPPFLAGS = \
 	'-DGIT_VERSION="$(GIT_VERSION)"' \
 	'-DGIT_USER_AGENT=$(GIT_USER_AGENT_CQ_SQ)' \
-	'-DGIT_BUILT_FROM_COMMIT="$(shell \
-		GIT_CEILING_DIRECTORIES="$(CURDIR)/.." \
-		git rev-parse -q --verify HEAD 2>/dev/null)"'
+	'-DGIT_BUILT_FROM_COMMIT="$(GIT_BUILT_FROM_COMMIT)"'
 
 $(BUILT_INS): git$X
 	$(QUIET_BUILT_IN)$(RM) $@ && \
