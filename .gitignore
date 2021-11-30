@@ -3,6 +3,7 @@
 /fuzz-pack-headers
 /fuzz-pack-idx
 /GIT-BUILD-OPTIONS
+/GIT-BUILT-FROM-COMMIT
 /GIT-CFLAGS
 /GIT-LDFLAGS
 /GIT-PREFIX
