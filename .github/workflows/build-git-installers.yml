@@ -354,6 +354,9 @@ jobs:
           cp git/git-$VERSION.tar.gz git/git-manpages-$VERSION.tar.gz git_osx_installer/build/ ||
             die "Could not copy .tar.gz files"
 
+          GIT_BUILT_FROM_COMMIT=$(gunzip -c git/git-$VERSION.tar.gz | git get-tar-commit-id) ||
+            die "Could not determine commit for build"
+
           # drop the -isysroot `GIT_SDK` hack
           sed -i .bak -e 's/ -isysroot .(SDK_PATH)//' git_osx_installer/Makefile || die "Could not drop the -isysroot hack"
 
@@ -371,6 +374,7 @@ jobs:
 
           PATH=/usr/local/bin:$PATH \
           make -C git_osx_installer \
+              GIT_BUILT_FROM_COMMIT=$GIT_BUILT_FROM_COMMIT \
               OSX_VERSION=10.15 C_INCLUDE_PATH="$C_INCLUDE_PATH" V=1 image ||
             die "Build failed"
 
