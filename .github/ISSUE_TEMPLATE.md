@@ -1,11 +1,25 @@
- - [ ] I was not able to find an [open](https://github.com/git-for-windows/git/issues?q=is%3Aopen) or [closed](https://github.com/git-for-windows/git/issues?q=is%3Aclosed) issue matching what I'm seeing
+ - [ ] I was not able to find an [open](https://github.com/microsoft/git/issues?q=is%3Aopen)
+        or [closed](https://github.com/microsoft/git/issues?q=is%3Aclosed) issue matching
+        what I'm seeing, including in [the `git-for-windows/git` tracker](https://github.com/git-for-windows/git/issues).
 
 ### Setup
 
- - Which version of Git for Windows are you using? Is it 32-bit or 64-bit?
+ - Which version of `microsoft/git` are you using? Is it 32-bit or 64-bit?
 
 ```
 $ git --version --build-options
+
+** insert your machine's response here **
+```
+
+Are you using Scalar or VFS for Git?
+
+** insert your answer here **
+
+If VFS for Git, then what version?
+
+```
+$ gvfs version
 
 ** insert your machine's response here **
 ```
@@ -14,20 +28,6 @@ $ git --version --build-options
 
 ```
 $ cmd.exe /c ver
-
-** insert your machine's response here **
-```
-
- - What options did you set as part of the installation? Or did you choose the
-   defaults?
-
-```
-# One of the following:
-> type "C:\Program Files\Git\etc\install-options.txt"
-> type "C:\Program Files (x86)\Git\etc\install-options.txt"
-> type "%USERPROFILE%\AppData\Local\Programs\Git\etc\install-options.txt"
-> type "$env:USERPROFILE\AppData\Local\Programs\Git\etc\install-options.txt"
-$ cat /etc/install-options.txt
 
 ** insert your machine's response here **
 ```
@@ -58,7 +58,11 @@ $ cat /etc/install-options.txt
 
 ** insert here **
 
- - If the problem was occurring with a specific repository, can you provide the
-   URL to that repository to help us with testing?
+ - If the problem was occurring with a specific repository, can you specify
+   the repository?
 
-** insert URL here **
+   * [ ] Public repo: **insert URL here**
+   * [ ] Windows monorepo
+   * [ ] Office monorepo
+   * [ ] Other Microsoft-internal repo: **insert name here**
+   * [ ] Other internal repo.
