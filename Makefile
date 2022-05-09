@@ -2050,10 +2050,6 @@ ifndef PAGER_ENV
 PAGER_ENV = LESS=FRX LV=-c
 endif
 
-ifneq (,$(INCLUDE_SCALAR))
-EXTRA_PROGRAMS += contrib/scalar/scalar$X
-endif
-
 ifdef NO_INSTALL_HARDLINKS
 	export NO_INSTALL_HARDLINKS
 endif
@@ -2561,7 +2557,7 @@ ifndef NO_CURL
 	OBJECTS += http.o http-walker.o remote-curl.o
 endif
 
-SCALAR_SOURCES := contrib/scalar/scalar.c contrib/scalar/json-parser.c
+SCALAR_SOURCES := contrib/scalar/scalar.c
 SCALAR_OBJECTS := $(SCALAR_SOURCES:c=o)
 OBJECTS += $(SCALAR_OBJECTS)
 
@@ -2707,9 +2703,6 @@ contrib/scalar/scalar$X: $(SCALAR_OBJECTS) GIT-LDFLAGS $(GITLIBS)
 	$(QUIET_LINK)$(CC) $(ALL_CFLAGS) -o $@ $(ALL_LDFLAGS) \
 		$(filter %.o,$^) $(LIBS)
 
-bin-wrappers/scalar: contrib/scalar/Makefile
-	$(QUIET_SUBDIR0)contrib/scalar $(QUIET_SUBDIR1) ../../bin-wrappers/scalar
-
 git-gvfs-helper$X: gvfs-helper.o http.o GIT-LDFLAGS $(GITLIBS)
 	$(QUIET_LINK)$(CC) $(ALL_CFLAGS) -o $@ $(ALL_LDFLAGS) $(filter %.o,$^) \
 		$(CURL_LIBCURL) $(EXPAT_LIBEXPAT) $(LIBS)
@@ -2739,23 +2732,14 @@ Documentation/GIT-EXCLUDED-PROGRAMS: FORCE
 .PHONY: doc man man-perl html info pdf
 doc: man-perl
 	$(MAKE) -C Documentation all
-ifneq (,$(INCLUDE_SCALAR))
-	$(QUIET_SUBDIR0)contrib/scalar $(QUIET_SUBDIR1) scalar.html scalar.1
-endif
 
 man: man-perl
 	$(MAKE) -C Documentation man
-ifneq (,$(INCLUDE_SCALAR))
-	$(QUIET_SUBDIR0)contrib/scalar $(QUIET_SUBDIR1) scalar.1
-endif
 
 man-perl: perl/build/man/man3/Git.3pm
 
 html:
 	$(MAKE) -C Documentation html
-ifneq (,$(INCLUDE_SCALAR))
-	$(QUIET_SUBDIR0)contrib/scalar $(QUIET_SUBDIR1) scalar.html
-endif
 
 info:
 	$(MAKE) -C Documentation info
@@ -2991,10 +2975,6 @@ endif
 
 test_bindir_programs := $(patsubst %,bin-wrappers/%,$(BINDIR_PROGRAMS_NEED_X) $(BINDIR_PROGRAMS_NO_X) $(TEST_PROGRAMS_NEED_X))
 
-ifneq (,$(INCLUDE_SCALAR))
-test_bindir_programs += bin-wrappers/scalar
-endif
-
 all:: $(TEST_PROGRAMS) $(test_bindir_programs)
 
 bin-wrappers/%: wrap-for-bin.sh
@@ -3015,9 +2995,6 @@ export TEST_NO_MALLOC_CHECK
 
 test: all
 	$(MAKE) -C t/ all
-ifneq (,$(INCLUDE_SCALAR))
-	$(MAKE) -C contrib/scalar/t
-endif
 
 perf: all
 	$(MAKE) -C t/perf/ all
@@ -3149,9 +3126,6 @@ install: all
 	$(INSTALL) $(INSTALL_STRIP) $(install_bindir_xprograms) '$(DESTDIR_SQ)$(bindir_SQ)'
 	$(INSTALL) $(BINDIR_PROGRAMS_NO_X) '$(DESTDIR_SQ)$(bindir_SQ)'
 
-ifneq (,$(INCLUDE_SCALAR))
-	$(INSTALL) contrib/scalar/scalar$X '$(DESTDIR_SQ)$(bindir_SQ)'
-endif
 ifdef MSVC
 	# We DO NOT install the individual foo.o.pdb files because they
 	# have already been rolled up into the exe's pdb file.
@@ -3244,10 +3218,6 @@ install-doc: install-man-perl
 
 install-man: install-man-perl
 	$(MAKE) -C Documentation install-man
-ifneq (,$(INCLUDE_SCALAR))
-	$(MAKE) -C contrib/scalar scalar.1
-	$(INSTALL) contrib/scalar/scalar.1 '$(DESTDIR_SQ)$(mandir_SQ)/man1'
-endif
 
 install-man-perl: man-perl
 	$(INSTALL) -d -m 755 '$(DESTDIR_SQ)$(mandir_SQ)/man3'
@@ -3256,10 +3226,6 @@ install-man-perl: man-perl
 
 install-html:
 	$(MAKE) -C Documentation install-html
-ifneq (,$(INCLUDE_SCALAR))
-	$(MAKE) -C contrib/scalar scalar.html
-	$(INSTALL) contrib/scalar/scalar.html '$(DESTDIR_SQ)$(htmldir)'
-endif
 
 install-info:
 	$(MAKE) -C Documentation install-info
@@ -3398,9 +3364,6 @@ endif
 ifndef NO_TCLTK
 	$(MAKE) -C gitk-git clean
 	$(MAKE) -C git-gui clean
-endif
-ifneq (,$(INCLUDE_SCALAR))
-	$(MAKE) -C contrib/scalar clean
 endif
 	$(RM) GIT-VERSION-FILE GIT-CFLAGS GIT-LDFLAGS GIT-BUILD-OPTIONS
 	$(RM) GIT-USER-AGENT GIT-PREFIX
