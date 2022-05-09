@@ -380,10 +380,13 @@ int create_diagnostics_archive(struct strbuf *zip_path, enum diagnose_mode mode)
 		goto diagnose_cleanup;
 	}
 
-	fprintf(stderr, "\n"
-		"Diagnostics complete.\n"
-		"All of the gathered info is captured in '%s'\n",
-		zip_path->buf);
+	strbuf_reset(&buf);
+	strbuf_addf(&buf, "\n"
+		    "Diagnostics complete.\n"
+		    "All of the gathered info is captured in '%s'\n",
+		    zip_path->buf);
+	write_or_die(stdout_fd, buf.buf, buf.len);
+	write_or_die(2, buf.buf, buf.len);
 
 diagnose_cleanup:
 	if (archiver_fd >= 0) {
