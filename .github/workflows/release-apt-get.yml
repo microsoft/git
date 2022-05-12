@@ -24,7 +24,7 @@ jobs:
         env:
           AZ_SUB: ${{ secrets.AZURE_SUBSCRIPTION }}
         run: |
-          az storage blob download --subscription  "$AZ_SUB" --account-name gitcitoolstore -c tools -n azure-repoapi-client_2.0.1_amd64.deb -f repoclient.deb --auth-mode login
+          az storage blob download --subscription  "$AZ_SUB" --account-name msftgitesrp -c microsoft-repoclient -n azure-repoapi-client_2.0.1_amd64.deb -f repoclient.deb --auth-mode login
 
       - name: "Install Repo Client"
         run: |
@@ -85,8 +85,8 @@ jobs:
             fs.writeFileSync(assets[0].name, Buffer.from(buffer.data))
             core.setOutput('name', assets[0].name)
 
-      - name: "Publish to apt feed"
-        env:
-          RELEASE: ${{ github.event.inputs.release }}
-        run: |
-          repoclient -v v3 -c config.json package add --check --wait 300 ${{steps.get-asset.outputs.name}} -r ${{ secrets.HIRSUTE_REPO_ID }}
+      # - name: "Publish to apt feed"
+      #   env:
+      #     RELEASE: ${{ github.event.inputs.release }}
+      #   run: |
+      #     repoclient -v v3 -c config.json package add --check --wait 300 ${{steps.get-asset.outputs.name}} -r ${{ secrets.HIRSUTE_REPO_ID }}
