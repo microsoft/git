@@ -3602,7 +3602,7 @@ static enum gh__error_code do_sub_cmd__config(int argc, const char **argv)
 
 	if (ec == GH__ERROR_CODE__OK)
 		printf("%s\n", config_data.buf);
-	else
+	else if (ec != GH__ERROR_CODE__HTTP_404)
 		error("config: %s", status.error_message.buf);
 
 	gh__response_status__release(&status);
@@ -3631,7 +3631,7 @@ static enum gh__error_code do_sub_cmd__endpoint(int argc, const char **argv)
 
 	if (ec == GH__ERROR_CODE__OK)
 		printf("%s\n", data.buf);
-	else
+	else if (ec != GH__ERROR_CODE__HTTP_404)
 		error("config: %s", status.error_message.buf);
 
 	gh__response_status__release(&status);
