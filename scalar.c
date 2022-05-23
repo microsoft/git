@@ -992,6 +992,7 @@ static int cmd_reconfigure(int argc, const char **argv)
 	git_config(get_scalar_repos, &scalar_repos);
 
 	for (i = 0; i < scalar_repos.nr; i++) {
+		int failed = 0;
 		const char *dir = scalar_repos.items[i].string;
 
 		strbuf_reset(&commondir);
@@ -999,19 +1000,40 @@ static int cmd_reconfigure(int argc, const char **argv)
 
 		if (chdir(dir) < 0) {
 			warning_errno(_("could not switch to '%s'"), dir);
-			res = -1;
-		} else if (discover_git_directory(&commondir, &gitdir) < 0) {
-			warning_errno(_("git repository gone in '%s'"), dir);
-			res = -1;
-		} else {
-			git_config_clear();
+			failed = -1;
+			goto loop_end;
+		}
 
-			the_repository = &r;
-			r.commondir = commondir.buf;
-			r.gitdir = gitdir.buf;
+		switch (discover_git_directory_reason(&commondir, &gitdir)) {
+		case GIT_DIR_INVALID_OWNERSHIP:
+			warning(_("repository at '%s' has different owner"), dir);
+			failed = -1;
+			goto loop_end;
 
-			if (set_recommended_config(1) < 0)
-				res = -1;
+		case GIT_DIR_DISCOVERED:
+			break;
+
+		default:
+			warning(_("repository not found in '%s'"), dir);
+			failed = -1;
+			break;
+		}
+
+		git_config_clear();
+
+		the_repository = &r;
+		r.commondir = commondir.buf;
+		r.gitdir = gitdir.buf;
+
+		if (set_recommended_config(1) < 0)
+			failed = -1;
+
+loop_end:
+		if (failed) {
+			res = failed;
+			warning(_("to unregister this repository from Scalar, run\n"
+				  "\tgit config --global --unset --fixed-value scalar.repo \"%s\""),
+				dir);
 		}
 	}
 
