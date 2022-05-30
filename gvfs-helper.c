@@ -2909,7 +2909,7 @@ static void do_req(const char *url_base,
 		curl_easy_setopt(slot->curl, CURLOPT_POSTFIELDS,
 				 params->post_payload->buf);
 		curl_easy_setopt(slot->curl, CURLOPT_POSTFIELDSIZE,
-				 params->post_payload->len);
+				 (long)params->post_payload->len);
 	} else {
 		curl_easy_setopt(slot->curl, CURLOPT_POST, 0);
 	}
