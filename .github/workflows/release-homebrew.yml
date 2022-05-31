@@ -27,4 +27,4 @@ jobs:
         type: cask
         version: ${{ steps.version.outputs.result }}
         sha256: ${{ steps.hash.outputs.result }}
-        alwaysUsePullRequest: true
+        alwaysUsePullRequest: false
