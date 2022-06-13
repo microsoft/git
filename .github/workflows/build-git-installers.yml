@@ -69,7 +69,7 @@ jobs:
           echo "PACKAGER=$USER_NAME <$USER_EMAIL>" >>$GITHUB_ENV
       - uses: git-for-windows/setup-git-for-windows-sdk@v1
         with:
-          flavor: full
+          flavor: build-installers
       - name: Clone build-extra
         shell: bash
         run: |
@@ -166,7 +166,7 @@ jobs:
           path: pkg-x86_64
       - uses: git-for-windows/setup-git-for-windows-sdk@v1
         with:
-          flavor: full
+          flavor: build-installers
       - name: Clone build-extra
         shell: bash
         run: |
