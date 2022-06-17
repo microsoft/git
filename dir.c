@@ -1400,46 +1400,16 @@ static struct path_pattern *last_matching_pattern_from_list(const char *pathname
 	return res;
 }
 
-/*
- * Scan the list of patterns to determine if the ordered list
- * of patterns matches on 'pathname'.
- *
- * Return 1 for a match, 0 for not matched and -1 for undecided.
- */
-enum pattern_match_result path_matches_pattern_list(
+enum pattern_match_result path_matches_cone_mode_pattern_list(
 				const char *pathname, int pathlen,
-				const char *basename, int *dtype,
-				struct pattern_list *pl,
-				struct index_state *istate)
+				struct pattern_list *pl)
 {
-	struct path_pattern *pattern;
 	struct strbuf parent_pathname = STRBUF_INIT;
 	int result = NOT_MATCHED;
 	size_t slash_pos;
 
-	/*
-	 * The virtual file system data is used to prevent git from traversing
-	 * any part of the tree that is not in the virtual file system.  Return
-	 * 1 to exclude the entry if it is not found in the virtual file system,
-	 * else fall through to the regular excludes logic as it may further exclude.
-	 */
-	if (*dtype == DT_UNKNOWN)
-		*dtype = resolve_dtype(DT_UNKNOWN, istate, pathname, pathlen);
-	if (is_excluded_from_virtualfilesystem(pathname, pathlen, *dtype) > 0)
-		return 1;
-
-	if (!pl->use_cone_patterns) {
-		pattern = last_matching_pattern_from_list(pathname, pathlen, basename,
-							dtype, pl, istate);
-		if (pattern) {
-			if (pattern->flags & PATTERN_FLAG_NEGATIVE)
-				return NOT_MATCHED;
-			else
-				return MATCHED;
-		}
-
-		return UNDECIDED;
-	}
+	if (!pl->use_cone_patterns)
+		BUG("path_matches_cone_mode_pattern_list requires cone mode patterns");
 
 	if (pl->full_cone)
 		return MATCHED;
@@ -1492,6 +1462,46 @@ done:
 	return result;
 }
 
+/*
+ * Scan the list of patterns to determine if the ordered list
+ * of patterns matches on 'pathname'.
+ *
+ * Return 1 for a match, 0 for not matched and -1 for undecided.
+ */
+enum pattern_match_result path_matches_pattern_list(
+				const char *pathname, int pathlen,
+				const char *basename, int *dtype,
+				struct pattern_list *pl,
+				struct index_state *istate)
+{
+	/*
+	 * The virtual file system data is used to prevent git from traversing
+	 * any part of the tree that is not in the virtual file system.  Return
+	 * 1 to exclude the entry if it is not found in the virtual file system,
+	 * else fall through to the regular excludes logic as it may further exclude.
+	 */
+	if (*dtype == DT_UNKNOWN)
+		*dtype = resolve_dtype(DT_UNKNOWN, istate, pathname, pathlen);
+	if (is_excluded_from_virtualfilesystem(pathname, pathlen, *dtype) > 0)
+		return 1;
+
+	if (!pl->use_cone_patterns) {
+		struct path_pattern *pattern = last_matching_pattern_from_list(
+							pathname, pathlen, basename,
+							dtype, pl, istate);
+		if (pattern) {
+			if (pattern->flags & PATTERN_FLAG_NEGATIVE)
+				return NOT_MATCHED;
+			else
+				return MATCHED;
+		}
+
+		return UNDECIDED;
+	}
+
+	return path_matches_cone_mode_pattern_list(pathname, pathlen, pl);
+}
+
 int init_sparse_checkout_patterns(struct index_state *istate)
 {
 	if (!core_apply_sparse_checkout)
@@ -1516,6 +1526,13 @@ static int path_in_sparse_checkout_1(const char *path,
 	int dtype = DT_REG;
 	enum pattern_match_result match = UNDECIDED;
 	const char *end, *slash;
+
+	/*
+	 * When using a virtual filesystem, there aren't really patterns
+	 * to follow, but be extra careful to skip this check.
+	 */
+	if (core_virtualfilesystem)
+		return 1;
 
 	/*
 	 * We default to accepting a path if the path is empty, there are no

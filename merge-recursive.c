@@ -3806,6 +3806,7 @@ int merge_recursive_generic(struct merge_options *opt,
 			    const struct object_id *merge,
 			    int num_merge_bases,
 			    const struct object_id **merge_bases,
+			    recursive_merge_fn_t merge_fn,
 			    struct commit **result)
 {
 	int clean;
@@ -3829,8 +3830,7 @@ int merge_recursive_generic(struct merge_options *opt,
 	}
 
 	repo_hold_locked_index(opt->repo, &lock, LOCK_DIE_ON_ERROR);
-	clean = merge_recursive(opt, head_commit, next_commit, ca,
-				result);
+	clean = merge_fn(opt, head_commit, next_commit, ca, result);
 	if (clean < 0) {
 		rollback_lock_file(&lock);
 		return clean;
