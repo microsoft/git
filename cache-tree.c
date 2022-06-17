@@ -102,6 +102,31 @@ struct cache_tree_sub *cache_tree_sub(struct cache_tree *it, const char *path)
 	return find_subtree(it, path, pathlen, 1);
 }
 
+struct cache_tree *cache_tree_find_path(struct cache_tree *it, const char *path)
+{
+	const char *slash;
+	int namelen;
+	struct cache_tree_sub *down;
+
+	if (!it)
+		return NULL;
+	slash = strchrnul(path, '/');
+	namelen = slash - path;
+	it->entry_count = -1;
+	if (!*slash) {
+		int pos;
+		pos = cache_tree_subtree_pos(it, path, namelen);
+		if (0 <= pos) {
+			return it->down[pos]->cache_tree;
+		}
+		return NULL;
+	}
+	down = find_subtree(it, path, namelen, 0);
+	if (down)
+		return cache_tree_find_path(down->cache_tree, slash + 1);
+	return NULL;
+}
+
 static int do_invalidate_path(struct cache_tree *it, const char *path)
 {
 	/* a/b/c
