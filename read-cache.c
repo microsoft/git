@@ -565,7 +565,9 @@ static int index_name_stage_pos(struct index_state *istate,
 		if (S_ISSPARSEDIR(ce->ce_mode) &&
 		    ce_namelen(ce) < namelen &&
 		    !strncmp(name, ce->name, ce_namelen(ce))) {
-			ensure_full_index(istate);
+			const char *fmt = "searching for '%s' and found parent dir '%s'";
+			ensure_full_index_with_reason(istate, fmt,
+						      name, ce->name);
 			return index_name_stage_pos(istate, name, namelen, stage, search_mode);
 		}
 	}
@@ -2372,7 +2374,7 @@ int do_read_index(struct index_state *istate, const char *path, int must_exist)
 	 */
 	prepare_repo_settings(istate->repo);
 	if (istate->repo->settings.command_requires_full_index)
-		ensure_full_index(istate);
+		ensure_full_index_with_reason(istate, "incompatible builtin");
 	else
 		ensure_correct_sparsity(istate);
 
@@ -2580,7 +2582,7 @@ int repo_index_has_changes(struct repository *repo,
 		return opt.flags.has_changes != 0;
 	} else {
 		/* TODO: audit for interaction with sparse-index. */
-		ensure_full_index(istate);
+		ensure_full_index_unaudited(istate);
 		for (i = 0; sb && i < istate->cache_nr; i++) {
 			if (i)
 				strbuf_addch(sb, ' ');
@@ -3194,7 +3196,7 @@ static int do_write_locked_index(struct index_state *istate,
 				   "%s", get_lock_file_path(lock));
 
 	if (was_full)
-		ensure_full_index(istate);
+		ensure_full_index_with_reason(istate, "re-expanding after write");
 
 	if (ret)
 		return ret;
@@ -3309,7 +3311,7 @@ static int write_shared_index(struct index_state *istate,
 				   the_repository, "%s", get_tempfile_path(*temp));
 
 	if (was_full)
-		ensure_full_index(istate);
+		ensure_full_index_with_reason(istate, "re-expanding after write");
 
 	if (ret)
 		return ret;
@@ -3869,7 +3871,7 @@ void overlay_tree_on_index(struct index_state *istate,
 
 	/* Hoist the unmerged entries up to stage #3 to make room */
 	/* TODO: audit for interaction with sparse-index. */
-	ensure_full_index(istate);
+	ensure_full_index_unaudited(istate);
 	for (i = 0; i < istate->cache_nr; i++) {
 		struct cache_entry *ce = istate->cache[i];
 		if (!ce_stage(ce))
@@ -4035,7 +4037,7 @@ static void update_callback(struct diff_queue_struct *q,
 		struct diff_filepair *p = q->queue[i];
 		const char *path = p->one->path;
 
-		if (!data->include_sparse &&
+		if (!data->include_sparse && !core_virtualfilesystem &&
 		    !path_in_sparse_checkout(path, data->index))
 			continue;
 
