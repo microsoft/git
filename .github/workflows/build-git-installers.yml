@@ -668,38 +668,42 @@ jobs:
     steps:
       - name: Clone repository
         uses: actions/checkout@v2
+        with:
+          path: 'git'
       - name: Download unsigned packages
         uses: actions/download-artifact@v2
         with:
           name: deb-package-unsigned
-          path: ${{ env.ARTIFACTS_DIR }}/unsigned
+          path: unsigned
       - uses: azure/login@v1
         with:
           creds: ${{ secrets.AZURE_CREDENTIALS }}
-      - name: Download ESRP client
+      - name: Set up ESRP client
+        shell: pwsh
+        env:
+          AZURE_STORAGE_KEY: ${{ secrets.AZURE_STORAGE_KEY }}
+          AZURE_VAULT: ${{ secrets.AZURE_VAULT }}
+          AUTH_CERT: ${{ secrets.AZURE_VAULT_AUTH_CERT_NAME }}
+          REQUEST_SIGNING_CERT: ${{ secrets.AZURE_VAULT_REQUEST_SIGNING_CERT_NAME }}
         run: |
-          az storage blob download --subscription "${{ secrets.AZURE_SUBSCRIPTION }}" --account-name msftgitesrp -c microsoft-esrp-client -n microsoft.esrpclient.1.2.76.nupkg -f esrp.zip
-          Expand-Archive -Path esrp.zip -DestinationPath .\esrp
-      - name: Install ESRP certificates
-        run: |
-          az keyvault secret download --subscription "${{ secrets.AZURE_SUBSCRIPTION }}" --vault-name "msft-git-esrp" --name "microsoft-git-esrp-auth-cert" -f auth_cert.pfx
-          Import-PfxCertificate auth_cert.pfx -CertStoreLocation Cert:\LocalMachine\My
-          az keyvault secret download --subscription "${{ secrets.AZURE_SUBSCRIPTION }}" --vault-name "msft-git-esrp" --name "microsoft-git-request-signing-cert" -f request_signing_cert.pfx
-          Import-PfxCertificate request_signing_cert.pfx -CertStoreLocation Cert:\LocalMachine\My
-      - uses: actions/setup-python@v2
-      - name: Run ESRP client
+          git\.github\scripts\set-up-esrp.ps1
+      - name: Sign package
+        shell: pwsh
         env:
           AZURE_AAD_ID: ${{ secrets.AZURE_AAD_ID }}
           # We temporarily need two AAD IDs, as we're using an SSL certificate associated
           # with an older App Registration until we have the required hardware to approve
           # the new certificate in SSL Admin.
-          AZURE_AAD_ID_TEMP: ${{ secrets.AAD_ID_TEMP }}
-        run: python .github/scripts/sign-debian-packages.py
+          AZURE_AAD_ID_SSL: ${{ secrets.AZURE_AAD_ID_SSL }}
+          LINUX_KEY_CODE: ${{ secrets.LINUX_KEY_CODE }}
+          LINUX_OP_CODE: ${{ secrets.LINUX_OPERATION_CODE }}
+        run: |
+          python git\.github\scripts\run-esrp-signing.py unsigned $env:LINUX_KEY_CODE $env:LINUX_OP_CODE
       - name: Upload signed artifact
         uses: actions/upload-artifact@v2
         with:
           name: deb-package-signed
-          path: ${{ env.ARTIFACTS_DIR }}/signed
+          path: signed
   # End build & sign Ubuntu package
 
   create-github-release:
