@@ -38,7 +38,8 @@ auth_json = {
     "AuthCert": {
             "SubjectName": f"CN={aad_id_ssl}.microsoft.com",
             "StoreLocation": "LocalMachine",
-            "StoreName": "My"
+            "StoreName": "My",
+			"SendX5c" :  "true"
     },
     "RequestSigningCert": {
             "SubjectName": f"CN={aad_id}",
