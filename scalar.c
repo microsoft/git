@@ -769,6 +769,42 @@ void load_builtin_commands(const char *prefix, struct cmdnames *cmds)
 	die("not implemented");
 }
 
+static int init_shared_object_cache(const char *url,
+				    const char *local_cache_root)
+{
+	struct strbuf buf = STRBUF_INIT;
+	int res = 0;
+	char *cache_key = NULL, *shared_cache_path = NULL;
+
+	if (!(cache_key = get_cache_key(url))) {
+		res = error(_("could not determine cache key for '%s'"), url);
+		goto cleanup;
+	}
+
+	shared_cache_path = xstrfmt("%s/%s", local_cache_root, cache_key);
+	if (set_config("gvfs.sharedCache=%s", shared_cache_path)) {
+		res = error(_("could not configure shared cache"));
+		goto cleanup;
+	}
+
+	strbuf_addf(&buf, "%s/pack", shared_cache_path);
+	switch (safe_create_leading_directories(buf.buf)) {
+	case SCLD_OK: case SCLD_EXISTS:
+		break; /* okay */
+	default:
+		res = error_errno(_("could not initialize '%s'"), buf.buf);
+		goto cleanup;
+	}
+
+	write_file(git_path("objects/info/alternates"),"%s\n", shared_cache_path);
+
+	cleanup:
+	strbuf_release(&buf);
+	free(shared_cache_path);
+	free(cache_key);
+	return res;
+}
+
 static int cmd_clone(int argc, const char **argv)
 {
 	const char *branch = NULL;
@@ -799,7 +835,6 @@ static int cmd_clone(int argc, const char **argv)
 	};
 	const char *url;
 	char *enlistment = NULL, *dir = NULL;
-	char *cache_key = NULL, *shared_cache_path = NULL;
 	struct strbuf buf = STRBUF_INIT;
 	int res;
 	int gvfs_protocol;
@@ -893,29 +928,6 @@ static int cmd_clone(int argc, const char **argv)
 		goto cleanup;
 	}
 
-	if (!(cache_key = get_cache_key(url))) {
-		res = error(_("could not determine cache key for '%s'"), url);
-		goto cleanup;
-	}
-
-	shared_cache_path = xstrfmt("%s/%s", local_cache_root, cache_key);
-	if (set_config("gvfs.sharedCache=%s", shared_cache_path)) {
-		res = error(_("could not configure shared cache"));
-		goto cleanup;
-	}
-
-	strbuf_reset(&buf);
-	strbuf_addf(&buf, "%s/pack", shared_cache_path);
-	switch (safe_create_leading_directories(buf.buf)) {
-	case SCLD_OK: case SCLD_EXISTS:
-		break; /* okay */
-	default:
-		res = error_errno(_("could not initialize '%s'"), buf.buf);
-		goto cleanup;
-	}
-
-	write_file(git_path("objects/info/alternates"),"%s\n", shared_cache_path);
-
 	if (set_config("remote.origin.url=%s", url) ||
 	    set_config("remote.origin.fetch="
 		       "+refs/heads/%s:refs/remotes/origin/%s",
@@ -934,6 +946,8 @@ static int cmd_clone(int argc, const char **argv)
 			supports_gvfs_protocol(url, &default_cache_server_url);
 
 	if (gvfs_protocol) {
+		if ((res = init_shared_object_cache(url, local_cache_root)))
+			goto cleanup;
 		if (!cache_server_url)
 			cache_server_url = default_cache_server_url;
 		if (set_config("core.useGVFSHelper=true") ||
@@ -1005,8 +1019,6 @@ cleanup:
 	strbuf_release(&buf);
 	free(default_cache_server_url);
 	free(local_cache_root_abs);
-	free(cache_key);
-	free(shared_cache_path);
 	return res;
 }
 
