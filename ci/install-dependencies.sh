@@ -119,7 +119,7 @@ ClangFormat)
 	sudo apt-get -q update
 	sudo apt-get -q -y install clang-format
 	;;
-StaticAnalysis)
+StaticAnalysis|codeql)
 	sudo apt-get -q update
 	sudo apt-get -q -y install coccinelle libcurl4-openssl-dev libssl-dev \
 		libexpat-dev gettext make
