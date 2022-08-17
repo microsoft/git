@@ -693,9 +693,59 @@ jobs:
           path: signed
   # End build & sign Ubuntu package
 
+  # Validate installers
+  validate-installers:
+    name: Validate installers
+    strategy:
+      matrix:
+        component:
+          - os: ubuntu-latest
+            artifact: deb-package-signed
+            command: git
+          - os: macos-latest
+            artifact: osx-signed-pkg
+            command: git
+          - os: windows-latest
+            artifact: win-installer-x86_64
+            command: $PROGRAMFILES\Git\cmd\git.exe
+    runs-on: ${{ matrix.component.os }}
+    needs: [prereqs, windows_artifacts, osx_publish_dmg, ubuntu_sign-artifacts]
+    steps:
+      - name: Download artifacts
+        uses: actions/download-artifact@v2
+        with:
+          name: ${{ matrix.component.artifact }}
+
+      - name: Install Windows
+        if: contains(matrix.component.os, 'windows')
+        shell: pwsh
+        run: |
+          $exePath = Get-ChildItem -Path ./*.exe | %{$_.FullName}
+          Start-Process -Wait -FilePath "$exePath" -ArgumentList "/SILENT /VERYSILENT /NORESTART /SUPPRESSMSGBOXES /ALLOWDOWNGRADE=1"
+
+      - name: Install Linux
+        if: contains(matrix.component.os, 'ubuntu')
+        run: |
+          debpath=$(find ./*.deb)
+          sudo apt install $debpath
+
+      - name: Install macOS
+        if: contains(matrix.component.os, 'macos')
+        run: |
+          pkgpath=$(find ./*.pkg)
+          sudo installer -pkg $pkgpath -target /
+
+      - name: Validate
+        shell: bash
+        run: |
+          "${{ matrix.component.command }}" --version | sed 's/git version //' >actual
+          echo ${{ needs.prereqs.outputs.tag_version }} >expect
+          cmp expect actual || exit 1
+  # End validate installers
+
   create-github-release:
     runs-on: ubuntu-latest
-    needs: [prereqs, windows_artifacts, osx_publish_dmg, ubuntu_sign-artifacts]
+    needs: [validate-installers]
     if: |
       success() ||
         (needs.ubuntu_sign-artifacts.result == 'skipped' &&
