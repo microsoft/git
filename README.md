@@ -12,8 +12,8 @@ In addition to the Git command-line interface (CLI), `microsoft/git` includes th
 further enable working with extremely large repositories. Scalar is a tool to apply the latest
 recommendations and use the most advanced Git features. You can read
 [the Scalar CLI documentation](Documentation/scalar.txt) or read our
-[Scalar user guide](Documentation/scalar/index.md) including
-[the philosophy of Scalar](Documentation/scalar/philosophy.md).
+[Scalar user guide](Documentation/scalar/docs/index.md) including
+[the philosophy of Scalar](Documentation/scalar/docs/philosophy.md).
 
 If you encounter problems with `microsoft/git`, please report them as
 [GitHub issues](https://github.com/microsoft/git/issues).
