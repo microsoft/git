@@ -16,6 +16,7 @@
 #include "help.h"
 #include "json-parser.h"
 #include "remote.h"
+#include "path.h"
 
 static int is_unattended(void) {
 	return git_env_bool("Scalar_UNATTENDED", 0);
@@ -469,8 +470,13 @@ static char *default_cache_root(const char *root)
 {
 	const char *env;
 
-	if (is_unattended())
-		return xstrfmt("%s/.scalarCache", root);
+	if (is_unattended()) {
+		struct strbuf path = STRBUF_INIT;
+		strbuf_addstr(&path, root);
+		strip_last_path_component(&path);
+		strbuf_addstr(&path, "/.scalarCache");
+		return strbuf_detach(&path, NULL);
+	}
 
 #ifdef WIN32
 	(void)env;
