@@ -384,4 +384,12 @@ test_expect_success '`scalar delete` with existing repo' '
 	test_path_is_missing existing
 '
 
+test_expect_success '`scalar clone --no-src`' '
+	scalar clone --src "file://$(pwd)" with-src &&
+	scalar clone --no-src "file://$(pwd)" without-src &&
+
+	test_path_is_dir with-src/src &&
+	test_path_is_missing without-src/src
+'
+
 test_done
