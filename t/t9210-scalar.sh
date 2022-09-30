@@ -299,7 +299,7 @@ test_expect_success '`scalar clone` with GVFS-enabled server' '
 	cache_key="url_$(printf "%s" http://$HOST_PORT/ |
 		tr A-Z a-z |
 		test-tool sha1)" &&
-	echo "$(pwd)/using-gvfs/.scalarCache/$cache_key" >expect &&
+	echo "$(pwd)/.scalarCache/$cache_key" >expect &&
 	git -C using-gvfs/src config gvfs.sharedCache >actual &&
 	test_cmp expect actual &&
 
