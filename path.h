@@ -179,6 +179,10 @@ const char *git_path_auto_merge(struct repository *r);
 const char *git_path_fetch_head(struct repository *r);
 const char *git_path_shallow(struct repository *r);
 
+/**
+ * Remove the last path component from 'path' except if 'path' is root.
+ */
+void strip_last_path_component(struct strbuf *path);
 
 int ends_with_path_components(const char *path, const char *components);
 

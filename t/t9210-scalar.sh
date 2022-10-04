@@ -299,7 +299,7 @@ test_expect_success '`scalar clone` with GVFS-enabled server' '
 	cache_key="url_$(printf "%s" http://$HOST_PORT/ |
 		tr A-Z a-z |
 		test-tool sha1)" &&
-	echo "$(pwd)/using-gvfs/.scalarCache/$cache_key" >expect &&
+	echo "$(pwd)/.scalarCache/$cache_key" >expect &&
 	git -C using-gvfs/src config gvfs.sharedCache >actual &&
 	test_cmp expect actual &&
 
@@ -382,6 +382,14 @@ test_expect_success '`scalar delete` with existing repo' '
 	scalar register existing &&
 	scalar delete existing &&
 	test_path_is_missing existing
+'
+
+test_expect_success '`scalar clone --no-src`' '
+	scalar clone --src "file://$(pwd)" with-src &&
+	scalar clone --no-src "file://$(pwd)" without-src &&
+
+	test_path_is_dir with-src/src &&
+	test_path_is_missing without-src/src
 '
 
 test_done

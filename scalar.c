@@ -16,6 +16,7 @@
 #include "help.h"
 #include "json-parser.h"
 #include "remote.h"
+#include "path.h"
 
 static int is_unattended(void) {
 	return git_env_bool("Scalar_UNATTENDED", 0);
@@ -469,8 +470,13 @@ static char *default_cache_root(const char *root)
 {
 	const char *env;
 
-	if (is_unattended())
-		return xstrfmt("%s/.scalarCache", root);
+	if (is_unattended()) {
+		struct strbuf path = STRBUF_INIT;
+		strbuf_addstr(&path, root);
+		strip_last_path_component(&path);
+		strbuf_addstr(&path, "/.scalarCache");
+		return strbuf_detach(&path, NULL);
+	}
 
 #ifdef WIN32
 	(void)env;
@@ -693,6 +699,8 @@ static int cmd_clone(int argc, const char **argv)
 	int full_clone = 0, single_branch = 0, dummy = 0;
 	const char *cache_server_url = NULL, *local_cache_root = NULL;
 	char *default_cache_server_url = NULL, *local_cache_root_abs = NULL;
+	const char *enlistment_parent;
+	int no_src = 0;
 	struct option clone_options[] = {
 		OPT_STRING('b', "branch", &branch, N_("<branch>"),
 			   N_("branch to checkout after clone")),
@@ -701,6 +709,8 @@ static int cmd_clone(int argc, const char **argv)
 		OPT_BOOL(0, "single-branch", &single_branch,
 			 N_("only download metadata for the branch that will "
 			    "be checked out")),
+		OPT_BOOL(0, "no-src", &no_src,
+			 N_("skip creating a 'src' directory")),
 		OPT_STRING(0, "cache-server-url", &cache_server_url,
 			   N_("<url>"),
 			   N_("the url or friendly name of the cache server")),
@@ -751,7 +761,13 @@ static int cmd_clone(int argc, const char **argv)
 
 	ensure_absolute_path(enlistment, &enlistment);
 
-	dir = xstrfmt("%s/src", enlistment);
+	if (!no_src) {
+		dir = xstrfmt("%s/src", enlistment);
+		enlistment_parent = "../..";
+	} else {
+		dir = xstrdup(enlistment);
+		enlistment_parent = "..";
+	}
 
 	if (!local_cache_root)
 		local_cache_root = local_cache_root_abs =
@@ -792,7 +808,7 @@ static int cmd_clone(int argc, const char **argv)
 		struct strbuf path = STRBUF_INIT;
 
 		strbuf_addstr(&path, enlistment);
-		if (chdir("../..") < 0 ||
+		if (chdir(enlistment_parent) < 0 ||
 		    remove_dir_recursively(&path, 0) < 0)
 			die(_("'--local-cache-path' cannot be inside the src "
 			      "folder;\nCould not remove '%s'"), enlistment);
