@@ -9,7 +9,7 @@ SYNOPSIS
 --------
 [verse]
 scalar clone [--single-branch] [--branch <main-branch>] [--full-clone]
-	[--local-cache-path <path>] [--cache-server-url <url>]
+	[--local-cache-path <path>] [--cache-server-url <url>] [--[no-]src]
 	<url> [<enlistment>]
 scalar list
 scalar register [<enlistment>]
@@ -82,6 +82,9 @@ Further fetches into the resulting repository will only update the
 remote-tracking branch for the branch this option was used for the initial
 cloning. If the HEAD at the remote did not point at any branch when
 `--single-branch` clone was made, no remote-tracking branch is created.
+
+--no-src::
+	Skip adding a `src` directory within the target enlistment.
 
 --[no-]full-clone::
 	A sparse-checkout is initialized by default. This behavior can be
