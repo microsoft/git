@@ -322,6 +322,8 @@ int create_diagnostics_archive(struct strbuf *zip_path, enum diagnose_mode mode)
 	}
 
 	if (shared_cache) {
+		size_t path_len;
+
 		strbuf_reset(&buf);
 		strbuf_addf(&path, "%s/pack", shared_cache);
 		strbuf_reset(&buf);
@@ -336,6 +338,8 @@ int create_diagnostics_archive(struct strbuf *zip_path, enum diagnose_mode mode)
 
 		strbuf_reset(&path);
 		strbuf_addf(&path, "%s/info", shared_cache);
+		path_len = path.len;
+
 		if (is_directory(path.buf)) {
 			DIR *dir = opendir(path.buf);
 			struct dirent *e;
@@ -343,9 +347,16 @@ int create_diagnostics_archive(struct strbuf *zip_path, enum diagnose_mode mode)
 			while ((e = readdir(dir))) {
 				if (!strcmp(".", e->d_name) || !strcmp("..", e->d_name))
 					continue;
+				if (e->d_type == DT_DIR)
+					continue;
 
 				strbuf_reset(&buf);
 				strbuf_addf(&buf, "--add-virtual-file=info/%s:", e->d_name);
+
+				strbuf_setlen(&path, path_len);
+				strbuf_addch(&path, '/');
+				strbuf_addstr(&path, e->d_name);
+
 				if (strbuf_read_file(&buf, path.buf, 0) < 0) {
 					res = error_errno(_("could not read '%s'"), path.buf);
 					goto diagnose_cleanup;
