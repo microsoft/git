@@ -348,7 +348,7 @@ static int reset_tree(struct object_id *i_tree, int update, int reset)
 	memset(&opts, 0, sizeof(opts));
 
 	tree = repo_parse_tree_indirect(the_repository, i_tree);
-	if (repo_parse_tree(the_repository, tree))
+	if (!tree || repo_parse_tree(the_repository, tree))
 		return -1;
 
 	init_tree_desc(t, &tree->object.oid, tree->buffer, tree->size);
