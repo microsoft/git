@@ -134,7 +134,7 @@
 #define GIT_CURL_HAVE_CURLOPT_PROTOCOLS_STR 1
 #endif
 
-/*
+/**
  * CURLSSLOPT_AUTO_CLIENT_CERT was added in 7.77.0, released in May
  * 2021.
  */
