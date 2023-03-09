@@ -20,16 +20,16 @@ jobs:
       fail-fast: false
       matrix:
         # Order by runtime (in descending order)
-        os: [windows-2019, macos-10.15, ubuntu-18.04, ubuntu-20.04]
+        os: [windows-2019, macos-11, ubuntu-20.04, ubuntu-22.04]
         # Scalar.NET used to be tested using `features: [false, experimental]`
         # But currently, Scalar/C ignores `feature.scalar` altogether, so let's
         # save some electrons and run only one of them...
         features: [ignored]
         exclude:
           # The built-in FSMonitor is not (yet) supported on Linux
-          - os: ubuntu-18.04
-            features: experimental
           - os: ubuntu-20.04
+            features: experimental
+          - os: ubuntu-22.04
             features: experimental
     runs-on: ${{ matrix.os }}
 
@@ -39,7 +39,7 @@ jobs:
 
     steps:
       - name: Check out Git's source code
-        uses: actions/checkout@v2
+        uses: actions/checkout@v3
 
       - name: Setup build tools on Windows
         if: runner.os == 'Windows'
@@ -118,7 +118,7 @@ jobs:
           case "$(scalar version 2>&1)" in *.vfs.*) echo Good;; *) exit 1;; esac
 
       - name: Check out Scalar's source code
-        uses: actions/checkout@v2
+        uses: actions/checkout@v3
         with:
           fetch-depth: 0 # Indicate full history so Nerdbank.GitVersioning works.
           path: scalar
@@ -126,9 +126,9 @@ jobs:
           ref: ${{ env.SCALAR_REF }}
 
       - name: Setup .NET Core
-        uses: actions/setup-dotnet@v1
+        uses: actions/setup-dotnet@v3
         with:
-          dotnet-version: 3.1.302
+          dotnet-version: '3.1.x'
 
       - name: Install dependencies
         run: dotnet restore
@@ -203,7 +203,7 @@ jobs:
 
       - name: Archive Trace2 Logs
         if: ( success() || failure() ) && ( steps.trace2_zip_unix.conclusion == 'success' || steps.trace2_zip_windows.conclusion == 'success' )
-        uses: actions/upload-artifact@v2
+        uses: actions/upload-artifact@v3
         with:
           name: ${{ env.TRACE2_BASENAME }}.zip
           path: scalar/${{ env.TRACE2_BASENAME }}.zip

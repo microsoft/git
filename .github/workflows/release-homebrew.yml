@@ -10,16 +10,16 @@ jobs:
     - id: version
       name: Compute version number
       run: |
-        echo "::set-output name=result::$(echo $GITHUB_REF | sed -e "s/^refs\/tags\/v//")"
+        echo "result=$(echo $GITHUB_REF | sed -e "s/^refs\/tags\/v//")" >>$GITHUB_OUTPUT
     - id: hash
       name: Compute release asset hash
-      uses: mjcheetham/asset-hash@v1
+      uses: mjcheetham/asset-hash@v1.1
       with:
         asset: /git-(.*)\.pkg/
         hash: sha256
         token: ${{ secrets.GITHUB_TOKEN }}
     - name: Update scalar Cask
-      uses: mjcheetham/update-homebrew@v1.1
+      uses: mjcheetham/update-homebrew@v1.3
       with:
         token: ${{ secrets.HOMEBREW_TOKEN }}
         tap: microsoft/git

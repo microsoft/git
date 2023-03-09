@@ -19,14 +19,14 @@ jobs:
     steps:
       - name: Determine tag to build
         run: |
-          echo "::set-output name=name::${GITHUB_REF#refs/tags/}"
-          echo "::set-output name=version::${GITHUB_REF#refs/tags/v}"
+          echo "name=${GITHUB_REF#refs/tags/}" >>$GITHUB_OUTPUT
+          echo "version=${GITHUB_REF#refs/tags/v}" >>$GITHUB_OUTPUT
         id: tag
       - name: Determine whether signing certificates are present
-        run: echo "::set-output name=signable::$([[ $AZ_SUB != '' && $AZ_CREDS != '' ]] && echo 'true' || echo 'false')"
+        run: echo "signable=$([[ $AZ_SUB != '' && $AZ_CREDS != '' ]] && echo 'true' || echo 'false')" >>$GITHUB_OUTPUT
         id: deb
       - name: Clone git
-        uses: actions/checkout@v2
+        uses: actions/checkout@v3
       - name: Validate the tag identified with trigger
         run: |
           die () {
@@ -587,7 +587,7 @@ jobs:
           sudo apt-get update -q
           sudo apt-get install -y -q --no-install-recommends gettext libcurl4-gnutls-dev libpcre3-dev asciidoc xmlto
       - name: Clone git
-        uses: actions/checkout@v2
+        uses: actions/checkout@v3
         with:
           path: git
       - name: Build and package .deb
@@ -659,7 +659,7 @@ jobs:
       ARTIFACTS_DIR: artifacts
     steps:
       - name: Clone repository
-        uses: actions/checkout@v2
+        uses: actions/checkout@v3
         with:
           path: 'git'
       - name: Download unsigned packages
@@ -784,7 +784,7 @@ jobs:
         with:
           name: deb-package-unsigned
           path: deb-package
-      - uses: actions/github-script@v4
+      - uses: actions/github-script@v6
         with:
           script: |
             const fs = require('fs');
@@ -797,7 +797,7 @@ jobs:
 
             // Create the release
             var tagName = "${{ needs.prereqs.outputs.tag_name }}";
-            var createdRelease = await github.repos.createRelease({
+            var createdRelease = await github.rest.repos.createRelease({
               ...releaseMetadata,
               draft: true,
               tag_name: tagName,
@@ -814,7 +814,7 @@ jobs:
                   })
                   .map(async (file) => {
                     var filePath = path.join(directory, file);
-                    github.repos.uploadReleaseAsset({
+                    github.rest.repos.uploadReleaseAsset({
                       ...releaseMetadata,
                       name: file,
                       headers: {
