@@ -687,7 +687,7 @@ jobs:
         run: |
           python git\.github\scripts\run-esrp-signing.py unsigned $env:LINUX_KEY_CODE $env:LINUX_OP_CODE
       - name: Upload signed artifact
-        uses: actions/upload-artifact@v2
+        uses: actions/upload-artifact@v3
         with:
           name: deb-package-signed
           path: signed
