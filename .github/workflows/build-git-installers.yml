@@ -647,7 +647,7 @@ jobs:
           mkdir $GITHUB_WORKSPACE/artifacts
           mv "$PKGNAME.deb" $GITHUB_WORKSPACE/artifacts/
       - name: Publish unsigned .deb package
-        uses: actions/upload-artifact@v2
+        uses: actions/upload-artifact@v3
         with:
           name: deb-package-unsigned
           path: artifacts/
