@@ -712,7 +712,7 @@ jobs:
     needs: [prereqs, windows_artifacts, osx_publish_dmg, ubuntu_sign-artifacts]
     steps:
       - name: Download artifacts
-        uses: actions/download-artifact@v2
+        uses: actions/download-artifact@v3
         with:
           name: ${{ matrix.component.artifact }}
 
