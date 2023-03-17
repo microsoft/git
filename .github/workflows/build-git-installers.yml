@@ -138,7 +138,7 @@ jobs:
           git commit -s -m "mingw-w64-git: new version ($version)" PKGBUILD &&
           git bundle create "$b"/MINGW-packages.bundle origin/main..main)
       - name: Publish mingw-w64-x86_64-git
-        uses: actions/upload-artifact@v2
+        uses: actions/upload-artifact@v3
         with:
           name: pkg-x86_64
           path: artifacts
@@ -292,7 +292,7 @@ jobs:
           PATH=$PATH:"/c/Program Files (x86)/Windows Kits/10/App Certification Kit/" \
           signtool verify //pa artifacts/${{matrix.artifact.fileprefix}}-*.exe
       - name: Publish ${{matrix.artifact.name}}-x86_64
-        uses: actions/upload-artifact@v2
+        uses: actions/upload-artifact@v3
         with:
           name: win-${{matrix.artifact.name}}-x86_64
           path: artifacts
