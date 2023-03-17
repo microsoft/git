@@ -577,7 +577,7 @@ jobs:
 
   # Build & sign Ubuntu package
   ubuntu_build:
-    runs-on: ubuntu-18.04
+    runs-on: ubuntu-20.04
     needs: prereqs
     steps:
       - name: Install git dependencies
