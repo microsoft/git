@@ -850,7 +850,9 @@ test_expect_success 'curl-error: no server' '
 		<"$OIDS_FILE" >OUT.output 2>OUT.stderr &&
 
 	# CURLE_COULDNT_CONNECT 7
-	grep -q "error: get: (curl:7)" OUT.stderr
+        # CURLE_OPERATION_TIMEOUT 28
+        { grep -q "error: get: (curl:7)" OUT.stderr ||
+          grep -q "error: get: (curl:28)" OUT.stderr; }
 '
 
 test_expect_success 'curl-error: close socket while reading request' '
@@ -910,6 +912,25 @@ test_expect_success 'curl-error: close socket before writing response' '
 #
 # Note: I'm only to do this for 1 of the close_* mayhem events.
 #################################################################
+
+This one still fails on FreeBSD:
+
++ test_when_finished per_test_cleanup
++ test 0 '=' 0
++ test_cleanup=$'{ per_test_cleanup
+\t\t} && (exit "$eval_ret"); eval_ret=$?; :'
++ start_gvfs_protocol_server_with_mayhem close_read_1
++ test 1 -lt 1
++ mayhem=''
++ mayhem=' --mayhem=close_read_1'
++ cd '/tmp/cirrus-ci-build/t/trash directory.t5799-gvfs-helper/repo_src'
++ test-gvfs-protocol --verbose '--listen=127.0.0.1' '--port=5799' --reuseaddr '--pid-file=/tmp/cirrus-ci-build/t/trash directory.t5799-gvfs-helper/pid-file.pid' '--mayhem=close_read_1'
++ test -f '/tmp/cirrus-ci-build/t/trash directory.t5799-gvfs-helper/pid-file.pid'
++ return 0
++ git -C '/tmp/cirrus-ci-build/t/trash directory.t5799-gvfs-helper/repo_t1' gvfs-helper '--cache-server=disable' '--remote=origin' get '--max-retries=2'
+error: get: (curl:52) Server returned nothing (no headers, no data) [hard_fail]: from GET 035f9b742ebf552ed87f003d4944480bfea6ba99
+error: last command exited with $?=2
+not ok 17 - successful retry after curl-error: origin get
 
 test_expect_success 'successful retry after curl-error: origin get' '
 	test_when_finished "per_test_cleanup" &&
