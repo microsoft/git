@@ -663,7 +663,7 @@ jobs:
         with:
           path: 'git'
       - name: Download unsigned packages
-        uses: actions/download-artifact@v2
+        uses: actions/download-artifact@v3
         with:
           name: deb-package-unsigned
           path: unsigned
