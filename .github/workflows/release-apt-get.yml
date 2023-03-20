@@ -33,7 +33,7 @@ jobs:
           rm repoclient.deb
 
       - name: "Configure Repo Client"
-        uses: actions/github-script@v3
+        uses: actions/github-script@v6
         env:
           AZURE_AAD_ID: ${{ secrets.AZURE_AAD_ID }}
           AAD_CLIENT_SECRET: ${{ secrets.AAD_CLIENT_SECRET }}
@@ -59,11 +59,11 @@ jobs:
         id: get-asset
         env:
           RELEASE: ${{ github.event.inputs.release }}
-        uses: actions/github-script@v3
+        uses: actions/github-script@v6
         with:
           github-token: ${{secrets.GITHUB_TOKEN}}
           script: |
-            const { data } = await github.repos.getRelease({
+            const { data } = await github.rest.repos.getRelease({
                 owner: context.repo.owner,
                 repo: context.repo.repo,
                 release_id: process.env.RELEASE || 'latest'
@@ -73,7 +73,7 @@ jobs:
               throw new Error(`Unexpected number of .deb assets: ${assets.length}`)
             }
             const fs = require('fs')
-            const buffer = await github.repos.getReleaseAsset({
+            const buffer = await github.rest.repos.getReleaseAsset({
                 headers: {
                   accept: 'application/octet-stream'
                 },

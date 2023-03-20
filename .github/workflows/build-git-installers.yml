@@ -138,7 +138,7 @@ jobs:
           git commit -s -m "mingw-w64-git: new version ($version)" PKGBUILD &&
           git bundle create "$b"/MINGW-packages.bundle origin/main..main)
       - name: Publish mingw-w64-x86_64-git
-        uses: actions/upload-artifact@v2
+        uses: actions/upload-artifact@v3
         with:
           name: pkg-x86_64
           path: artifacts
@@ -157,7 +157,7 @@ jobs:
       fail-fast: false
     steps:
       - name: Download pkg-x86_64
-        uses: actions/download-artifact@v2
+        uses: actions/download-artifact@v3
         with:
           name: pkg-x86_64
           path: pkg-x86_64
@@ -292,7 +292,7 @@ jobs:
           PATH=$PATH:"/c/Program Files (x86)/Windows Kits/10/App Certification Kit/" \
           signtool verify //pa artifacts/${{matrix.artifact.fileprefix}}-*.exe
       - name: Publish ${{matrix.artifact.name}}-x86_64
-        uses: actions/upload-artifact@v2
+        uses: actions/upload-artifact@v3
         with:
           name: win-${{matrix.artifact.name}}-x86_64
           path: artifacts
@@ -577,7 +577,7 @@ jobs:
 
   # Build & sign Ubuntu package
   ubuntu_build:
-    runs-on: ubuntu-18.04
+    runs-on: ubuntu-20.04
     needs: prereqs
     steps:
       - name: Install git dependencies
@@ -647,7 +647,7 @@ jobs:
           mkdir $GITHUB_WORKSPACE/artifacts
           mv "$PKGNAME.deb" $GITHUB_WORKSPACE/artifacts/
       - name: Publish unsigned .deb package
-        uses: actions/upload-artifact@v2
+        uses: actions/upload-artifact@v3
         with:
           name: deb-package-unsigned
           path: artifacts/
@@ -663,7 +663,7 @@ jobs:
         with:
           path: 'git'
       - name: Download unsigned packages
-        uses: actions/download-artifact@v2
+        uses: actions/download-artifact@v3
         with:
           name: deb-package-unsigned
           path: unsigned
@@ -687,7 +687,7 @@ jobs:
         run: |
           python git\.github\scripts\run-esrp-signing.py unsigned $env:LINUX_KEY_CODE $env:LINUX_OP_CODE
       - name: Upload signed artifact
-        uses: actions/upload-artifact@v2
+        uses: actions/upload-artifact@v3
         with:
           name: deb-package-signed
           path: signed
@@ -712,7 +712,7 @@ jobs:
     needs: [prereqs, windows_artifacts, osx_publish_dmg, ubuntu_sign-artifacts]
     steps:
       - name: Download artifacts
-        uses: actions/download-artifact@v2
+        uses: actions/download-artifact@v3
         with:
           name: ${{ matrix.component.artifact }}
 
@@ -753,34 +753,34 @@ jobs:
         needs.windows_artifacts.result == 'success')
     steps:
       - name: Download Windows portable installer
-        uses: actions/download-artifact@v2
+        uses: actions/download-artifact@v3
         with:
           name: win-portable-x86_64
           path: win-portable-x86_64
       - name: Download Windows x86_64 installer
-        uses: actions/download-artifact@v2
+        uses: actions/download-artifact@v3
         with:
           name: win-installer-x86_64
           path: win-installer-x86_64
       - name: Download Mac dmg
-        uses: actions/download-artifact@v2
+        uses: actions/download-artifact@v3
         with:
           name: osx-dmg
           path: osx-dmg
       - name: Download Mac pkg
-        uses: actions/download-artifact@v2
+        uses: actions/download-artifact@v3
         with:
           name: osx-signed-pkg
           path: osx-pkg
       - name: Download Ubuntu package (signed)
         if: needs.prereqs.outputs.deb_signable == 'true'
-        uses: actions/download-artifact@v2
+        uses: actions/download-artifact@v3
         with:
           name: deb-package-signed
           path: deb-package
       - name: Download Ubuntu package (unsigned)
         if: needs.prereqs.outputs.deb_signable != 'true'
-        uses: actions/download-artifact@v2
+        uses: actions/download-artifact@v3
         with:
           name: deb-package-unsigned
           path: deb-package
