@@ -334,9 +334,11 @@ static void mi_random_init_ex(mi_random_ctx_t* ctx, bool use_weak) {
       ((uint32_t*)key)[i] = (uint32_t)x;
     }
     ctx->weak = true;
+    fprintf(stderr,"XXX random_init: [ctx %p][weak %d] [th:%lld]\n", ctx, ctx->weak, _mi_thread_id());
   }
   else {
     ctx->weak = false;
+    fprintf(stderr,"XXX random_init: [ctx %p][weak %d] [th:%lld]\n", ctx, ctx->weak, _mi_thread_id());
   }
   chacha_init(ctx, key, (uintptr_t)ctx /*nonce*/ );
 }

@@ -462,9 +462,18 @@ static int run_post_command_hook(void)
 	return ret;
 }
 
-static void post_command_hook_atexit(void)
+#include "thread-utils.h"
+static void *xxx_thread_proc(void *data)
 {
 	run_post_command_hook();
+	return NULL;
+}
+static void post_command_hook_atexit(void)
+{
+//	run_post_command_hook();
+	pthread_t pt;
+	pthread_create(&pt, NULL, xxx_thread_proc, NULL);
+	pthread_join(pt, NULL);
 }
 
 static int run_builtin(struct cmd_struct *p, int argc, const char **argv)
@@ -520,7 +529,7 @@ static int run_builtin(struct cmd_struct *p, int argc, const char **argv)
 	if (status)
 		return status;
 
-	run_post_command_hook();
+	/////run_post_command_hook();
 
 	/* Somebody closed stdout? */
 	if (fstat(fileno(stdout), &st))
@@ -820,7 +829,7 @@ static void execv_dashed_external(const char **argv)
 	else if (errno != ENOENT)
 		exit(128);
 
-	run_post_command_hook();
+	/////run_post_command_hook();
 }
 
 static int run_argv(int *argcp, const char ***argv)
@@ -960,7 +969,7 @@ int cmd_main(int argc, const char **argv)
 		list_common_cmds_help();
 		printf("\n%s\n", _(git_more_info_string));
 		exit_code = 1;
-		run_post_command_hook();
+		/////run_post_command_hook();
 		exit(exit_code);
 	}
 

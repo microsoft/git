@@ -457,6 +457,7 @@ static void _mi_thread_done(mi_heap_t* heap) {
 }
 
 void _mi_heap_set_default_direct(mi_heap_t* heap)  {
+  fprintf(stderr, "XXX heap_set_default: [m:%d] [th:0x%llx] [h:%p]\n", _mi_is_main_thread(), _mi_thread_id(), heap);
   mi_assert_internal(heap != NULL);
   #if defined(MI_TLS_SLOT)
   mi_tls_slot_set(MI_TLS_SLOT,heap);
