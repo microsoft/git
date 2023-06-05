@@ -9,6 +9,7 @@ jobs:
   # Check prerequisites for the workflow
   prereqs:
     runs-on: ubuntu-latest
+    environment: release
     env:
       AZ_SUB: ${{ secrets.AZURE_SUBSCRIPTION }}
       AZ_CREDS: ${{ secrets.AZURE_CREDENTIALS }}
@@ -49,6 +50,7 @@ jobs:
   # Build Windows installers (x86_64 installer & portable)
   windows_pkg:
     runs-on: windows-2019
+    environment: release
     needs: prereqs
     env:
       GPG_OPTIONS: "--batch --yes --no-tty --list-options no-show-photos --verify-options no-show-photos --pinentry-mode loopback"
@@ -144,6 +146,7 @@ jobs:
           path: artifacts
   windows_artifacts:
     runs-on: windows-2019
+    environment: release
     needs: [prereqs, windows_pkg]
     env:
       HOME: "${{github.workspace}}\\home"
@@ -370,6 +373,7 @@ jobs:
   osx_sign_payload:
     # ESRP service requires signing to run on Windows
     runs-on: windows-latest
+    environment: release
     needs: osx_build
     steps:
     - name: Check out repository
@@ -477,6 +481,7 @@ jobs:
   osx_sign_and_notarize_pkg:
     # ESRP service requires signing to run on Windows
     runs-on: windows-latest
+    environment: release
     needs: osx_pack
     steps:
     - name: Check out repository
@@ -653,6 +658,7 @@ jobs:
           path: artifacts/
   ubuntu_sign-artifacts:
     runs-on: windows-latest # Must be run on Windows due to ESRP executable OS compatibility
+    environment: release
     needs: [ubuntu_build, prereqs]
     if: needs.prereqs.outputs.deb_signable == 'true'
     env:
