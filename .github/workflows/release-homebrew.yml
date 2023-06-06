@@ -6,6 +6,7 @@ on:
 jobs:
   release:
     runs-on: ubuntu-latest
+    environment: release
     steps:
     - id: version
       name: Compute version number

@@ -13,6 +13,7 @@ on:
 jobs:
   release:
     runs-on: windows-latest
+    environment: release
     steps:
       - name: Publish manifest with winget-create
         run: |
