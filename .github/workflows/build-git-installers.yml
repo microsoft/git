@@ -18,6 +18,13 @@ jobs:
       tag_version: ${{ steps.tag.outputs.version }}     # The version number (without preceding "v"), e.g. 2.32.0.vfs.0.0
       deb_signable: ${{ steps.deb.outputs.signable }}   # Whether the credentials needed to sign the .deb package are available
     steps:
+      - name: Validate tag
+        run: |
+          echo "$GITHUB_REF" |
+          grep '^refs/tags/v2\.\(0\|[1-9][0-9]*\)\.\(0\|[1-9][0-9]*\)\.vfs\.0\.\(0\|[1-9][0-9]*\)$' || {
+            echo "::error::${GITHUB_REF#refs/tags/} is not of the form v2.<X>.<Y>.vfs.0.<W>" >&2
+            exit 1
+          }
       - name: Determine tag to build
         run: |
           echo "name=${GITHUB_REF#refs/tags/}" >>$GITHUB_OUTPUT
