@@ -2017,6 +2017,7 @@ static int schtasks_schedule_task(const char *exec_path, enum schedule_priority 
 	const char *frequency = get_frequency(schedule);
 	char *name = schtasks_task_name(frequency);
 	struct strbuf tfilename = STRBUF_INIT;
+	int minute = get_random_minute();
 
 	get_schedule_cmd(&cmd, NULL);
 
@@ -2037,7 +2038,7 @@ static int schtasks_schedule_task(const char *exec_path, enum schedule_priority 
 	switch (schedule) {
 	case SCHEDULE_HOURLY:
 		fprintf(tfile->fp,
-			"<StartBoundary>2020-01-01T01:00:00</StartBoundary>\n"
+			"<StartBoundary>2020-01-01T01:%02d:00</StartBoundary>\n"
 			"<Enabled>true</Enabled>\n"
 			"<ScheduleByDay>\n"
 			"<DaysInterval>1</DaysInterval>\n"
@@ -2046,12 +2047,13 @@ static int schtasks_schedule_task(const char *exec_path, enum schedule_priority 
 			"<Interval>PT1H</Interval>\n"
 			"<Duration>PT23H</Duration>\n"
 			"<StopAtDurationEnd>false</StopAtDurationEnd>\n"
-			"</Repetition>\n");
+			"</Repetition>\n",
+			minute);
 		break;
 
 	case SCHEDULE_DAILY:
 		fprintf(tfile->fp,
-			"<StartBoundary>2020-01-01T00:00:00</StartBoundary>\n"
+			"<StartBoundary>2020-01-01T00:%02d:00</StartBoundary>\n"
 			"<Enabled>true</Enabled>\n"
 			"<ScheduleByWeek>\n"
 			"<DaysOfWeek>\n"
@@ -2063,19 +2065,21 @@ static int schtasks_schedule_task(const char *exec_path, enum schedule_priority 
 			"<Saturday />\n"
 			"</DaysOfWeek>\n"
 			"<WeeksInterval>1</WeeksInterval>\n"
-			"</ScheduleByWeek>\n");
+			"</ScheduleByWeek>\n",
+			minute);
 		break;
 
 	case SCHEDULE_WEEKLY:
 		fprintf(tfile->fp,
-			"<StartBoundary>2020-01-01T00:00:00</StartBoundary>\n"
+			"<StartBoundary>2020-01-01T00:%02d:00</StartBoundary>\n"
 			"<Enabled>true</Enabled>\n"
 			"<ScheduleByWeek>\n"
 			"<DaysOfWeek>\n"
 			"<Sunday />\n"
 			"</DaysOfWeek>\n"
 			"<WeeksInterval>1</WeeksInterval>\n"
-			"</ScheduleByWeek>\n");
+			"</ScheduleByWeek>\n",
+			minute);
 		break;
 
 	default:
