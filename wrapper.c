@@ -835,3 +835,15 @@ int csprng_bytes(void *buf, size_t len)
 	return 0;
 #endif
 }
+
+uint32_t git_rand(void)
+{
+	static int random_initialized = 0;
+
+	if (!random_initialized) {
+		srand((unsigned int)getpid());
+		random_initialized = 1;
+	}
+
+	return rand();
+}

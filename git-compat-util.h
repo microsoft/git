@@ -1673,4 +1673,15 @@ void sleep_millisec(int millisec);
  */
 int csprng_bytes(void *buf, size_t len);
 
+/*
+ * Returns a random int from rand() (0 to MAX_RAND inclusive). Converted
+ * to a uint32_t to emphasize that it will never be negative, though the
+ * number is from an isolated subset of the possible unsigned range.
+ *
+ * git_rand() centralizes the initializer of the pseudo-random number
+ * generator so we do not accidentally initialize it twice and reuse
+ * numbers from the sequence created after initialization.
+ */
+uint32_t git_rand(void);
+
 #endif
