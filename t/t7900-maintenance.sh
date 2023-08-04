@@ -744,7 +744,9 @@ test_expect_success 'start and stop Linux/systemd maintenance' '
 	# start registers the repo
 	git config --get --global --fixed-value maintenance.repo "$(pwd)" &&
 
-	test_systemd_analyze_verify "systemd/user/git-maintenance@.service" &&
+	test_systemd_analyze_verify "systemd/user/git-maintenance@hourly.service" &&
+	test_systemd_analyze_verify "systemd/user/git-maintenance@daily.service" &&
+	test_systemd_analyze_verify "systemd/user/git-maintenance@weekly.service" &&
 
 	printf -- "--user enable --now git-maintenance@%s.timer\n" hourly daily weekly >expect &&
 	test_cmp expect args &&
@@ -755,8 +757,11 @@ test_expect_success 'start and stop Linux/systemd maintenance' '
 	# stop does not unregister the repo
 	git config --get --global --fixed-value maintenance.repo "$(pwd)" &&
 
-	test_path_is_missing "systemd/user/git-maintenance@.timer" &&
-	test_path_is_missing "systemd/user/git-maintenance@.service" &&
+	for schedule in hourly daily weekly
+	do
+		test_path_is_missing "systemd/user/git-maintenance@$schedule.timer" &&
+		test_path_is_missing "systemd/user/git-maintenance@$schedule.service" || return 1
+	done &&
 
 	printf -- "--user disable --now git-maintenance@%s.timer\n" hourly daily weekly >expect &&
 	test_cmp expect args
