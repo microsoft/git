@@ -1657,6 +1657,9 @@ static const char *get_frequency(enum schedule_priority schedule)
 	}
 }
 
+static const char *custom_background_config =
+	"-c credential.interactive=false -c cred.askPass=false";
+
 /*
  * get_schedule_cmd` reads the GIT_TEST_MAINT_SCHEDULER environment variable
  * to mock the schedulers that `git maintenance start` rely on.
@@ -1863,6 +1866,10 @@ static int launchctl_schedule_plist(const char *exec_path, enum schedule_priorit
 		   "<array>\n"
 		   "<string>%s/git</string>\n"
 		   "<string>--exec-path=%s</string>\n"
+		   "<string>-c</string>\n"
+		   "<string>credential.interactive=false</string>\n"
+		   "<string>-c</string>\n"
+		   "<string>cred.askPass=false</string>\n"
 		   "<string>for-each-repo</string>\n"
 		   "<string>--config=maintenance.repo</string>\n"
 		   "<string>maintenance</string>\n"
@@ -2106,11 +2113,11 @@ static int schtasks_schedule_task(const char *exec_path, enum schedule_priority 
 	      "<Actions Context=\"Author\">\n"
 	      "<Exec>\n"
 	      "<Command>\"%s\\headless-git.exe\"</Command>\n"
-	      "<Arguments>--exec-path=\"%s\" for-each-repo --config=maintenance.repo maintenance run --schedule=%s</Arguments>\n"
+	      "<Arguments>--exec-path=\"%s\" %s for-each-repo --config=maintenance.repo maintenance run --schedule=%s</Arguments>\n"
 	      "</Exec>\n"
 	      "</Actions>\n"
 	      "</Task>\n";
-	fprintf(tfile->fp, xml, exec_path, exec_path, frequency);
+	fprintf(tfile->fp, xml, exec_path, exec_path, custom_background_config, frequency);
 	strvec_split(&child.args, cmd);
 	strvec_pushl(&child.args, "/create", "/tn", name, "/f", "/xml",
 				  get_tempfile_path(tfile), NULL);
@@ -2251,8 +2258,8 @@ static int crontab_update_schedule(int run_maintenance, int fd)
 			"# replaced in the future by a Git command.\n\n");
 
 		strbuf_addf(&line_format,
-			    "%%d %%s * * %%s \"%s/git\" --exec-path=\"%s\" for-each-repo --config=maintenance.repo maintenance run --schedule=%%s\n",
-			    exec_path, exec_path);
+			    "%%d %%s * * %%s \"%s/git\" --exec-path=\"%s\" %s for-each-repo --config=maintenance.repo maintenance run --schedule=%%s\n",
+			    exec_path, exec_path, custom_background_config);
 		fprintf(cron_in, line_format.buf, minute, "1-23", "*", "hourly");
 		fprintf(cron_in, line_format.buf, minute, "0", "1-6", "daily");
 		fprintf(cron_in, line_format.buf, minute, "0", "0", "weekly");
@@ -2452,7 +2459,7 @@ static int systemd_timer_write_service_template(const char *exec_path)
 	       "\n"
 	       "[Service]\n"
 	       "Type=oneshot\n"
-	       "ExecStart=\"%s/git\" --exec-path=\"%s\" for-each-repo --config=maintenance.repo maintenance run --schedule=%%i\n"
+	       "ExecStart=\"%s/git\" --exec-path=\"%s\" %s for-each-repo --config=maintenance.repo maintenance run --schedule=%%i\n"
 	       "LockPersonality=yes\n"
 	       "MemoryDenyWriteExecute=yes\n"
 	       "NoNewPrivileges=yes\n"
@@ -2462,7 +2469,7 @@ static int systemd_timer_write_service_template(const char *exec_path)
 	       "RestrictSUIDSGID=yes\n"
 	       "SystemCallArchitectures=native\n"
 	       "SystemCallFilter=@system-service\n";
-	if (fprintf(file, unit, exec_path, exec_path) < 0) {
+	if (fprintf(file, unit, exec_path, exec_path, custom_background_config) < 0) {
 		error(_("failed to write to '%s'"), filename);
 		fclose(file);
 		goto error;
