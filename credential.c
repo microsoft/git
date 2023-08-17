@@ -339,7 +339,7 @@ static int run_credential_helper(struct credential *c,
 
 			select(1, &readfds, NULL, NULL, &select_timeout);
 
-			if (!FD_ISSET(&readfds, helper.out)) {
+			if (!FD_ISSET(helper.out, &readfds)) {
 				/* Timeout complete before helper.out has bytes to read. */
 				kill_child_command(&helper);
 				return -1;
