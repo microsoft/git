@@ -305,6 +305,11 @@ static int run_credential_helper(struct credential *c,
 	struct timeval select_timeout = {
 		.tv_sec = 5 * 60, /* Five minutes. */
 	};
+	int config_seconds;
+
+	if (!git_config_get_int("credential.timeout", &config_seconds) &&
+	    config_seconds >= 0)
+		select_timeout.tv_sec = config_seconds;
 
 	strvec_push(&helper.args, cmd);
 	helper.use_shell = 1;
@@ -327,16 +332,18 @@ static int run_credential_helper(struct credential *c,
 
 	if (want_output) {
 		int r;
-		fd_set readfds;
-		FD_ZERO(&readfds);
-		FD_SET(helper.out, &readfds);
+		if (select_timeout.tv_sec) {
+			fd_set readfds;
+			FD_ZERO(&readfds);
+			FD_SET(helper.out, &readfds);
 
-		select(1, &readfds, NULL, NULL, &select_timeout);
+			select(1, &readfds, NULL, NULL, &select_timeout);
 
-		if (!FD_ISSET(&readfds, helper.out)) {
-			/* Timeout complete before helper.out has bytes to read. */
-			kill_child_command(&helper);
-			return -1;
+			if (!FD_ISSET(&readfds, helper.out)) {
+				/* Timeout complete before helper.out has bytes to read. */
+				kill_child_command(&helper);
+				return -1;
+			}
 		}
 
 		fp = xfdopen(helper.out, "r");
