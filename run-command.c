@@ -988,6 +988,14 @@ int finish_command(struct child_process *cmd)
 	return ret;
 }
 
+void kill_child_command(struct child_process *cmd)
+{
+	kill(cmd->pid, 9);
+	trace2_child_exit(cmd, -1);
+	child_process_clear(cmd);
+	invalidate_lstat_cache();
+}
+
 int finish_command_in_signal(struct child_process *cmd)
 {
 	int ret = wait_or_whine(cmd->pid, cmd->args.v[0], 1);

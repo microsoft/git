@@ -208,6 +208,12 @@ int start_command(struct child_process *);
  */
 int finish_command(struct child_process *);
 
+/**
+ * Do not wait for child process to complete. Kill it and clean
+ * up the data structure.
+ */
+void kill_child_command(struct child_process *cmd);
+
 int finish_command_in_signal(struct child_process *);
 
 /**
