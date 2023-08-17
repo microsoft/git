@@ -1,4 +1,5 @@
 #include "git-compat-util.h"
+#include "git-curl-compat.h"
 #include "abspath.h"
 #include "config.h"
 #include "credential.h"
@@ -301,6 +302,9 @@ static int run_credential_helper(struct credential *c,
 {
 	struct child_process helper = CHILD_PROCESS_INIT;
 	FILE *fp;
+	struct timeval select_timeout = {
+		.tv_sec = 5 * 60, /* Five minutes. */
+	};
 
 	strvec_push(&helper.args, cmd);
 	helper.use_shell = 1;
@@ -323,6 +327,18 @@ static int run_credential_helper(struct credential *c,
 
 	if (want_output) {
 		int r;
+		fd_set readfds;
+		FD_ZERO(&readfds);
+		FD_SET(helper.out, &readfds);
+
+		select(1, &readfds, NULL, NULL, &select_timeout);
+
+		if (!FD_ISSET(&readfds, helper.out)) {
+			/* Timeout complete before helper.out has bytes to read. */
+			kill_child_command(&helper);
+			return -1;
+		}
+
 		fp = xfdopen(helper.out, "r");
 		r = credential_read(c, fp);
 		fclose(fp);
