@@ -1099,7 +1099,8 @@ static int cmd_reconfigure(int argc, const char **argv)
 		r.commondir = commondir.buf;
 		r.gitdir = gitdir.buf;
 
-		if (set_recommended_config(1) >= 0)
+		if (set_recommended_config(1) >= 0 &&
+		    toggle_maintenance(1) >= 0)
 			succeeded = 1;
 
 loop_end:
