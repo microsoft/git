@@ -1102,6 +1102,9 @@ static int cmd_reconfigure(int argc, const char **argv)
 		if (set_recommended_config(1) >= 0)
 			succeeded = 1;
 
+		if (toggle_maintenance(1) >= 0)
+			succeeded = 1;
+
 loop_end:
 		if (!succeeded) {
 			res = -1;
