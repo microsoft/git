@@ -1744,6 +1744,7 @@ int cmd_index_pack(int argc, const char **argv, const char *prefix)
 	unsigned foreign_nr = 1;	/* zero is a "good" value, assume bad */
 	int report_end_of_input = 0;
 	int hash_algo = 0;
+	int dash_o = 0;
 
 	/*
 	 * index-pack never needs to fetch missing objects except when
@@ -1836,6 +1837,7 @@ int cmd_index_pack(int argc, const char **argv, const char *prefix)
 				if (index_name || (i+1) >= argc)
 					usage(index_pack_usage);
 				index_name = argv[++i];
+				dash_o = 1;
 			} else if (starts_with(arg, "--index-version=")) {
 				char *c;
 				opts.version = strtoul(arg + 16, &c, 10);
@@ -1878,6 +1880,8 @@ int cmd_index_pack(int argc, const char **argv, const char *prefix)
 		index_name = derive_filename(pack_name, "pack", "idx", &index_name_buf);
 
 	opts.flags &= ~(WRITE_REV | WRITE_REV_VERIFY);
+	if (rev_index && dash_o && !ends_with(index_name, ".idx"))
+		rev_index = 0;
 	if (rev_index) {
 		opts.flags |= verify ? WRITE_REV_VERIFY : WRITE_REV;
 		if (index_name)
