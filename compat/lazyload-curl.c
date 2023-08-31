@@ -56,8 +56,24 @@ static void *load_library(const char *name)
 			dll_path[len] = '/';
 			memcpy(dll_path + len + 1, name, name_size);
 
-			if (!access(dll_path, R_OK))
-				return (void *)LoadLibraryExA(dll_path, NULL, 0);
+			if (!access(dll_path, R_OK)) {
+				wchar_t wpath[MAX_PATH];
+				int wlen = MultiByteToWideChar(CP_UTF8, 0, dll_path, -1, wpath, ARRAY_SIZE(wpath));
+				void *res = wlen ? (void *)LoadLibraryExW(wpath, NULL, 0) : NULL;
+				if (!res) {
+					DWORD err = GetLastError();
+					char buf[1024];
+
+					if (!FormatMessageA(FORMAT_MESSAGE_FROM_SYSTEM |
+							    FORMAT_MESSAGE_ARGUMENT_ARRAY |
+							    FORMAT_MESSAGE_IGNORE_INSERTS,
+							    NULL, err, LANG_NEUTRAL,
+							    buf, sizeof(buf) - 1, NULL))
+						xsnprintf(buf, sizeof(buf), "last error: %ld", err);
+					error("LoadLibraryExW() failed with: %s", buf);
+				}
+				return res;
+			}
 		}
 
 		path = *sep ? sep + 1 : NULL;
