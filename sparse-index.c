@@ -242,7 +242,7 @@ static int add_path_to_index(const struct object_id *oid,
 	size_t len = base->len;
 
 	if (S_ISDIR(mode)) {
-		int dtype;
+		int dtype = DT_DIR;
 		size_t baselen = base->len;
 		if (!ctx->pl)
 			return READ_TREE_RECURSIVE;
@@ -360,7 +360,7 @@ void expand_index(struct index_state *istate, struct pattern_list *pl)
 		struct cache_entry *ce = istate->cache[i];
 		struct tree *tree;
 		struct pathspec ps;
-		int dtype;
+		int dtype = DT_UNKNOWN;
 
 		if (!S_ISSPARSEDIR(ce->ce_mode)) {
 			set_index_entry(full, full->cache_nr++, ce);
