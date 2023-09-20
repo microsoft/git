@@ -357,7 +357,7 @@ jobs:
           # environment variable or the tag_version output from the prereqs
           # job in the upload-artifact task.
           mkdir -p build_artifacts
-          cp -R stage/git-intel-x86_64-$VERSION/ build_artifacts
+          cp -R stage/git-x86_64-$VERSION/ build_artifacts
 
           # We keep a list of executable files because their executable bits are
           # removed when they are zipped, and we need to re-add.
