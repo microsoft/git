@@ -242,7 +242,7 @@ static int add_path_to_index(const struct object_id *oid,
 	size_t len = base->len;
 
 	if (S_ISDIR(mode)) {
-		int dtype;
+		int dtype = DT_DIR;
 		size_t baselen = base->len;
 		if (!ctx->pl)
 			return READ_TREE_RECURSIVE;
@@ -360,7 +360,7 @@ void expand_index(struct index_state *istate, struct pattern_list *pl)
 		struct cache_entry *ce = istate->cache[i];
 		struct tree *tree;
 		struct pathspec ps;
-		int dtype;
+		int dtype = DT_UNKNOWN;
 
 		if (!S_ISSPARSEDIR(ce->ce_mode)) {
 			set_index_entry(full, full->cache_nr++, ce);
@@ -371,7 +371,7 @@ void expand_index(struct index_state *istate, struct pattern_list *pl)
 		if (pl &&
 		    path_matches_pattern_list(ce->name, ce->ce_namelen,
 					      NULL, &dtype,
-					      pl, istate) == NOT_MATCHED) {
+					      pl, full) == NOT_MATCHED) {
 			set_index_entry(full, full->cache_nr++, ce);
 			continue;
 		}
@@ -399,6 +399,7 @@ void expand_index(struct index_state *istate, struct pattern_list *pl)
 	}
 
 	/* Copy back into original index. */
+	istate->name_hash_initialized = full->name_hash_initialized;
 	memcpy(&istate->name_hash, &full->name_hash, sizeof(full->name_hash));
 	memcpy(&istate->dir_hash, &full->dir_hash, sizeof(full->dir_hash));
 	istate->sparse_index = pl ? INDEX_PARTIALLY_SPARSE : INDEX_EXPANDED;
