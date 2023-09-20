@@ -17,7 +17,7 @@ LDFLAGS := $(TARGET_FLAGS) $(ARCH_FLAGS_${ARCH_CODE})
 PREFIX := /usr/local
 GIT_PREFIX := $(PREFIX)/git
 
-BUILD_CODE := intel-$(ARCH_CODE)
+BUILD_CODE := $(ARCH_CODE)
 BUILD_DIR := $(GITHUB_WORKSPACE)/payload
 DESTDIR := $(PWD)/stage/git-$(BUILD_CODE)-$(VERSION)
 ARTIFACTDIR := build_artifacts
