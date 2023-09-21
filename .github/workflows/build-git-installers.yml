@@ -333,8 +333,13 @@ jobs:
 
       - name: Build payload
         run: |
+          die () {
+            echo "$*" >&2
+            exit 1
+          }
+
           # Configure the environment
-          set -x
+          set -ex
           PATH=/usr/local/bin:$PATH
           export CURL_LDFLAGS=$(curl-config --libs)
 
@@ -461,6 +466,13 @@ jobs:
         env:
           VERSION: "${{ needs.prereqs.outputs.tag_version }}"
         run: |
+          die () {
+            echo "$*" >&2
+            exit 1
+          }
+
+          set -ex
+
           # Install findutils to use gxargs below
           brew install findutils
 
@@ -574,6 +586,13 @@ jobs:
       env:
         VERSION: "${{ needs.prereqs.outputs.tag_version }}"
       run: |
+        die () {
+          echo "$*" >&2
+          exit 1
+        }
+
+        set -ex
+
         # Move disk-image into the same directory as Makefile
         mv disk-image git/.github/macos-installer/
 
