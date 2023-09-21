@@ -388,7 +388,7 @@ jobs:
       with:
         path: 'git'
 
-    - name: Download unsigned build artifiacts
+    - name: Download unsigned build artifacts
       uses: actions/download-artifact@v3
       with:
         name: tmp.osx-build
