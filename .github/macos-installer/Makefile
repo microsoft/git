@@ -31,11 +31,16 @@ GIT_PREFIX := $(PREFIX)/git
 BUILD_CODE := $(ARCH_CODE)
 BUILD_DIR := $(GITHUB_WORKSPACE)/payload
 DESTDIR := $(PWD)/stage/git-$(BUILD_CODE)-$(VERSION)
-ARTIFACTDIR := build_artifacts
+ARTIFACTDIR := build-artifacts
 SUBMAKE := $(MAKE) C_INCLUDE_PATH="$(C_INCLUDE_PATH)" CPLUS_INCLUDE_PATH="$(CPLUS_INCLUDE_PATH)" LD_LIBRARY_PATH="$(LD_LIBRARY_PATH)" TARGET_FLAGS="$(TARGET_FLAGS)" CFLAGS="$(CFLAGS)" LDFLAGS="$(LDFLAGS)" NO_GETTEXT=1 NO_DARWIN_PORTS=1 prefix=$(GIT_PREFIX) GIT_BUILT_FROM_COMMIT="$(GIT_BUILT_FROM_COMMIT)" DESTDIR=$(DESTDIR)
 CORES := $(shell bash -c "sysctl hw.ncpu | awk '{print \$$2}'")
 
-.PHONY: image pkg payload
+# Guard against environment variables
+APPLE_APP_IDENTITY =
+APPLE_INSTALLER_IDENTITY =
+APPLE_KEYCHAIN_PROFILE =
+
+.PHONY: image pkg payload codesign notarize
 
 .SECONDARY:
 
@@ -112,8 +117,17 @@ disk-image/VERSION-$(VERSION)-$(ARCH_CODE):
 	mkdir disk-image
 	touch "$@"
 
+pkg_cmd := pkgbuild --identifier com.git.pkg --version $(VERSION) \
+	--root $(ARTIFACTDIR)$(PREFIX) --scripts assets/scripts \
+	--install-location $(PREFIX) --component-plist ./assets/git-components.plist
+
+ifdef APPLE_INSTALLER_IDENTITY
+	pkg_cmd += --sign "$(APPLE_INSTALLER_IDENTITY)"
+endif
+
+pkg_cmd += disk-image/git-$(VERSION)-$(BUILD_CODE).pkg
 disk-image/git-$(VERSION)-$(BUILD_CODE).pkg: disk-image/VERSION-$(VERSION)-$(ARCH_CODE) symlinks
-	pkgbuild --identifier com.git.pkg --version $(VERSION) --root $(ARTIFACTDIR)$(PREFIX) --scripts assets/scripts --install-location $(PREFIX) --component-plist ./assets/git-components.plist disk-image/git-$(VERSION)-$(BUILD_CODE).pkg
+	$(pkg_cmd)
 
 git-%-$(BUILD_CODE).dmg:
 	hdiutil create git-$(VERSION)-$(BUILD_CODE).uncompressed.dmg -fs HFS+ -srcfolder disk-image -volname "Git $(VERSION) $(CPU_VENDOR) $(ARCH)" -ov
@@ -125,3 +139,18 @@ payload: $(BUILD_DIR)/git-$(VERSION)/osx-installed $(BUILD_DIR)/git-$(VERSION)/o
 pkg: disk-image/git-$(VERSION)-$(BUILD_CODE).pkg
 
 image: git-$(VERSION)-$(BUILD_CODE).dmg
+
+ifdef APPLE_APP_IDENTITY
+codesign:
+	@$(CURDIR)/../scripts/codesign.sh --payload="build-artifacts/usr/local/git" \
+		--identity="$(APPLE_APP_IDENTITY)" \
+		--entitlements="$(CURDIR)/entitlements.xml"
+endif
+
+# Notarization can only happen if the package is fully signed
+ifdef APPLE_KEYCHAIN_PROFILE
+notarize:
+	@$(CURDIR)/../scripts/notarize.sh \
+		--package="disk-image/git-$(VERSION)-$(BUILD_CODE).pkg" \
+		--keychain-profile="$(APPLE_KEYCHAIN_PROFILE)"
+endif
