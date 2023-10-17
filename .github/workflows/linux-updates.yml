@@ -1,0 +1,178 @@
+name: linux-test
+
+on: workflow_dispatch
+
+permissions:
+  id-token: write
+  contents: write
+
+jobs:
+  # Check prerequisites for the workflow
+  prereqs:
+    runs-on: ubuntu-latest
+    environment: release
+    env:
+      AZ_SUB: ${{ secrets.AZURE_SUBSCRIPTION }}
+      AZ_CREDS: ${{ secrets.AZURE_CREDENTIALS }}
+    outputs:
+      tag_name: ${{ steps.tag.outputs.name }}           # The full name of the tag, e.g. v2.32.0.vfs.0.0
+      tag_version: ${{ steps.tag.outputs.version }}     # The version number (without preceding "v"), e.g. 2.32.0.vfs.0.0
+      deb_signable: ${{ steps.deb.outputs.signable }}   # Whether the credentials needed to sign the .deb package are available
+    steps:
+      - name: Validate tag
+        run: |
+          echo "$GITHUB_REF" |
+          grep '^refs/tags/v2\.\(0\|[1-9][0-9]*\)\.\(0\|[1-9][0-9]*\)\.vfs\.0\.\(0\|[1-9][0-9]*\)$' || {
+            echo "::error::${GITHUB_REF#refs/tags/} is not of the form v2.<X>.<Y>.vfs.0.<W>" >&2
+            exit 1
+          }
+      - name: Determine tag to build
+        run: |
+          echo "name=${GITHUB_REF#refs/tags/}" >>$GITHUB_OUTPUT
+          echo "version=${GITHUB_REF#refs/tags/v}" >>$GITHUB_OUTPUT
+        id: tag
+      - name: Determine whether signing certificates are present
+        run: echo "signable=$([[ $AZ_SUB != '' && $AZ_CREDS != '' ]] && echo 'true' || echo 'false')" >>$GITHUB_OUTPUT
+        id: deb
+      - name: Clone git
+        uses: actions/checkout@v3
+      - name: Validate the tag identified with trigger
+        run: |
+          die () {
+            echo "::error::$*" >&2
+            exit 1
+          }
+
+          # `actions/checkout` only downloads the peeled tag (i.e. the commit)
+          git fetch origin +$GITHUB_REF:$GITHUB_REF
+
+          # Verify that the tag is annotated
+          test $(git cat-file -t "$GITHUB_REF") == "tag" || die "Tag ${{ steps.tag.outputs.name }} is not annotated"
+
+          # Verify tag follows rules in GIT-VERSION-GEN (i.e., matches the specified "DEF_VER" in
+          # GIT-VERSION-FILE) and matches tag determined from trigger
+          make GIT-VERSION-FILE
+          test "${{ steps.tag.outputs.version }}" == "$(sed -n 's/^GIT_VERSION = //p'< GIT-VERSION-FILE)" || die "GIT-VERSION-FILE tag does not match ${{ steps.tag.outputs.name }}"
+  # End check prerequisites for the workflow
+
+  # Build and sign Linux installers & upload artifacts
+  linux_build:
+    runs-on: ubuntu-latest
+    needs: prereqs
+    environment: release
+    steps:
+      - name: Install git dependencies
+        run: |
+          set -ex
+          sudo apt-get update -q
+          sudo apt-get install -y -q --no-install-recommends gettext libcurl4-gnutls-dev libpcre3-dev asciidoc xmlto
+
+      - name: Clone git
+        uses: actions/checkout@v3
+        with:
+          path: git
+
+      - name: Build and create Debian package
+        run: |
+          set -ex
+
+          die () {
+              echo "$*" >&2
+              exit 1
+          }
+
+          echo "${{ needs.prereqs.outputs.tag_version }}" >>git/version
+          make -C git GIT-VERSION-FILE
+
+          VERSION="${{ needs.prereqs.outputs.tag_version }}"
+
+          ARCH="$(dpkg-architecture -q DEB_HOST_ARCH)"
+          if test -z "$ARCH"; then
+            die "Could not determine host architecture!"
+          fi
+
+          PKGNAME="microsoft-git_$VERSION"
+          PKGDIR="$(dirname $(pwd))/$PKGNAME"
+
+          rm -rf "$PKGDIR"
+          mkdir -p "$PKGDIR"
+
+          DESTDIR="$PKGDIR" make -C git -j5 V=1 DEVELOPER=1 \
+            USE_LIBPCRE=1 \
+            NO_CROSS_DIRECTORY_HARDLINKS=1 \
+            ASCIIDOC8=1 ASCIIDOC_NO_ROFF=1 \
+            ASCIIDOC='TZ=UTC asciidoc' \
+            prefix=/usr/local \
+            gitexecdir=/usr/local/lib/git-core \
+            libexecdir=/usr/local/lib/git-core \
+            htmldir=/usr/local/share/doc/git/html \
+            install install-doc install-html
+
+          cd ..
+          mkdir "$PKGNAME/DEBIAN"
+
+          # Based on https://packages.ubuntu.com/xenial/vcs/git
+          cat >"$PKGNAME/DEBIAN/control" <<EOF
+          Package: microsoft-git
+          Version: $VERSION
+          Section: vcs
+          Priority: optional
+          Architecture: $ARCH
+          Depends: libcurl3-gnutls, liberror-perl, libexpat1, libpcre2-8-0, perl, perl-modules, zlib1g
+          Maintainer: Git Fundamentals <git-fundamentals@github.com>
+          Description: Git client built from the https://github.com/microsoft/git repository,
+            specialized in supporting monorepo scenarios. Includes the Scalar CLI.
+          EOF
+
+          dpkg-deb --build "$PKGNAME"
+          # Move Debian package for later artifact upload
+          mv "$PKGNAME.deb" "$GITHUB_WORKSPACE"
+
+      - name: Log into Azure
+        uses: azure/login@v1
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Prepare for GPG signing
+        env:
+          AZURE_VAULT: ${{ secrets.AZURE_VAULT }}
+          GPG_KEY_SECRET_NAME: ${{ secrets.GPG_KEY_SECRET_NAME }}
+          GPG_PASSPHRASE_SECRET_NAME: ${{ secrets.GPG_PASSPHRASE_SECRET_NAME }}
+          GPG_KEYGRIP_SECRET_NAME: ${{ secrets.GPG_KEYGRIP_SECRET_NAME }}
+        run: |
+          # Install debsigs
+          sudo apt install debsigs
+
+          # Download GPG key, passphrase, and keygrip from Azure Key Vault
+          key=$(az keyvault secret show --name $GPG_KEY_SECRET_NAME --vault-name $AZURE_VAULT --query "value")
+          passphrase=$(az keyvault secret show --name $GPG_PASSPHRASE_SECRET_NAME --vault-name $AZURE_VAULT --query "value")
+          keygrip=$(az keyvault secret show --name $GPG_KEYGRIP_SECRET_NAME --vault-name $AZURE_VAULT --query "value")
+
+          # Remove quotes from downloaded values
+          key=$(sed -e 's/^"//' -e 's/"$//' <<<"$key")
+          passphrase=$(sed -e 's/^"//' -e 's/"$//' <<<"$passphrase")
+          keygrip=$(sed -e 's/^"//' -e 's/"$//' <<<"$keygrip")
+
+          # Import GPG key
+          echo "$key" | base64 -d | gpg --import --no-tty --batch --yes
+
+          # Configure GPG
+          echo "allow-preset-passphrase" > ~/.gnupg/gpg-agent.conf
+          gpg-connect-agent RELOADAGENT /bye
+          /usr/lib/gnupg2/gpg-preset-passphrase --preset "$keygrip" <<<"$passphrase"
+
+      - name: Sign Debian package
+        run: |
+          # Sign Debian package
+          version="${{ needs.prereqs.outputs.tag_version }}"
+          debsigs --sign=origin --verify --check microsoft-git_"$version".deb
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v3
+        with:
+          name: linux-artifacts
+          path: |
+            *.deb
+  # End build and sign Linux installers
