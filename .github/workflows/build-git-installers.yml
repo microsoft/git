@@ -1,5 +1,9 @@
 name: build-git-installers
 
+permissions:
+  id-token: write
+  contents: write
+
 on:
   push:
     tags:
