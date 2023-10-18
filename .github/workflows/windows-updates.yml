@@ -60,7 +60,7 @@ jobs:
 
   # Build and sign Windows installers & upload artifacts
   windows_pkg:
-    runs-on: windows-latest
+    runs-on: windows-2019
     environment: release
     needs: prereqs
     env:
