@@ -402,6 +402,11 @@ jobs:
           test x86_64 = '${{ matrix.arch.name }}' ||
           echo 'CC = gcc-13' >>config.mak
 
+          # Avoid even building the dashed built-ins; Those should be hard-linked
+          # copies of the `git` executable but would end up as actual copies instead,
+          # bloating the size of the `.dmg` indecently.
+          echo 'SKIP_DASHED_BUILT_INS = YabbaDabbaDoo' >>git/config.mak
+
           # To make use of the catalogs...
           export XML_CATALOG_FILES=$homebrew_prefix/etc/xml/catalog
 
