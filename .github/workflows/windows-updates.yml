@@ -150,6 +150,7 @@ jobs:
           git config --global user.email "<${info#*<}"
         env:
           GPG_FINGERPRINT_SECRET_NAME: ${{secrets.GPG_FINGERPRINT_SECRET_NAME}}
+          AZURE_VAULT: ${{ secrets.AZURE_VAULT }}
 
       - name: Build mingw-w64-x86_64-git
         shell: bash
