@@ -201,4 +201,8 @@ jobs:
         with:
           name: pkg-x86_64
           path: artifacts
+
+      - name: action-tmate
+        if: failure()
+        uses: mxschmitt/action-tmate@v3
   # End build Windows installers
