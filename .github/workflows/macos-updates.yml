@@ -173,7 +173,7 @@ jobs:
 
           # Codesign payload
           cp -R stage/git-${{ matrix.arch.name }}-$VERSION/ \
-            build_artifacts-$VERSION/ git/.github/macos-installer/build-artifacts
+            git/.github/macos-installer/build-artifacts
           make -C git/.github/macos-installer V=1 codesign \
             APPLE_APP_IDENTITY="$A3" || die "Creating signed payload failed"
 
