@@ -147,17 +147,22 @@ jobs:
           info="$(gpg --list-keys --with-colons "${GPGKEY%% *}" | cut -d : -f 1,10 | sed -n '/^uid/{s|uid:||p;q}')" &&
           git config --global user.name "${info% <*}" &&
           git config --global user.email "<${info#*<}"
-
-          # Re-use variable in next step
-          echo "GPGKEY=$GPGKEY" >>$GITHUB_ENV
         env:
-          GPG_FINGERPRINT_SECRET_NAME: ${{secrets.GPG_FINGERPRINT_SECRET_NAME}}
           AZURE_VAULT: ${{ secrets.AZURE_VAULT }}
+          GPG_FINGERPRINT_SECRET_NAME: ${{secrets.GPG_FINGERPRINT_SECRET_NAME}}
 
       - name: Build mingw-w64-x86_64-git
+        env:
+          AZURE_VAULT: ${{ secrets.AZURE_VAULT }}
+          GPG_FINGERPRINT_SECRET_NAME: ${{secrets.GPG_FINGERPRINT_SECRET_NAME}}
         shell: bash
         run: |
           set -x
+
+          # Get GPG key fingerprint from Azure Key Vault
+          GPGKEY=$(az keyvault secret show --name "$GPG_FINGERPRINT_SECRET_NAME" \
+            --vault-name "$AZURE_VAULT" --query "value" \
+            | sed -e 's/^"//' -e 's/"$//')
 
           # Make sure that there is a `/usr/bin/git` that can be used by `makepkg-mingw`
           printf '#!/bin/sh\n\nexec /mingw64/bin/git.exe "$@"\n' >/usr/bin/git &&
