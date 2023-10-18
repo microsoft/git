@@ -310,14 +310,16 @@ jobs:
 
   # Build and sign Mac OSX installers & upload artifacts
   osx_build:
-    runs-on: macos-latest
+    strategy:
+      matrix:
+        arch:
+          - name: x86_64
+            runner: macos-latest
+          - name: arm64
+            runner: macos-latest-xl-arm64
+    runs-on: ${{ matrix.arch.runner }}
     needs: prereqs
     env:
-      # `gettext` is keg-only
-      LDFLAGS: -L/usr/local/opt/gettext/lib
-      CFLAGS: -I/usr/local/opt/gettext/include
-      # To make use of the catalogs...
-      XML_CATALOG_FILES: /usr/local/etc/xml/catalog
       VERSION: "${{ needs.prereqs.outputs.tag_version }}"
     steps:
       - name: Check out repository
@@ -333,13 +335,33 @@ jobs:
 
       - name: Build payload
         run: |
+          die () {
+            echo "$*" >&2
+            exit 1
+          }
+
           # Configure the environment
-          set -x
+          set -ex
           PATH=/usr/local/bin:$PATH
           export CURL_LDFLAGS=$(curl-config --libs)
 
           # Write to "version" file to force match with trigger payload version
           echo "${{ needs.prereqs.outputs.tag_version }}" >>git/version
+
+          # Configure the Git build to pick up gettext
+          homebrew_prefix="$(brew --prefix)"
+          cat >git/config.mak <<EOF
+          LDFLAGS = -L$homebrew_prefix/lib -L/usr/local/opt/gettext/lib
+          CFLAGS = -I$homebrew_prefix/include -I/usr/local/opt/gettext/include
+          EOF
+
+          # On Apple Silicon, homebrew apparently does not install a `gcc` symlink
+          test x86_64 = '${{ matrix.arch.name }}' ||
+          echo 'CC = gcc-13' >>config.mak
+
+          # To make use of the catalogs...
+          export XML_CATALOG_FILES=$homebrew_prefix/etc/xml/catalog
+
           make -C git -j$(sysctl -n hw.physicalcpu) GIT-VERSION-FILE dist dist-doc
 
           export GIT_BUILT_FROM_COMMIT=$(gunzip -c git/git-$VERSION.tar.gz | git get-tar-commit-id) ||
@@ -357,7 +379,7 @@ jobs:
           # environment variable or the tag_version output from the prereqs
           # job in the upload-artifact task.
           mkdir -p build_artifacts
-          cp -R stage/git-intel-x86_64-$VERSION/ build_artifacts
+          cp -R stage/git-${{ matrix.arch.name }}-$VERSION/ build_artifacts
 
           # We keep a list of executable files because their executable bits are
           # removed when they are zipped, and we need to re-add.
@@ -366,7 +388,7 @@ jobs:
       - name: Upload macOS artifacts
         uses: actions/upload-artifact@v3
         with:
-          name: tmp.osx-build
+          name: tmp.osx-${{ matrix.arch.name }}-build
           path: |
             build_artifacts
 
@@ -382,16 +404,19 @@ jobs:
     runs-on: windows-latest
     environment: release
     needs: osx_build
+    strategy:
+      matrix:
+        arch: [x86_64, arm64]
     steps:
     - name: Check out repository
       uses: actions/checkout@v3
       with:
         path: 'git'
 
-    - name: Download unsigned build artifiacts
+    - name: Download unsigned build artifacts
       uses: actions/download-artifact@v3
       with:
-        name: tmp.osx-build
+        name: tmp.osx-${{ matrix.arch }}-build
         path: build_artifacts
 
     - name: Zip unsigned build artifacts
@@ -434,12 +459,19 @@ jobs:
     - name: Upload signed payload
       uses: actions/upload-artifact@v3
       with:
-        name: osx-signed-payload
+        name: osx-signed-${{ matrix.arch }}-payload
         path: |
           signed
 
   osx_pack:
-    runs-on: macos-latest
+    strategy:
+      matrix:
+        arch:
+          - name: x86_64
+            runner: macos-latest
+          - name: arm64
+            runner: macos-latest-xl-arm64
+    runs-on: ${{ matrix.arch.runner }}
     needs: [prereqs, osx_sign_payload]
     steps:
       - name: Check out repository
@@ -450,7 +482,7 @@ jobs:
       - name: Download signed artifacts
         uses: actions/download-artifact@v3
         with:
-          name: osx-signed-payload
+          name: osx-signed-${{ matrix.arch.name }}-payload
 
       - name: Download list of executable files
         uses: actions/download-artifact@v3
@@ -461,6 +493,13 @@ jobs:
         env:
           VERSION: "${{ needs.prereqs.outputs.tag_version }}"
         run: |
+          die () {
+            echo "$*" >&2
+            exit 1
+          }
+
+          set -ex
+
           # Install findutils to use gxargs below
           brew install findutils
 
@@ -481,11 +520,14 @@ jobs:
       - name: Upload unsigned pkg
         uses: actions/upload-artifact@v3
         with:
-          name: tmp.osx-pkg
+          name: tmp.osx-${{ matrix.arch.name }}-pkg
           path: |
             git/.github/macos-installer/disk-image
 
   osx_sign_and_notarize_pkg:
+    strategy:
+      matrix:
+        arch: [x86_64, arm64]
     # ESRP service requires signing to run on Windows
     runs-on: windows-latest
     environment: release
@@ -499,7 +541,7 @@ jobs:
     - name: Download unsigned package
       uses: actions/download-artifact@v3
       with:
-        name: tmp.osx-pkg
+        name: tmp.osx-${{ matrix.arch }}-pkg
         path: pkg
 
     - name: Zip unsigned package
@@ -551,12 +593,19 @@ jobs:
     - name: Upload signed and notarized pkg
       uses: actions/upload-artifact@v3
       with:
-        name: osx-signed-pkg
+        name: osx-signed-${{ matrix.arch }}-pkg
         path: |
           signed
 
   osx_publish_dmg:
-    runs-on: macos-latest
+    strategy:
+      matrix:
+        arch:
+          - name: x86_64
+            runner: macos-latest
+          - name: arm64
+            runner: macos-latest-xl-arm64
+    runs-on: ${{ matrix.arch.runner }}
     needs: [prereqs, osx_sign_and_notarize_pkg]
     steps:
     - name: Check out repository
@@ -567,13 +616,20 @@ jobs:
     - name: Download signed package
       uses: actions/download-artifact@v3
       with:
-        name: osx-signed-pkg
+        name: osx-signed-${{ matrix.arch.name }}-pkg
         path: disk-image
 
     - name: Build macOS disk image
       env:
         VERSION: "${{ needs.prereqs.outputs.tag_version }}"
       run: |
+        die () {
+          echo "$*" >&2
+          exit 1
+        }
+
+        set -ex
+
         # Move disk-image into the same directory as Makefile
         mv disk-image git/.github/macos-installer/
 
@@ -583,7 +639,7 @@ jobs:
     - name: Publish disk image
       uses: actions/upload-artifact@v3
       with:
-        name: osx-dmg
+        name: osx-${{ matrix.arch.name }}-dmg
         path: git/.github/macos-installer/*.dmg
   # End build and sign Mac OSX installers
 
@@ -715,8 +771,11 @@ jobs:
           - os: ubuntu-latest
             artifact: deb-package-signed
             command: git
+          - os: macos-latest-xl-arm64
+            artifact: osx-signed-arm64-pkg
+            command: git
           - os: macos-latest
-            artifact: osx-signed-pkg
+            artifact: osx-signed-x86_64-pkg
             command: git
           - os: windows-latest
             artifact: win-installer-x86_64
@@ -745,6 +804,10 @@ jobs:
       - name: Install macOS
         if: contains(matrix.component.os, 'macos')
         run: |
+          # avoid letting Homebrew's `git` in `/opt/homebrew/bin` override `/usr/local/bin/git`
+          test arm64 != "$(uname -m)" ||
+          brew uninstall git
+
           pkgpath=$(find ./*.pkg)
           sudo installer -pkg $pkgpath -target /
 
@@ -775,15 +838,25 @@ jobs:
         with:
           name: win-installer-x86_64
           path: win-installer-x86_64
-      - name: Download Mac dmg
+      - name: Download Mac x86_64 dmg
         uses: actions/download-artifact@v3
         with:
-          name: osx-dmg
+          name: osx-x86_64-dmg
           path: osx-dmg
-      - name: Download Mac pkg
+      - name: Download Mac ARM64 dmg
         uses: actions/download-artifact@v3
         with:
-          name: osx-signed-pkg
+          name: osx-arm64-dmg
+          path: osx-dmg
+      - name: Download Mac x86_64 pkg
+        uses: actions/download-artifact@v3
+        with:
+          name: osx-signed-x86_64-pkg
+          path: osx-pkg
+      - name: Download Mac ARM64 pkg
+        uses: actions/download-artifact@v3
+        with:
+          name: osx-signed-arm64-pkg
           path: osx-pkg
       - name: Download Ubuntu package (signed)
         if: needs.prereqs.outputs.deb_signable == 'true'

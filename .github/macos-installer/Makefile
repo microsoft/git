@@ -7,9 +7,20 @@ LD_LIBRARY_PATH := /usr/lib
 OSX_VERSION := $(shell sw_vers -productVersion)
 TARGET_FLAGS := -mmacosx-version-min=$(OSX_VERSION) -DMACOSX_DEPLOYMENT_TARGET=$(OSX_VERSION)
 
-ARCH := x86_64
-ARCH_CODE := x86_64
-ARCH_FLAGS_x86_64 := -arch x86_64
+uname_M := $(shell sh -c 'uname -m 2>/dev/null || echo not')
+
+ifeq ($(uname_M),x86_64)
+	ARCH := x86_64
+	ARCH_CODE := x86_64
+	ARCH_FLAGS_x86_64 := -arch x86_64
+	CPU_VENDOR := Intel
+endif
+ifeq ($(uname_M),arm64)
+	ARCH := arm64
+	ARCH_CODE := arm64
+	ARCH_FLAGS_arm64 := -arch arm64
+	CPU_VENDOR := Apple Silicon
+endif
 
 CFLAGS := $(TARGET_FLAGS) $(ARCH_FLAGS_${ARCH_CODE})
 LDFLAGS := $(TARGET_FLAGS) $(ARCH_FLAGS_${ARCH_CODE})
@@ -17,7 +28,7 @@ LDFLAGS := $(TARGET_FLAGS) $(ARCH_FLAGS_${ARCH_CODE})
 PREFIX := /usr/local
 GIT_PREFIX := $(PREFIX)/git
 
-BUILD_CODE := intel-$(ARCH_CODE)
+BUILD_CODE := $(ARCH_CODE)
 BUILD_DIR := $(GITHUB_WORKSPACE)/payload
 DESTDIR := $(PWD)/stage/git-$(BUILD_CODE)-$(VERSION)
 ARTIFACTDIR := build_artifacts
@@ -105,7 +116,7 @@ disk-image/git-$(VERSION)-$(BUILD_CODE).pkg: disk-image/VERSION-$(VERSION)-$(ARC
 	pkgbuild --identifier com.git.pkg --version $(VERSION) --root $(ARTIFACTDIR)$(PREFIX) --scripts assets/scripts --install-location $(PREFIX) --component-plist ./assets/git-components.plist disk-image/git-$(VERSION)-$(BUILD_CODE).pkg
 
 git-%-$(BUILD_CODE).dmg:
-	hdiutil create git-$(VERSION)-$(BUILD_CODE).uncompressed.dmg -fs HFS+ -srcfolder disk-image -volname "Git $(VERSION) Intel $(ARCH)" -ov
+	hdiutil create git-$(VERSION)-$(BUILD_CODE).uncompressed.dmg -fs HFS+ -srcfolder disk-image -volname "Git $(VERSION) $(CPU_VENDOR) $(ARCH)" -ov
 	hdiutil convert -format UDZO -o $@ git-$(VERSION)-$(BUILD_CODE).uncompressed.dmg
 	rm -f git-$(VERSION)-$(BUILD_CODE).uncompressed.dmg
 
