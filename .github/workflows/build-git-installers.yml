@@ -313,7 +313,7 @@ jobs:
   # End build Windows installers
 
   # Build and sign Mac OSX installers & upload artifacts
-  osx_build:
+  create-macos-artifacts:
     strategy:
       matrix:
         arch:
@@ -325,6 +325,7 @@ jobs:
     needs: prereqs
     env:
       VERSION: "${{ needs.prereqs.outputs.tag_version }}"
+    environment: release
     steps:
       - name: Check out repository
         uses: actions/checkout@v3
@@ -337,7 +338,56 @@ jobs:
           brew install automake asciidoc xmlto docbook
           brew link --force gettext
 
-      - name: Build payload
+      - name: Set up signing/notarization infrastructure
+        env:
+          A1: ${{ secrets.APPLICATION_CERTIFICATE_BASE64 }}
+          A2: ${{ secrets.APPLICATION_CERTIFICATE_PASSWORD }}
+          I1: ${{ secrets.INSTALLER_CERTIFICATE_BASE64 }}
+          I2: ${{ secrets.INSTALLER_CERTIFICATE_PASSWORD }}
+          N1: ${{ secrets.APPLE_TEAM_ID }}
+          N2: ${{ secrets.APPLE_DEVELOPER_ID }}
+          N3: ${{ secrets.APPLE_DEVELOPER_PASSWORD }}
+          N4: ${{ secrets.APPLE_KEYCHAIN_PROFILE }}
+        run: |
+          echo "Setting up signing certificates"
+          security create-keychain -p pwd $RUNNER_TEMP/buildagent.keychain
+          security default-keychain -s $RUNNER_TEMP/buildagent.keychain
+          security unlock-keychain -p pwd $RUNNER_TEMP/buildagent.keychain
+          # Prevent re-locking
+          security set-keychain-settings $RUNNER_TEMP/buildagent.keychain
+
+          echo "$A1" | base64 -D > $RUNNER_TEMP/cert.p12
+          security import $RUNNER_TEMP/cert.p12 \
+            -k $RUNNER_TEMP/buildagent.keychain \
+            -P "$A2" \
+            -T /usr/bin/codesign
+          security set-key-partition-list \
+            -S apple-tool:,apple:,codesign: \
+            -s -k pwd \
+            $RUNNER_TEMP/buildagent.keychain
+
+          echo "$I1" | base64 -D > $RUNNER_TEMP/cert.p12
+          security import $RUNNER_TEMP/cert.p12 \
+            -k $RUNNER_TEMP/buildagent.keychain \
+            -P "$I2" \
+            -T /usr/bin/pkgbuild
+          security set-key-partition-list \
+            -S apple-tool:,apple:,pkgbuild: \
+            -s -k pwd \
+            $RUNNER_TEMP/buildagent.keychain
+
+          echo "Setting up notarytool"
+          xcrun notarytool store-credentials \
+            --team-id "$N1" \
+            --apple-id "$N2" \
+            --password "$N3" \
+            "$N4"
+
+      - name: Build, sign, and notarize artifacts
+        env:
+          A3: ${{ secrets.APPLE_APPLICATION_SIGNING_IDENTITY }}
+          I3: ${{ secrets.APPLE_INSTALLER_SIGNING_IDENTITY }}
+          N4: ${{ secrets.APPLE_KEYCHAIN_PROFILE }}
         run: |
           die () {
             echo "$*" >&2
@@ -379,272 +429,35 @@ jobs:
           # Lay out payload
           make -C git/.github/macos-installer V=1 payload
 
-          # This step is necessary because we cannot use the $VERSION
-          # environment variable or the tag_version output from the prereqs
-          # job in the upload-artifact task.
-          mkdir -p build_artifacts
-          cp -R stage/git-${{ matrix.arch.name }}-$VERSION/ build_artifacts
+          # Codesign payload
+          cp -R stage/git-${{ matrix.arch.name }}-$VERSION/ \
+            git/.github/macos-installer/build-artifacts
+          make -C git/.github/macos-installer V=1 codesign \
+            APPLE_APP_IDENTITY="$A3" || die "Creating signed payload failed"
 
-          # We keep a list of executable files because their executable bits are
-          # removed when they are zipped, and we need to re-add.
-          find build_artifacts -type f -a -perm -u=x >executable-files.txt
+          # Build and sign pkg
+          make -C git/.github/macos-installer V=1 pkg \
+            APPLE_INSTALLER_IDENTITY="$I3" \
+            || die "Creating signed pkg failed"
 
-      - name: Upload macOS artifacts
+          # Notarize pkg
+          make -C git/.github/macos-installer V=1 notarize \
+            APPLE_INSTALLER_IDENTITY="$I3" APPLE_KEYCHAIN_PROFILE="$N4" \
+            || die "Creating signed and notarized pkg failed"
+
+          # Create DMG
+          make -C git/.github/macos-installer V=1 image || die "Creating DMG failed"
+
+          # Move all artifacts into top-level directory
+          mv git/.github/macos-installer/disk-image/*.pkg git/.github/macos-installer/
+
+      - name: Upload artifacts
         uses: actions/upload-artifact@v3
         with:
-          name: tmp.osx-${{ matrix.arch.name }}-build
+          name: macos-artifacts
           path: |
-            build_artifacts
-
-      - name: Upload list of executable files
-        uses: actions/upload-artifact@v3
-        with:
-          name: tmp.executable-files
-          path: |
-            executable-files.txt
-
-  osx_sign_payload:
-    # ESRP service requires signing to run on Windows
-    runs-on: windows-latest
-    environment: release
-    needs: osx_build
-    strategy:
-      matrix:
-        arch: [x86_64, arm64]
-    steps:
-    - name: Check out repository
-      uses: actions/checkout@v3
-      with:
-        path: 'git'
-
-    - name: Download unsigned build artifacts
-      uses: actions/download-artifact@v3
-      with:
-        name: tmp.osx-${{ matrix.arch }}-build
-        path: build_artifacts
-
-    - name: Zip unsigned build artifacts
-      shell: pwsh
-      run: |
-        Compress-Archive -Path build_artifacts build_artifacts/build_artifacts.zip
-        cd build_artifacts
-        Get-ChildItem -Exclude build_artifacts.zip | Remove-Item -Recurse -Force
-
-    - uses: azure/login@v1
-      with:
-        creds: ${{ secrets.AZURE_CREDENTIALS }}
-
-    - name: Set up ESRP client
-      shell: pwsh
-      env:
-        AZURE_VAULT: ${{ secrets.AZURE_VAULT }}
-        AUTH_CERT: ${{ secrets.AZURE_VAULT_AUTH_CERT_NAME }}
-        REQUEST_SIGNING_CERT: ${{ secrets.AZURE_VAULT_REQUEST_SIGNING_CERT_NAME }}
-      run: |
-        git\.github\scripts\set-up-esrp.ps1
-
-    - name: Run ESRP client
-      shell: pwsh
-      env:
-        AZURE_AAD_ID: ${{ secrets.AZURE_AAD_ID }}
-        APPLE_KEY_CODE: ${{ secrets.APPLE_KEY_CODE }}
-        APPLE_SIGNING_OP_CODE: ${{ secrets.APPLE_SIGNING_OPERATION_CODE }}
-      run: |
-        python git\.github\scripts\run-esrp-signing.py build_artifacts `
-         $env:APPLE_KEY_CODE $env:APPLE_SIGNING_OP_CODE `
-         --params 'Hardening' '--options=runtime'
-
-    - name: Unzip signed build artifacts
-      shell: pwsh
-      run: |
-        Expand-Archive signed/build_artifacts.zip -DestinationPath signed
-        Remove-Item signed/build_artifacts.zip
-
-    - name: Upload signed payload
-      uses: actions/upload-artifact@v3
-      with:
-        name: osx-signed-${{ matrix.arch }}-payload
-        path: |
-          signed
-
-  osx_pack:
-    strategy:
-      matrix:
-        arch:
-          - name: x86_64
-            runner: macos-latest
-          - name: arm64
-            runner: macos-latest-xl-arm64
-    runs-on: ${{ matrix.arch.runner }}
-    needs: [prereqs, osx_sign_payload]
-    steps:
-      - name: Check out repository
-        uses: actions/checkout@v3
-        with:
-          path: 'git'
-
-      - name: Download signed artifacts
-        uses: actions/download-artifact@v3
-        with:
-          name: osx-signed-${{ matrix.arch.name }}-payload
-
-      - name: Download list of executable files
-        uses: actions/download-artifact@v3
-        with:
-          name: tmp.executable-files
-
-      - name: Build macOS pkg
-        env:
-          VERSION: "${{ needs.prereqs.outputs.tag_version }}"
-        run: |
-          die () {
-            echo "$*" >&2
-            exit 1
-          }
-
-          set -ex
-
-          # Install findutils to use gxargs below
-          brew install findutils
-
-          # Configure the environment
-          export CURL_LDFLAGS=$(curl-config --libs)
-
-          # Add executable bits and move build_artifacts into
-          # the same directory as Makefile (so that executable bits
-          # will be recognized).
-          gxargs -r -d '\n' chmod a+x <executable-files.txt
-          mv build_artifacts git/.github/macos-installer/
-
-          # Create pkg
-          PATH=/usr/local/bin:$PATH \
-          make -C git/.github/macos-installer V=1 pkg ||
-            die "Build failed"
-
-      - name: Upload unsigned pkg
-        uses: actions/upload-artifact@v3
-        with:
-          name: tmp.osx-${{ matrix.arch.name }}-pkg
-          path: |
-            git/.github/macos-installer/disk-image
-
-  osx_sign_and_notarize_pkg:
-    strategy:
-      matrix:
-        arch: [x86_64, arm64]
-    # ESRP service requires signing to run on Windows
-    runs-on: windows-latest
-    environment: release
-    needs: osx_pack
-    steps:
-    - name: Check out repository
-      uses: actions/checkout@v3
-      with:
-          path: 'git'
-
-    - name: Download unsigned package
-      uses: actions/download-artifact@v3
-      with:
-        name: tmp.osx-${{ matrix.arch }}-pkg
-        path: pkg
-
-    - name: Zip unsigned package
-      shell: pwsh
-      run: |
-        Compress-Archive -Path pkg/*.pkg pkg/msft-git-pkg.zip
-        cd pkg
-        Get-ChildItem -Exclude msft-git-pkg.zip | Remove-Item -Recurse -Force
-
-    - uses: azure/login@v1
-      with:
-        creds: ${{ secrets.AZURE_CREDENTIALS }}
-
-    - name: Set up ESRP client
-      shell: pwsh
-      env:
-        AZURE_VAULT: ${{ secrets.AZURE_VAULT }}
-        AUTH_CERT: ${{ secrets.AZURE_VAULT_AUTH_CERT_NAME }}
-        REQUEST_SIGNING_CERT: ${{ secrets.AZURE_VAULT_REQUEST_SIGNING_CERT_NAME }}
-      run: |
-        git\.github\scripts\set-up-esrp.ps1
-
-    - name: Sign package
-      shell: pwsh
-      env:
-        AZURE_AAD_ID: ${{ secrets.AZURE_AAD_ID }}
-        APPLE_KEY_CODE: ${{ secrets.APPLE_KEY_CODE }}
-        APPLE_SIGNING_OP_CODE: ${{ secrets.APPLE_SIGNING_OPERATION_CODE }}
-      run: |
-        python git\.github\scripts\run-esrp-signing.py pkg $env:APPLE_KEY_CODE $env:APPLE_SIGNING_OP_CODE
-
-    - name: Unzip signed package
-      shell: pwsh
-      run: |
-        mkdir unsigned
-        Expand-Archive -LiteralPath signed\msft-git-pkg.zip -DestinationPath .\unsigned -Force
-        Remove-Item signed\msft-git-pkg.zip -Force
-
-    - name: Notarize signed package
-      shell: pwsh
-      env:
-        AZURE_AAD_ID: ${{ secrets.AZURE_AAD_ID }}
-        APPLE_KEY_CODE: ${{ secrets.APPLE_KEY_CODE }}
-        APPLE_NOTARIZATION_OP_CODE: ${{ secrets.APPLE_NOTARIZATION_OPERATION_CODE }}
-      run: |
-        python git\.github\scripts\run-esrp-signing.py unsigned $env:APPLE_KEY_CODE `
-          $env:APPLE_NOTARIZATION_OP_CODE --params 'BundleId' 'com.microsoft.git'
-
-    - name: Upload signed and notarized pkg
-      uses: actions/upload-artifact@v3
-      with:
-        name: osx-signed-${{ matrix.arch }}-pkg
-        path: |
-          signed
-
-  osx_publish_dmg:
-    strategy:
-      matrix:
-        arch:
-          - name: x86_64
-            runner: macos-latest
-          - name: arm64
-            runner: macos-latest-xl-arm64
-    runs-on: ${{ matrix.arch.runner }}
-    needs: [prereqs, osx_sign_and_notarize_pkg]
-    steps:
-    - name: Check out repository
-      uses: actions/checkout@v3
-      with:
-        path: 'git'
-
-    - name: Download signed package
-      uses: actions/download-artifact@v3
-      with:
-        name: osx-signed-${{ matrix.arch.name }}-pkg
-        path: disk-image
-
-    - name: Build macOS disk image
-      env:
-        VERSION: "${{ needs.prereqs.outputs.tag_version }}"
-      run: |
-        die () {
-          echo "$*" >&2
-          exit 1
-        }
-
-        set -ex
-
-        # Move disk-image into the same directory as Makefile
-        mv disk-image git/.github/macos-installer/
-
-        PATH=/usr/local/bin:$PATH \
-        make -C git/.github/macos-installer V=1 image || die "Build failed"
-
-    - name: Publish disk image
-      uses: actions/upload-artifact@v3
-      with:
-        name: osx-${{ matrix.arch.name }}-dmg
-        path: git/.github/macos-installer/*.dmg
+            git/.github/macos-installer/*.dmg
+            git/.github/macos-installer/*.pkg
   # End build and sign Mac OSX installers
 
   # Build & sign Ubuntu package
@@ -776,16 +589,16 @@ jobs:
             artifact: deb-package-signed
             command: git
           - os: macos-latest-xl-arm64
-            artifact: osx-signed-arm64-pkg
+            artifact: macos-artifacts
             command: git
           - os: macos-latest
-            artifact: osx-signed-x86_64-pkg
+            artifact: macos-artifacts
             command: git
           - os: windows-latest
             artifact: win-installer-x86_64
             command: $PROGRAMFILES\Git\cmd\git.exe
     runs-on: ${{ matrix.component.os }}
-    needs: [prereqs, windows_artifacts, osx_publish_dmg, ubuntu_sign-artifacts]
+    needs: [prereqs, windows_artifacts, create-macos-artifacts, ubuntu_sign-artifacts]
     steps:
       - name: Download artifacts
         uses: actions/download-artifact@v3
@@ -809,10 +622,11 @@ jobs:
         if: contains(matrix.component.os, 'macos')
         run: |
           # avoid letting Homebrew's `git` in `/opt/homebrew/bin` override `/usr/local/bin/git`
-          test arm64 != "$(uname -m)" ||
+          arch="$(uname -m)"
+          test arm64 != "$arch" ||
           brew uninstall git
 
-          pkgpath=$(find ./*.pkg)
+          pkgpath=$(find ./*$arch*.pkg)
           sudo installer -pkg $pkgpath -target /
 
       - name: Validate
@@ -825,11 +639,11 @@ jobs:
 
   create-github-release:
     runs-on: ubuntu-latest
-    needs: [validate-installers]
+    needs: [validate-installers, create-macos-artifacts]
     if: |
       success() ||
         (needs.ubuntu_sign-artifacts.result == 'skipped' &&
-        needs.osx_publish_dmg.result == 'success' &&
+        needs.create-macos-artifacts.result == 'success' &&
         needs.windows_artifacts.result == 'success')
     steps:
       - name: Download Windows portable installer
@@ -842,26 +656,11 @@ jobs:
         with:
           name: win-installer-x86_64
           path: win-installer-x86_64
-      - name: Download Mac x86_64 dmg
+      - name: Download macOS artifacts
         uses: actions/download-artifact@v3
         with:
-          name: osx-x86_64-dmg
-          path: osx-dmg
-      - name: Download Mac ARM64 dmg
-        uses: actions/download-artifact@v3
-        with:
-          name: osx-arm64-dmg
-          path: osx-dmg
-      - name: Download Mac x86_64 pkg
-        uses: actions/download-artifact@v3
-        with:
-          name: osx-signed-x86_64-pkg
-          path: osx-pkg
-      - name: Download Mac ARM64 pkg
-        uses: actions/download-artifact@v3
-        with:
-          name: osx-signed-arm64-pkg
-          path: osx-pkg
+          name: macos-artifacts
+          path: macos-artifacts
       - name: Download Ubuntu package (signed)
         if: needs.prereqs.outputs.deb_signable == 'true'
         uses: actions/download-artifact@v3
@@ -922,8 +721,7 @@ jobs:
               uploadDirectoryToRelease('win-portable-x86_64', ['.exe']),
 
               // Upload Mac artifacts
-              uploadDirectoryToRelease('osx-dmg'),
-              uploadDirectoryToRelease('osx-pkg'),
+              uploadDirectoryToRelease('macos-artifacts'),
 
               // Upload Ubuntu artifacts
               uploadDirectoryToRelease('deb-package')
