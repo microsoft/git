@@ -14,13 +14,9 @@ jobs:
   prereqs:
     runs-on: ubuntu-latest
     environment: release
-    env:
-      AZ_SUB: ${{ secrets.AZURE_SUBSCRIPTION }}
-      AZ_CREDS: ${{ secrets.AZURE_CREDENTIALS }}
     outputs:
       tag_name: ${{ steps.tag.outputs.name }}           # The full name of the tag, e.g. v2.32.0.vfs.0.0
       tag_version: ${{ steps.tag.outputs.version }}     # The version number (without preceding "v"), e.g. 2.32.0.vfs.0.0
-      deb_signable: ${{ steps.deb.outputs.signable }}   # Whether the credentials needed to sign the .deb package are available
     steps:
       - name: Validate tag
         run: |
@@ -34,9 +30,6 @@ jobs:
           echo "name=${GITHUB_REF#refs/tags/}" >>$GITHUB_OUTPUT
           echo "version=${GITHUB_REF#refs/tags/v}" >>$GITHUB_OUTPUT
         id: tag
-      - name: Determine whether signing certificates are present
-        run: echo "signable=$([[ $AZ_SUB != '' && $AZ_CREDS != '' ]] && echo 'true' || echo 'false')" >>$GITHUB_OUTPUT
-        id: deb
       - name: Clone git
         uses: actions/checkout@v3
       - name: Validate the tag identified with trigger
@@ -460,22 +453,24 @@ jobs:
             git/.github/macos-installer/*.pkg
   # End build and sign Mac OSX installers
 
-  # Build & sign Ubuntu package
-  ubuntu_build:
-    runs-on: ubuntu-20.04
+  # Build and sign Debian package
+  create-linux-artifacts:
+    runs-on: ubuntu-latest
     needs: prereqs
+    environment: release
     steps:
       - name: Install git dependencies
         run: |
           set -ex
-
           sudo apt-get update -q
           sudo apt-get install -y -q --no-install-recommends gettext libcurl4-gnutls-dev libpcre3-dev asciidoc xmlto
+
       - name: Clone git
         uses: actions/checkout@v3
         with:
           path: git
-      - name: Build and package .deb
+
+      - name: Build and create Debian package
         run: |
           set -ex
 
@@ -528,56 +523,55 @@ jobs:
           EOF
 
           dpkg-deb --build "$PKGNAME"
+          # Move Debian package for later artifact upload
+          mv "$PKGNAME.deb" "$GITHUB_WORKSPACE"
 
-          mkdir $GITHUB_WORKSPACE/artifacts
-          mv "$PKGNAME.deb" $GITHUB_WORKSPACE/artifacts/
-      - name: Publish unsigned .deb package
-        uses: actions/upload-artifact@v3
-        with:
-          name: deb-package-unsigned
-          path: artifacts/
-  ubuntu_sign-artifacts:
-    runs-on: windows-latest # Must be run on Windows due to ESRP executable OS compatibility
-    environment: release
-    needs: [ubuntu_build, prereqs]
-    if: needs.prereqs.outputs.deb_signable == 'true'
-    env:
-      ARTIFACTS_DIR: artifacts
-    steps:
-      - name: Clone repository
-        uses: actions/checkout@v3
-        with:
-          path: 'git'
-      - name: Download unsigned packages
-        uses: actions/download-artifact@v3
-        with:
-          name: deb-package-unsigned
-          path: unsigned
-      - uses: azure/login@v1
+      - name: Log into Azure
+        uses: azure/login@v1
         with:
           creds: ${{ secrets.AZURE_CREDENTIALS }}
-      - name: Set up ESRP client
-        shell: pwsh
+
+      - name: Prepare for GPG signing
         env:
           AZURE_VAULT: ${{ secrets.AZURE_VAULT }}
-          AUTH_CERT: ${{ secrets.AZURE_VAULT_AUTH_CERT_NAME }}
-          REQUEST_SIGNING_CERT: ${{ secrets.AZURE_VAULT_REQUEST_SIGNING_CERT_NAME }}
+          GPG_KEY_SECRET_NAME: ${{ secrets.GPG_KEY_SECRET_NAME }}
+          GPG_PASSPHRASE_SECRET_NAME: ${{ secrets.GPG_PASSPHRASE_SECRET_NAME }}
+          GPG_KEYGRIP_SECRET_NAME: ${{ secrets.GPG_KEYGRIP_SECRET_NAME }}
         run: |
-          git\.github\scripts\set-up-esrp.ps1
-      - name: Sign package
-        shell: pwsh
-        env:
-          AZURE_AAD_ID: ${{ secrets.AZURE_AAD_ID }}
-          LINUX_KEY_CODE: ${{ secrets.LINUX_KEY_CODE }}
-          LINUX_OP_CODE: ${{ secrets.LINUX_OPERATION_CODE }}
+          # Install debsigs
+          sudo apt install debsigs
+
+          # Download GPG key, passphrase, and keygrip from Azure Key Vault
+          key=$(az keyvault secret show --name $GPG_KEY_SECRET_NAME --vault-name $AZURE_VAULT --query "value")
+          passphrase=$(az keyvault secret show --name $GPG_PASSPHRASE_SECRET_NAME --vault-name $AZURE_VAULT --query "value")
+          keygrip=$(az keyvault secret show --name $GPG_KEYGRIP_SECRET_NAME --vault-name $AZURE_VAULT --query "value")
+
+          # Remove quotes from downloaded values
+          key=$(sed -e 's/^"//' -e 's/"$//' <<<"$key")
+          passphrase=$(sed -e 's/^"//' -e 's/"$//' <<<"$passphrase")
+          keygrip=$(sed -e 's/^"//' -e 's/"$//' <<<"$keygrip")
+
+          # Import GPG key
+          echo "$key" | base64 -d | gpg --import --no-tty --batch --yes
+
+          # Configure GPG
+          echo "allow-preset-passphrase" > ~/.gnupg/gpg-agent.conf
+          gpg-connect-agent RELOADAGENT /bye
+          /usr/lib/gnupg2/gpg-preset-passphrase --preset "$keygrip" <<<"$passphrase"
+
+      - name: Sign Debian package
         run: |
-          python git\.github\scripts\run-esrp-signing.py unsigned $env:LINUX_KEY_CODE $env:LINUX_OP_CODE
-      - name: Upload signed artifact
+          # Sign Debian package
+          version="${{ needs.prereqs.outputs.tag_version }}"
+          debsigs --sign=origin --verify --check microsoft-git_"$version".deb
+
+      - name: Upload artifacts
         uses: actions/upload-artifact@v3
         with:
-          name: deb-package-signed
-          path: signed
-  # End build & sign Ubuntu package
+          name: linux-artifacts
+          path: |
+            *.deb
+  # End build and sign Debian package
 
   # Validate installers
   validate-installers:
@@ -586,7 +580,7 @@ jobs:
       matrix:
         component:
           - os: ubuntu-latest
-            artifact: deb-package-signed
+            artifact: linux-artifacts
             command: git
           - os: macos-latest-xl-arm64
             artifact: macos-artifacts
@@ -598,7 +592,7 @@ jobs:
             artifact: win-installer-x86_64
             command: $PROGRAMFILES\Git\cmd\git.exe
     runs-on: ${{ matrix.component.os }}
-    needs: [prereqs, windows_artifacts, create-macos-artifacts, ubuntu_sign-artifacts]
+    needs: [prereqs, windows_artifacts, create-macos-artifacts, create-linux-artifacts]
     steps:
       - name: Download artifacts
         uses: actions/download-artifact@v3
@@ -639,10 +633,10 @@ jobs:
 
   create-github-release:
     runs-on: ubuntu-latest
-    needs: [validate-installers, create-macos-artifacts]
+    needs: [validate-installers, create-macos-artifacts, create-linux-artifacts]
     if: |
       success() ||
-        (needs.ubuntu_sign-artifacts.result == 'skipped' &&
+        (needs.create-linux-artifacts.result == 'skipped' &&
         needs.create-macos-artifacts.result == 'success' &&
         needs.windows_artifacts.result == 'success')
     steps:
@@ -661,17 +655,10 @@ jobs:
         with:
           name: macos-artifacts
           path: macos-artifacts
-      - name: Download Ubuntu package (signed)
-        if: needs.prereqs.outputs.deb_signable == 'true'
+      - name: Download Debian package
         uses: actions/download-artifact@v3
         with:
-          name: deb-package-signed
-          path: deb-package
-      - name: Download Ubuntu package (unsigned)
-        if: needs.prereqs.outputs.deb_signable != 'true'
-        uses: actions/download-artifact@v3
-        with:
-          name: deb-package-unsigned
+          name: linux-artifacts
           path: deb-package
       - uses: actions/github-script@v6
         with:
