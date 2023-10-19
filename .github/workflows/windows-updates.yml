@@ -174,65 +174,11 @@ jobs:
 
           sh -x /usr/src/build-extra/please.sh build-mingw-w64-git --only-64-bit --build-src-pkg -o artifacts HEAD
 
-      - name: Publish mingw-w64-x86_64-git
-        uses: actions/upload-artifact@v3
-        with:
-          name: windows-unsigned
-          path: artifacts
-
-  windows_sign:
-    runs-on: windows-latest
-    environment: release
-    needs: [prereqs, windows_pkg]
-    steps:
-      - name: Download artifacts
-        uses: actions/download-artifact@v3
-        with:
-          name: windows-unsigned
-          path: artifacts
-
-      - name: Clone build-extra
-        shell: bash
+      - name: Install Azure Code Signing Module
+        shell: pwsh
         run: |
-          git clone --filter=blob:none --single-branch -b main https://github.com/git-for-windows/build-extra /usr/src/build-extra
-
-      - name: Clone git
-        shell: bash
-        run: |
-          # Since we cannot directly clone a specified tag (as we would a branch with `git clone -b <branch name>`),
-          # this clone has to be done manually (via init->fetch->reset).
-
-          tag_name="${{ needs.prereqs.outputs.tag_name }}" &&
-          git -c init.defaultBranch=main init &&
-          git remote add -f origin https://github.com/git-for-windows/git &&
-          git fetch "https://github.com/${{github.repository}}" refs/tags/${tag_name}:refs/tags/${tag_name} &&
-          git reset --hard ${tag_name}
-
-      - name: Prepare home directory for GPG signing
-        if: env.GPG_FINGERPRINT_SECRET_NAME != ''
-        shell: bash
-        run: |
-          # This section ensures that the identity for the GPG key matches the git user identity, otherwise
-          # signing will fail
-
-          # Get GPG key fingerprint from Azure Key Vault
-          GPGKEY=$(az keyvault secret show --name "$GPG_FINGERPRINT_SECRET_NAME" \
-            --vault-name "$AZURE_VAULT" --query "value" \
-            | sed -e 's/^"//' -e 's/"$//')
-
-          info="$(gpg --list-keys --with-colons "${GPGKEY%% *}" | cut -d : -f 1,10 | sed -n '/^uid/{s|uid:||p;q}')" &&
-          git config --global user.name "${info% <*}" &&
-          git config --global user.email "<${info#*<}"
-        env:
-          AZURE_VAULT: ${{ secrets.AZURE_VAULT }}
-          GPG_FINGERPRINT_SECRET_NAME: ${{secrets.GPG_FINGERPRINT_SECRET_NAME}}
-
-      - name: Log into Azure
-        uses: azure/login@v1
-        with:
-          client-id: ${{ secrets.AZURE_CLIENT_ID }}
-          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
-          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+          Install-Module -Name AzureCodeSigning -RequiredVersion 0.2.24 -Force `
+           -Repository PSGallery
 
       - name: Sign payload files with Azure Code Signing
         uses: azure/azure-code-signing-action@v0.2.21
@@ -269,4 +215,8 @@ jobs:
         with:
           name: pkg-x86_64
           path: artifacts
+
+      - name: action-tmate
+        if: failure()
+        uses: mxschmitt/action-tmate@v3
   # End build Windows installers
