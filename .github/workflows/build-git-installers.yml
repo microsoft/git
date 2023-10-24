@@ -51,7 +51,7 @@ jobs:
           test "${{ steps.tag.outputs.version }}" == "$(sed -n 's/^GIT_VERSION = //p'< GIT-VERSION-FILE)" || die "GIT-VERSION-FILE tag does not match ${{ steps.tag.outputs.name }}"
   # End check prerequisites for the workflow
 
-  # Build Windows installers (x86_64 installer & portable)
+  # Build and sign Windows installers & upload artifacts
   windows_pkg:
     runs-on: windows-2019
     environment: release
@@ -70,13 +70,16 @@ jobs:
           git config --global user.name "$USER_NAME" &&
           git config --global user.email "$USER_EMAIL" &&
           echo "PACKAGER=$USER_NAME <$USER_EMAIL>" >>$GITHUB_ENV
+
       - uses: git-for-windows/setup-git-for-windows-sdk@v1
         with:
           flavor: build-installers
+
       - name: Clone build-extra
         shell: bash
         run: |
           git clone --filter=blob:none --single-branch -b main https://github.com/git-for-windows/build-extra /usr/src/build-extra
+
       - name: Clone git
         shell: bash
         run: |
@@ -88,37 +91,69 @@ jobs:
           git remote add -f origin https://github.com/git-for-windows/git &&
           git fetch "https://github.com/${{github.repository}}" refs/tags/${tag_name}:refs/tags/${tag_name} &&
           git reset --hard ${tag_name}
-      - name: Prepare home directory for code-signing
+
+      - name: Log into Azure
+        uses: azure/login@v1
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: Prepare for GPG signing
         env:
-          CODESIGN_P12: ${{secrets.CODESIGN_P12}}
-          CODESIGN_PASS: ${{secrets.CODESIGN_PASS}}
-        if: env.CODESIGN_P12 != '' && env.CODESIGN_PASS != ''
+          AZURE_VAULT: ${{ secrets.AZURE_VAULT }}
+          GPG_KEY_SECRET_NAME: ${{ secrets.GPG_KEY_SECRET_NAME }}
+          GPG_PASSPHRASE_SECRET_NAME: ${{ secrets.GPG_PASSPHRASE_SECRET_NAME }}
+          GPG_KEYGRIP_SECRET_NAME: ${{ secrets.GPG_KEYGRIP_SECRET_NAME }}
         shell: bash
         run: |
-          cd home &&
-          mkdir -p .sig &&
-          echo -n "$CODESIGN_P12" | tr % '\n' | base64 -d >.sig/codesign.p12 &&
-          echo -n "$CODESIGN_PASS" >.sig/codesign.pass
-          git config --global alias.signtool '!sh "/usr/src/build-extra/signtool.sh"'
+          # Download GPG key, passphrase, and keygrip from Azure Key Vault
+          key=$(az keyvault secret show --name $GPG_KEY_SECRET_NAME --vault-name $AZURE_VAULT --query "value")
+          passphrase=$(az keyvault secret show --name $GPG_PASSPHRASE_SECRET_NAME --vault-name $AZURE_VAULT --query "value")
+          keygrip=$(az keyvault secret show --name $GPG_KEYGRIP_SECRET_NAME --vault-name $AZURE_VAULT --query "value")
+
+          # Remove quotes from downloaded values
+          key=$(sed -e 's/^"//' -e 's/"$//' <<<"$key")
+          passphrase=$(sed -e 's/^"//' -e 's/"$//' <<<"$passphrase")
+          keygrip=$(sed -e 's/^"//' -e 's/"$//' <<<"$keygrip")
+
+          # Import GPG key
+          echo "$key" | base64 -d | gpg $GPG_OPTIONS --import
+
+          # Configure GPG
+          echo "allow-preset-passphrase" > ~/.gnupg/gpg-agent.conf
+          gpg-connect-agent RELOADAGENT /bye
+          gpg-connect-agent 'PRESET_PASSPHRASE "$keygrip" -1 "$passphrase"' /bye
+
       - name: Prepare home directory for GPG signing
-        if: env.GPGKEY != ''
+        if: env.GPG_FINGERPRINT_SECRET_NAME != ''
         shell: bash
         run: |
           # This section ensures that the identity for the GPG key matches the git user identity, otherwise
           # signing will fail
 
-          echo '${{secrets.PRIVGPGKEY}}' | tr % '\n' | gpg $GPG_OPTIONS --import &&
+          # Get GPG key fingerprint from Azure Key Vault
+          GPGKEY=$(az keyvault secret show --name "$GPG_FINGERPRINT_SECRET_NAME" \
+            --vault-name "$AZURE_VAULT" --query "value" \
+            | sed -e 's/^"//' -e 's/"$//')
+
           info="$(gpg --list-keys --with-colons "${GPGKEY%% *}" | cut -d : -f 1,10 | sed -n '/^uid/{s|uid:||p;q}')" &&
           git config --global user.name "${info% <*}" &&
           git config --global user.email "<${info#*<}"
         env:
-          GPGKEY: ${{secrets.GPGKEY}}
+          AZURE_VAULT: ${{ secrets.AZURE_VAULT }}
+          GPG_FINGERPRINT_SECRET_NAME: ${{secrets.GPG_FINGERPRINT_SECRET_NAME}}
+
       - name: Build mingw-w64-x86_64-git
         env:
-          GPGKEY: "${{secrets.GPGKEY}}"
+          AZURE_VAULT: ${{ secrets.AZURE_VAULT }}
+          GPG_FINGERPRINT_SECRET_NAME: ${{secrets.GPG_FINGERPRINT_SECRET_NAME}}
         shell: bash
         run: |
           set -x
+
+          # Get GPG key fingerprint from Azure Key Vault
+          GPGKEY=$(az keyvault secret show --name "$GPG_FINGERPRINT_SECRET_NAME" \
+            --vault-name "$AZURE_VAULT" --query "value" \
+            | sed -e 's/^"//' -e 's/"$//')
 
           # Make sure that there is a `/usr/bin/git` that can be used by `makepkg-mingw`
           printf '#!/bin/sh\n\nexec /mingw64/bin/git.exe "$@"\n' >/usr/bin/git &&
@@ -128,7 +163,11 @@ jobs:
 
           type -p mspdb140.dll || exit 1
 
-          sh -x /usr/src/build-extra/please.sh build-mingw-w64-git --only-64-bit --build-src-pkg -o artifacts HEAD &&
+          sh -x /usr/src/build-extra/please.sh build-mingw-w64-git --only-64-bit --build-src-pkg -o artifacts HEAD
+
+      - name: Sign tarballs with GPG
+        shell: bash
+        run: |
           if test -n "$GPGKEY"
           then
             for tar in artifacts/*.tar*
@@ -143,12 +182,14 @@ jobs:
           cp PKGBUILD.$version PKGBUILD &&
           git commit -s -m "mingw-w64-git: new version ($version)" PKGBUILD &&
           git bundle create "$b"/MINGW-packages.bundle origin/main..main)
+
       - name: Publish mingw-w64-x86_64-git
         uses: actions/upload-artifact@v3
         with:
           name: pkg-x86_64
           path: artifacts
-  windows_artifacts:
+
+  create-windows-artifacts:
     runs-on: windows-2019
     environment: release
     needs: [prereqs, windows_pkg]
@@ -168,24 +209,16 @@ jobs:
         with:
           name: pkg-x86_64
           path: pkg-x86_64
+
       - uses: git-for-windows/setup-git-for-windows-sdk@v1
         with:
           flavor: build-installers
+
       - name: Clone build-extra
         shell: bash
         run: |
           git clone --filter=blob:none --single-branch -b main https://github.com/git-for-windows/build-extra /usr/src/build-extra
-      - name: Prepare home directory for code-signing
-        env:
-          CODESIGN_P12: ${{secrets.CODESIGN_P12}}
-          CODESIGN_PASS: ${{secrets.CODESIGN_PASS}}
-        if: env.CODESIGN_P12 != '' && env.CODESIGN_PASS != ''
-        shell: bash
-        run: |
-          mkdir -p home/.sig &&
-          echo -n "$CODESIGN_P12" | tr % '\n' | base64 -d >home/.sig/codesign.p12 &&
-          echo -n "$CODESIGN_PASS" >home/.sig/codesign.pass &&
-          git config --global alias.signtool '!sh "/usr/src/build-extra/signtool.sh"'
+
       - name: Retarget auto-update to microsoft/git
         shell: bash
         run: |
@@ -205,6 +238,7 @@ jobs:
           Type: files; Name: {app}\\{#MINGW_BITNESS}\\bin\\git-update-git-for-windows.config\
           Type: dirifempty; Name: {app}\\{#MINGW_BITNESS}\\bin' \
             $b/installer/install.iss
+
       - name: Set alerts to continue until upgrade is taken
         shell: bash
         run: |
@@ -214,11 +248,13 @@ jobs:
 
           sed -i -e '6 a use_recently_seen=no' \
             $b/git-update-git-for-windows
+
       - name: Set the installer Publisher to the Git Fundamentals team
         shell: bash
         run: |
           b=/usr/src/build-extra &&
           sed -i -e 's/^\(AppPublisher=\).*/\1The Git Fundamentals Team at GitHub/' $b/installer/install.iss
+
       - name: Let the installer configure Visual Studio to use the installed Git
         shell: bash
         run: |
@@ -256,6 +292,7 @@ jobs:
                   LogError('Could not register TeamFoundation\GitSourceControl');
           end;
           EOF
+
       - name: Enable Scalar/C and the auto-updater in the installer by default
         shell: bash
         run: |
@@ -270,6 +307,7 @@ jobs:
                   WizardSelectComponents('scalar');\n\
           #endif\n\
               end;" $b/installer/install.iss
+
       - name: Build 64-bit ${{matrix.artifact.name}}
         shell: bash
         run: |
@@ -292,12 +330,36 @@ jobs:
             git signtool artifacts/PortableGit-*.exe
           fi &&
           openssl dgst -sha256 artifacts/${{matrix.artifact.fileprefix}}-*.exe | sed "s/.* //" >artifacts/sha-256.txt
+
+      - name: Log into Azure
+        uses: azure/login@v1
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: Install Azure Code Signing Module
+        shell: pwsh
+        run: |
+          Install-Module -Name AzureCodeSigning -RequiredVersion 0.2.24 -Force `
+           -Repository PSGallery
+
+      - name: Sign installers with Azure Code Signing
+        uses: azure/azure-code-signing-action@v0.2.21
+        with:
+          endpoint: https://wus2.codesigning.azure.net/
+          code-signing-account-name: git-fundamentals-signing
+          certificate-profile-name: git-fundamentals-windows-signing
+          files-folder: ${{ github.workspace }}\artifacts
+          files-folder-filter: exe
+          file-digest: SHA256
+          timestamp-rfc3161: http://timestamp.acs.microsoft.com
+          timestamp-digest: SHA256
+
       - name: Verify that .exe files are code-signed
-        if: env.CODESIGN_P12 != '' && env.CODESIGN_PASS != ''
         shell: bash
         run: |
           PATH=$PATH:"/c/Program Files (x86)/Windows Kits/10/App Certification Kit/" \
           signtool verify //pa artifacts/${{matrix.artifact.fileprefix}}-*.exe
+
       - name: Publish ${{matrix.artifact.name}}-x86_64
         uses: actions/upload-artifact@v3
         with:
@@ -592,7 +654,7 @@ jobs:
             artifact: win-installer-x86_64
             command: $PROGRAMFILES\Git\cmd\git.exe
     runs-on: ${{ matrix.component.os }}
-    needs: [prereqs, windows_artifacts, create-macos-artifacts, create-linux-artifacts]
+    needs: [prereqs, create-windows-artifacts, create-macos-artifacts, create-linux-artifacts]
     steps:
       - name: Download artifacts
         uses: actions/download-artifact@v3
@@ -638,7 +700,7 @@ jobs:
       success() ||
         (needs.create-linux-artifacts.result == 'skipped' &&
         needs.create-macos-artifacts.result == 'success' &&
-        needs.windows_artifacts.result == 'success')
+        needs.create-windows-artifacts.result == 'success')
     steps:
       - name: Download Windows portable installer
         uses: actions/download-artifact@v3
