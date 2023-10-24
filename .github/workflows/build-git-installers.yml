@@ -696,6 +696,7 @@ jobs:
   create-github-release:
     runs-on: ubuntu-latest
     needs: [validate-installers]
+    environment: release
     if: |
       success() ||
         (needs.create-linux-artifacts.result == 'skipped' &&
@@ -707,21 +708,37 @@ jobs:
         with:
           name: win-portable-x86_64
           path: win-portable-x86_64
+
       - name: Download Windows x86_64 installer
         uses: actions/download-artifact@v3
         with:
           name: win-installer-x86_64
           path: win-installer-x86_64
+
       - name: Download macOS artifacts
         uses: actions/download-artifact@v3
         with:
           name: macos-artifacts
           path: macos-artifacts
+
       - name: Download Debian package
         uses: actions/download-artifact@v3
         with:
           name: linux-artifacts
           path: deb-package
+
+      - name: Log into Azure
+        uses: azure/login@v1
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: Download GPG public key signature file
+        run: |
+          az keyvault secret show --name "$GPG_PUBLIC_KEY_SECRET_NAME" \
+            --vault-name "$AZURE_VAULT" --query "value" \
+            | sed -e 's/^"//' -e 's/"$//' | base64 -d >msft-git-public.asc
+          mv msft-git-public.asc deb-package
+
       - uses: actions/github-script@v6
         with:
           script: |
