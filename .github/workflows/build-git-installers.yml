@@ -97,6 +97,24 @@ jobs:
         with:
           creds: ${{ secrets.AZURE_CREDENTIALS }}
 
+      - name: Install Azure Code Signing Module
+        shell: pwsh
+        run: |
+          Install-Module -Name AzureCodeSigning -RequiredVersion 0.2.24 -Force `
+           -Repository PSGallery
+
+      - name: Prepare for exe code signing
+        shell: bash
+        run: |
+          git config alias.signtool '!f() { printf "%s\n" "$@" >/tmp/catalog && \
+           powershell -command "Invoke-AzureCodeSigning \
+           -Endpoint https://wus2.codesigning.azure.net/ \
+           -CodeSigningAccountName git-fundamentals-signing \
+           -CertificateProfileName git-fundamentals-windows-signing \
+           -FilesCatalog /tmp/catalog -FileDigest SHA256 \
+           -TimestampRfc3161 http://timestamp.acs.microsoft.com \
+           -TimestampDigest SHA256 }; f'
+
       - name: Prepare for GPG signing
         env:
           AZURE_VAULT: ${{ secrets.AZURE_VAULT }}
