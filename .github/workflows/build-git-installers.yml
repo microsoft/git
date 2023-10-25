@@ -742,6 +742,10 @@ jobs:
             | sed -e 's/^"//' -e 's/"$//' | base64 -d >msft-git-public.asc
           mv msft-git-public.asc deb-package
 
+      - name: action-tmate
+        if: failure()
+        uses: mxschmitt/action-tmate@v3
+
       - uses: actions/github-script@v6
         with:
           script: |
