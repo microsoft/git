@@ -114,7 +114,10 @@ disk-image/git-$(VERSION)-$(ARCH_UNIV).pkg: disk-image/VERSION-$(VERSION)-$(ARCH
 	$(pkg_cmd)
 
 git-%-$(ARCH_UNIV).dmg:
-	hdiutil create git-$(VERSION)-$(ARCH_UNIV).uncompressed.dmg -fs HFS+ -srcfolder disk-image -volname "Git $(VERSION) $(ARCH_UNIV)" -ov
+	hdiutil create git-$(VERSION)-$(ARCH_UNIV).uncompressed.dmg -fs HFS+ -srcfolder disk-image -volname "Git $(VERSION) $(ARCH_UNIV)" -ov 2>&1 | tee err || { \
+		grep "Resource busy" err && \
+		sleep 5 && \
+		hdiutil create git-$(VERSION)-$(ARCH_UNIV).uncompressed.dmg -fs HFS+ -srcfolder disk-image -volname "Git $(VERSION) $(ARCH_UNIV)" -ov; }
 	hdiutil convert -format UDZO -o $@ git-$(VERSION)-$(ARCH_UNIV).uncompressed.dmg
 	rm -f git-$(VERSION)-$(ARCH_UNIV).uncompressed.dmg
 
