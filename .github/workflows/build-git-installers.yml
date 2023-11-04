@@ -437,6 +437,7 @@ jobs:
           tar -xvf git/git-manpages-$VERSION.tar.gz -C manpages
 
           # Lay out payload
+          cp git/config.mak payload/git-$VERSION/config.mak
           make -C git/.github/macos-installer V=1 payload
 
           # Codesign payload
