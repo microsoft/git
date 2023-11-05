@@ -650,6 +650,15 @@ jobs:
           "${{ matrix.component.command }}" --version | sed 's/git version //' >actual
           echo ${{ needs.prereqs.outputs.tag_version }} >expect
           cmp expect actual || exit 1
+
+      - name: Validate universal binary CPU architecture
+        if: contains(matrix.component.os, 'macos')
+        shell: bash
+        run: |
+          set -ex
+          git version --build-options >actual
+          cat actual
+          grep "cpu: $(uname -m)" actual
   # End validate installers
 
   create-github-release:
