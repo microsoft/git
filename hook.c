@@ -33,6 +33,8 @@ static const char *hook_path_early(const char *name, struct strbuf *result)
 		const char *early_hooks_dir = NULL;
 
 		if (discover_git_directory(&commondir, &gitdir) < 0) {
+			strbuf_release(&gitdir);
+			strbuf_release(&commondir);
 			initialized = -1;
 			return NULL;
 		}
