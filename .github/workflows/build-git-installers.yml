@@ -606,6 +606,9 @@ jobs:
           - os: macos-latest
             artifact: macos-artifacts
             command: git
+          - os: macos-latest-xl-arm64
+            artifact: macos-artifacts
+            command: git
           - os: windows-latest
             artifact: win-installer-x86_64
             command: $PROGRAMFILES\Git\cmd\git.exe
@@ -638,7 +641,7 @@ jobs:
           test arm64 != "$arch" ||
           brew uninstall git
 
-          pkgpath=$(find ./*$arch*.pkg)
+          pkgpath=$(find ./*universal*.pkg)
           sudo installer -pkg $pkgpath -target /
 
       - name: Validate
