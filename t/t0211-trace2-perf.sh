@@ -268,4 +268,23 @@ test_expect_success PTHREADS 'global counter test/test2' '
 	have_counter_event "main" "counter" "test" "test2" 60 actual
 '
 
+test_expect_success 'unsafe URLs are redacted by default' '
+	test_when_finished \
+		"rm -r actual trace.perf unredacted.perf clone clone2" &&
+
+	test_config_global \
+		"url.$(pwd).insteadOf" https://user:pwd@example.com/ &&
+	test_config_global trace2.configParams "core.*,remote.*.url" &&
+
+	GIT_TRACE2_PERF="$(pwd)/trace.perf" \
+		git clone https://user:pwd@example.com/ clone &&
+	! grep user:pwd trace.perf &&
+
+	GIT_TRACE2_REDACT=0 GIT_TRACE2_PERF="$(pwd)/unredacted.perf" \
+		git clone https://user:pwd@example.com/ clone2 &&
+	perl "$TEST_DIRECTORY/t0211/scrub_perf.perl" <unredacted.perf >actual &&
+	grep "d0|main|start|.* clone https://user:pwd@example.com" actual &&
+	grep "d0|main|def_param|.*|remote.origin.url:https://user:pwd@example.com" actual
+'
+
 test_done
