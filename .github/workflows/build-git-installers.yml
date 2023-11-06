@@ -306,8 +306,6 @@ jobs:
     strategy:
       matrix:
         arch:
-          - name: x86_64
-            runner: macos-latest
           - name: arm64
             runner: macos-latest-xl-arm64
     runs-on: ${{ matrix.arch.runner }}
@@ -323,9 +321,19 @@ jobs:
 
       - name: Install Git dependencies
         run: |
-          set -x
+          set -ex
+
+          # Install x86_64 packages
+          arch -x86_64 /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+          arch -x86_64 /usr/local/bin/brew install gettext curl
+
+          # Install arm64 packages
           brew install automake asciidoc xmlto docbook
           brew link --force gettext
+
+          # Make universal gettext and curl library
+          lipo -create -output libintl.a /usr/local/opt/gettext/lib/libintl.a /opt/homebrew/opt/gettext/lib/libintl.a
+          lipo -create -output libcurl.dylib /opt/homebrew/opt/curl/lib/libcurl.4.dylib /usr/local/opt/curl/lib/libcurl.4.dylib
 
       - name: Set up signing/notarization infrastructure
         env:
@@ -383,24 +391,37 @@ jobs:
             exit 1
           }
 
-          # Configure the environment
+          # Trace execution, stop on error
           set -ex
-          PATH=/usr/local/bin:$PATH
-          export CURL_LDFLAGS=$(curl-config --libs)
 
           # Write to "version" file to force match with trigger payload version
           echo "${{ needs.prereqs.outputs.tag_version }}" >>git/version
 
-          # Configure the Git build to pick up gettext
-          homebrew_prefix="$(brew --prefix)"
+          # Configure universal build
           cat >git/config.mak <<EOF
-          LDFLAGS = -L$homebrew_prefix/lib -L/usr/local/opt/gettext/lib
-          CFLAGS = -I$homebrew_prefix/include -I/usr/local/opt/gettext/include
+          # Create universal binaries. HOST_CPU is a bit of a lie and only
+          # used in 'git version --build-options'.  We'll fix that in code.
+          HOST_CPU = universal
+          BASIC_CFLAGS += -arch arm64 -arch x86_64
           EOF
 
-          # On Apple Silicon, homebrew apparently does not install a `gcc` symlink
-          test x86_64 = '${{ matrix.arch.name }}' ||
-          echo 'CC = gcc-13' >>config.mak
+          # Configure the Git build to pick up gettext
+          homebrew_prefix="$(brew --prefix)"
+          cat >>git/config.mak <<EOF
+          CFLAGS = -I$homebrew_prefix/include -I/usr/local/opt/gettext/include
+          LDFLAGS = -L"$(pwd)"
+          EOF
+
+          # Configure the Git build to pick up the universal `libcurl.dylib`
+          cat >>git/config.mak <<EOF
+          CURL_LDFLAGS := -L"$(pwd)" -lcurl
+          CURL_CONFIG := /usr/bin/true
+          EOF
+
+          # Avoid even building the dashed built-ins; Those should be hard-linked
+          # copies of the `git` executable but would end up as actual copies instead,
+          # bloating the size of the `.dmg` indecently.
+          echo 'SKIP_DASHED_BUILT_INS = YabbaDabbaDoo' >>git/config.mak
 
           # To make use of the catalogs...
           export XML_CATALOG_FILES=$homebrew_prefix/etc/xml/catalog
@@ -416,10 +437,11 @@ jobs:
           tar -xvf git/git-manpages-$VERSION.tar.gz -C manpages
 
           # Lay out payload
+          cp git/config.mak payload/git-$VERSION/config.mak
           make -C git/.github/macos-installer V=1 payload
 
           # Codesign payload
-          cp -R stage/git-${{ matrix.arch.name }}-$VERSION/ \
+          cp -R stage/git-universal-$VERSION/ \
             git/.github/macos-installer/build-artifacts
           make -C git/.github/macos-installer V=1 codesign \
             APPLE_APP_IDENTITY="$A3" || die "Creating signed payload failed"
@@ -584,6 +606,9 @@ jobs:
           - os: macos-latest
             artifact: macos-artifacts
             command: git
+          - os: macos-latest-xl-arm64
+            artifact: macos-artifacts
+            command: git
           - os: windows-latest
             artifact: win-installer-x86_64
             command: $PROGRAMFILES\Git\cmd\git.exe
@@ -616,7 +641,7 @@ jobs:
           test arm64 != "$arch" ||
           brew uninstall git
 
-          pkgpath=$(find ./*$arch*.pkg)
+          pkgpath=$(find ./*universal*.pkg)
           sudo installer -pkg $pkgpath -target /
 
       - name: Validate
@@ -625,6 +650,15 @@ jobs:
           "${{ matrix.component.command }}" --version | sed 's/git version //' >actual
           echo ${{ needs.prereqs.outputs.tag_version }} >expect
           cmp expect actual || exit 1
+
+      - name: Validate universal binary CPU architecture
+        if: contains(matrix.component.os, 'macos')
+        shell: bash
+        run: |
+          set -ex
+          git version --build-options >actual
+          cat actual
+          grep "cpu: $(uname -m)" actual
   # End validate installers
 
   create-github-release:
