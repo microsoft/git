@@ -17,8 +17,8 @@ jobs:
       - name: Validate tag
         run: |
           echo "$GITHUB_REF" |
-          grep '^refs/tags/v2\.\(0\|[1-9][0-9]*\)\.\(0\|[1-9][0-9]*\)\.vfs\.0\.\(0\|[1-9][0-9]*\)$' || {
-            echo "::error::${GITHUB_REF#refs/tags/} is not of the form v2.<X>.<Y>.vfs.0.<W>" >&2
+          grep -E '^refs/tags/v2\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.vfs\.0\.(0|[1-9][0-9]*)(\.rc[0-9])?$' || {
+            echo "::error::${GITHUB_REF#refs/tags/} is not of the form v2.<X>.<Y>.vfs.0.<W>[.rc<N>]" >&2
             exit 1
           }
       - name: Determine tag to build
