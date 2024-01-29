@@ -5,6 +5,8 @@ struct cache_entry;
 struct index_state;
 
 int index_dir_exists(struct index_state *istate, const char *name, int namelen);
+int index_dir_exists2(struct index_state *istate, const char *name, int namelen,
+		      struct strbuf *canonical_path);
 void adjust_dirname_case(struct index_state *istate, char *name);
 struct cache_entry *index_file_exists(struct index_state *istate, const char *name, int namelen, int igncase);
 struct cache_entry *index_file_next_match(struct index_state *istate, struct cache_entry *ce, int igncase);

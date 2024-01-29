@@ -694,6 +694,22 @@ int index_dir_exists(struct index_state *istate, const char *name, int namelen)
 	dir = find_dir_entry(istate, name, namelen);
 	return dir && dir->nr;
 }
+int index_dir_exists2(struct index_state *istate, const char *name, int namelen,
+		      struct strbuf *canonical_path)
+{
+	struct dir_entry *dir;
+
+	strbuf_init(canonical_path, namelen+1);
+
+	lazy_init_name_hash(istate);
+	expand_to_path(istate, name, namelen, 0);
+	dir = find_dir_entry(istate, name, namelen);
+
+	if (dir && dir->nr)
+		strbuf_add(canonical_path, dir->name, dir->namelen);
+
+	return dir && dir->nr;
+}
 
 void adjust_dirname_case(struct index_state *istate, char *name)
 {
