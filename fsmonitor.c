@@ -219,24 +219,40 @@ static void fsmonitor_refresh_callback_unqualified(
 	}
 }
 
-static void fsmonitor_refresh_callback_slash(
+/*
+ * The daemon can decorate directory events, such as a move or rename,
+ * by adding a trailing slash to the observed name.  Use this to
+ * explicitly invalidate the entire cone under that directory.
+ *
+ * The daemon can only reliably do that if the OS FSEvent contains
+ * sufficient information in the event.
+ *
+ * macOS FSEvents have enough information.
+ *
+ * Other platforms may or may not be able to do it (and it might
+ * depend on the type of event (for example, a daemon could lstat() an
+ * observed pathname after a rename, but not after a delete)).
+ *
+ * If we find an exact match in the index for a path with a trailing
+ * slash, it means that we matched a sparse-index directory in a
+ * cone-mode sparse-checkout (since that's the only time we have
+ * directories in the index).  We should never see this in practice
+ * (because sparse directories should not be present and therefore
+ * not generating FS events).  Either way, we can treat them in the
+ * same way and just invalidate the cache-entry and the untracked
+ * cache (and in this case, the forward cache-entry scan won't find
+ * anything and it doesn't hurt to let it run).
+ *
+ * Return the number of cache-entries that we invalidated.  We will
+ * use this later to determine if we need to attempt a second
+ * case-insensitive search.
+ */
+static int fsmonitor_refresh_callback_slash(
 	struct index_state *istate, const char *name, int len, int pos)
 {
 	int i;
+	int nr_in_cone = 0;
 
-	/*
-	 * The daemon can decorate directory events, such as
-	 * moves or renames, with a trailing slash if the OS
-	 * FS Event contains sufficient information, such as
-	 * MacOS.
-	 *
-	 * Use this to invalidate the entire cone under that
-	 * directory.
-	 *
-	 * We do not expect an exact match because the index
-	 * does not normally contain directory entries, so we
-	 * start at the insertion point and scan.
-	 */
 	if (pos < 0)
 		pos = -pos - 1;
 
@@ -245,7 +261,10 @@ static void fsmonitor_refresh_callback_slash(
 		if (!starts_with(istate->cache[i]->name, name))
 			break;
 		istate->cache[i]->ce_flags &= ~CE_FSMONITOR_VALID;
+		nr_in_cone++;
 	}
+
+	return nr_in_cone;
 }
 
 static void fsmonitor_refresh_callback(struct index_state *istate, char *name)
