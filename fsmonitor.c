@@ -287,41 +287,52 @@ static int my_callback_dir_name_hash(
 	return nr_in_cone;
 }
 
-static void fsmonitor_refresh_callback_unqualified(
+/*
+ * The daemon sent an observed pathname without a trailing slash.
+ * (This is the normal case.)  We do not know if it is a tracked or
+ * untracked file, a sparse-directory, or a populated directory (on a
+ * platform such as Windows where FSEvents are not qualified).
+ *
+ * The pathname contains the observed case reported by the FS. We
+ * do not know it is case-correct or -incorrect.
+ *
+ * Assume it is case-correct and try an exact match.
+ *
+ * Return the number of cache-entries that we invalidated.
+ */
+static int fsmonitor_refresh_callback_unqualified(
 	struct index_state *istate, const char *name, int len, int pos)
 {
-	int i;
-
 	my_invalidate_untracked_cache(istate, name, len);
 
 	if (pos >= 0) {
 		/*
-		 * We have an exact match for this path and can just
-		 * invalidate it.
+		 * An exact match on a tracked file. We assume that we
+		 * do not need to scan forward for a sparse-directory
+		 * cache-entry with the same pathname, nor for a cone
+		 * at that directory. (That is, assume no D/F conflicts.)
 		 */
 		istate->cache[pos]->ce_flags &= ~CE_FSMONITOR_VALID;
+		return 1;
 	} else {
-		/*
-		 * The path is not a tracked file -or- it is a
-		 * directory event on a platform that cannot
-		 * distinguish between file and directory events in
-		 * the event handler, such as Windows.
-		 *
-		 * Scan as if it is a directory and invalidate the
-		 * cone under it.  (But remember to ignore items
-		 * between "name" and "name/", such as "name-" and
-		 * "name.".
-		 */
-		pos = -pos - 1;
+		int nr_in_cone;
+		struct strbuf work_path = STRBUF_INIT;
 
-		for (i = pos; i < istate->cache_nr; i++) {
-			if (!starts_with(istate->cache[i]->name, name))
-				break;
-			if ((unsigned char)istate->cache[i]->name[len] > '/')
-				break;
-			if (istate->cache[i]->name[len] == '/')
-				istate->cache[i]->ce_flags &= ~CE_FSMONITOR_VALID;
-		}
+		/*
+		 * The negative "pos" gives us the suggested insertion
+		 * point for the pathname (without the trailing slash).
+		 * We need to see if there is a directory with that
+		 * prefix, but there can be lots of pathnames between
+		 * "foo" and "foo/" like "foo-" or "foo-bar", so we
+		 * don't want to do our own scan.
+		 */
+		strbuf_add(&work_path, name, len);
+		strbuf_addch(&work_path, '/');
+		pos = index_name_pos(istate, work_path.buf, work_path.len);
+		nr_in_cone = fsmonitor_refresh_callback_slash(
+			istate, work_path.buf, work_path.len, pos);
+		strbuf_release(&work_path);
+		return nr_in_cone;
 	}
 }
 
