@@ -1116,16 +1116,17 @@ test_expect_success CASE_INSENSITIVE_FS 'fsmonitor subdir case wrong on disk' '
 
 	grep -q "dir1/DIR2/dir3/file3.*pos -3" "$PWD/subdir_case_wrong.log1" &&
 
+	# Also verify that we get a mapping event to correct the case.
+	grep -q "map.*dir1/DIR2/dir3/file3.*dir1/dir2/dir3/file3" \
+		"$PWD/subdir_case_wrong.log1" &&
+
 	# The refresh-callbacks should have caused "git status" to clear
 	# the CE_FSMONITOR_VALID bit on each of those files and caused
 	# the worktree scan to visit them and mark them as modified.
 	grep -q " M AAA" "$PWD/subdir_case_wrong.out" &&
 	grep -q " M zzz" "$PWD/subdir_case_wrong.out" &&
 
-	# However, with the fsmonitor client bug, the "(pos -3)" causes
-	# the client to not update the bit and never rescan the file
-	# and therefore not report it as dirty.
-	! grep -q " M dir1/dir2/dir3/file3" "$PWD/subdir_case_wrong.out"
+	grep -q " M dir1/dir2/dir3/file3" "$PWD/subdir_case_wrong.out"
 '
 
 test_expect_success CASE_INSENSITIVE_FS 'fsmonitor file case wrong on disk' '
@@ -1246,12 +1247,14 @@ test_expect_success CASE_INSENSITIVE_FS 'fsmonitor file case wrong on disk' '
 	grep -q "fsmonitor_refresh_callback.*FILE-3-A.*pos -3" "$PWD/file_case_wrong-try3.log" &&
 	grep -q "fsmonitor_refresh_callback.*file-4-a.*pos -9" "$PWD/file_case_wrong-try3.log" &&
 
-	# Status should say these files are modified, but with the case
-	# bug, the "pos -3" cause the client to not update the FSM bit
-	# and never cause the file to be rescanned and therefore to not
-	# report it dirty.
-	! grep -q " M dir1/dir2/dir3/file-3-a" "$PWD/file_case_wrong-try3.out" &&
-	! grep -q " M dir1/dir2/dir4/FILE-4-A" "$PWD/file_case_wrong-try3.out"
+	# Also verify that we get a mapping event to correct the case.
+	grep -q "fsmonitor_refresh_callback map.*dir1/dir2/dir3/FILE-3-A.*dir1/dir2/dir3/file-3-a" \
+		"$PWD/file_case_wrong-try3.log" &&
+	grep -q "fsmonitor_refresh_callback map.*dir1/dir2/dir4/file-4-a.*dir1/dir2/dir4/FILE-4-A" \
+		"$PWD/file_case_wrong-try3.log" &&
+
+	grep -q " M dir1/dir2/dir3/file-3-a" "$PWD/file_case_wrong-try3.out" &&
+	grep -q " M dir1/dir2/dir4/FILE-4-A" "$PWD/file_case_wrong-try3.out"
 '
 
 test_done
