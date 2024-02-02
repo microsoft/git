@@ -183,10 +183,34 @@ static int query_fsmonitor_hook(struct repository *r,
 	return result;
 }
 
+/*
+ * Invalidate the untracked cache for the given pathname.  Copy the
+ * buffer to a proper null-terminated string (since the untracked
+ * cache code does not use (buf, len) style argument).  Also strip any
+ * trailing slash.
+ */
+static void my_invalidate_untracked_cache(
+	struct index_state *istate, const char *name, int len)
+{
+	struct strbuf work_path = STRBUF_INIT;
+
+	if (!len)
+		return;
+
+	if (name[len-1] == '/')
+		len--;
+
+	strbuf_add(&work_path, name, len);
+	untracked_cache_invalidate_path(istate, work_path.buf, 0);
+	strbuf_release(&work_path);
+}
+
 static void fsmonitor_refresh_callback_unqualified(
 	struct index_state *istate, const char *name, int len, int pos)
 {
 	int i;
+
+	my_invalidate_untracked_cache(istate, name, len);
 
 	if (pos >= 0) {
 		/*
@@ -253,6 +277,8 @@ static int fsmonitor_refresh_callback_slash(
 	int i;
 	int nr_in_cone = 0;
 
+	my_invalidate_untracked_cache(istate, name, len);
+
 	if (pos < 0)
 		pos = -pos - 1;
 
@@ -278,21 +304,9 @@ static void fsmonitor_refresh_callback(struct index_state *istate, char *name)
 
 	if (name[len - 1] == '/') {
 		fsmonitor_refresh_callback_slash(istate, name, len, pos);
-
-		/*
-		 * We need to remove the traling "/" from the path
-		 * for the untracked cache.
-		 */
-		name[len - 1] = '\0';
 	} else {
 		fsmonitor_refresh_callback_unqualified(istate, name, len, pos);
 	}
-
-	/*
-	 * Mark the untracked cache dirty even if it wasn't found in the index
-	 * as it could be a new untracked file.
-	 */
-	untracked_cache_invalidate_path(istate, name, 0);
 }
 
 /*
