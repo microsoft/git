@@ -337,6 +337,36 @@ static int fsmonitor_refresh_callback_unqualified(
 }
 
 /*
+ * On a case-insensitive FS, use the name-hash to map the case of
+ * the observed path to the canonical case expected by the index.
+ *
+ * The given pathname DOES NOT include the trailing slash.
+ *
+ * Return the number of cache-entries that we invalidated.
+ */
+static int fsmonitor_refresh_callback_unqualified_icase(
+	struct index_state *istate, const char *name, int len)
+{
+	int nr_in_cone;
+
+	/*
+	 * Look for a case-incorrect match for this non-directory
+	 * pathname.
+	 */
+	nr_in_cone = my_callback_name_hash(istate, name, len);
+	if (nr_in_cone)
+		return nr_in_cone;
+
+	/*
+	 * Try the directory name-hash and see if there is a
+	 * case-incorrect directory with this pathanme.
+	 * (len) because we don't have a trailing slash.
+	 */
+	nr_in_cone = my_callback_dir_name_hash(istate, name, len);
+	return nr_in_cone;
+}
+
+/*
  * The daemon can decorate directory events, such as a move or rename,
  * by adding a trailing slash to the observed name.  Use this to
  * explicitly invalidate the entire cone under that directory.
@@ -434,7 +464,9 @@ static void fsmonitor_refresh_callback(struct index_state *istate, char *name)
 		if (ignore_case && !nr_in_cone)
 			fsmonitor_refresh_callback_slash_icase(istate, name, len);
 	} else {
-		fsmonitor_refresh_callback_unqualified(istate, name, len, pos);
+		nr_in_cone = fsmonitor_refresh_callback_unqualified(istate, name, len, pos);
+		if (ignore_case && !nr_in_cone)
+			fsmonitor_refresh_callback_unqualified_icase(istate, name, len);
 	}
 }
 
