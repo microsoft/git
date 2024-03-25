@@ -333,7 +333,7 @@ jobs:
 
           # Make universal gettext and curl library
           lipo -create -output libintl.a /usr/local/opt/gettext/lib/libintl.a /opt/homebrew/opt/gettext/lib/libintl.a
-          lipo -create -output libcurl.dylib /opt/homebrew/opt/curl/lib/libcurl.4.dylib /usr/local/opt/curl/lib/libcurl.4.dylib
+          lipo -create -output libcurlUniversal.dylib /opt/homebrew/opt/curl/lib/libcurl.4.dylib /usr/local/opt/curl/lib/libcurl.4.dylib
 
       - name: Set up signing/notarization infrastructure
         env:
@@ -412,9 +412,9 @@ jobs:
           LDFLAGS = -L"$(pwd)"
           EOF
 
-          # Configure the Git build to pick up the universal `libcurl.dylib`
+          # Configure the Git build to pick up the universal `libcurlUniversal.dylib`
           cat >>git/config.mak <<EOF
-          CURL_LDFLAGS := -L"$(pwd)" -lcurl
+          CURL_LDFLAGS := -L"$(pwd)" -lcurlUniversal
           CURL_CONFIG := /usr/bin/true
           EOF
 

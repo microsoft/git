@@ -2893,9 +2893,15 @@ git-imap-send$X: imap-send.o $(IMAP_SEND_BUILDDEPS) GIT-LDFLAGS $(GITLIBS)
 git-http-fetch$X: http.o http-walker.o http-fetch.o $(LAZYLOAD_LIBCURL_OBJ) GIT-LDFLAGS $(GITLIBS)
 	$(QUIET_LINK)$(CC) $(ALL_CFLAGS) -o $@ $(ALL_LDFLAGS) $(filter %.o,$^) \
 		$(CURL_LIBCURL) $(LIBS)
+ifdef PRIVATE_CURL_UNIVERSAL
+	/usr/bin/install_name_tool -change $(PRIVATE_CURL_UNIVERSAL) @loader_path/$(PRIVATE_CURL_UNIVERSAL) $@
+endif
 git-http-push$X: http.o http-push.o $(LAZYLOAD_LIBCURL_OBJ) GIT-LDFLAGS $(GITLIBS)
 	$(QUIET_LINK)$(CC) $(ALL_CFLAGS) -o $@ $(ALL_LDFLAGS) $(filter %.o,$^) \
 		$(CURL_LIBCURL) $(EXPAT_LIBEXPAT) $(LIBS)
+ifdef PRIVATE_CURL_UNIVERSAL
+	/usr/bin/install_name_tool -change $(PRIVATE_CURL_UNIVERSAL) @loader_path/$(PRIVATE_CURL_UNIVERSAL) $@
+endif
 
 $(REMOTE_CURL_ALIASES): $(REMOTE_CURL_PRIMARY)
 	$(QUIET_LNCP)$(RM) $@ && \
@@ -2906,6 +2912,9 @@ $(REMOTE_CURL_ALIASES): $(REMOTE_CURL_PRIMARY)
 $(REMOTE_CURL_PRIMARY): remote-curl.o http.o http-walker.o $(LAZYLOAD_LIBCURL_OBJ) GIT-LDFLAGS $(GITLIBS)
 	$(QUIET_LINK)$(CC) $(ALL_CFLAGS) -o $@ $(ALL_LDFLAGS) $(filter %.o,$^) \
 		$(CURL_LIBCURL) $(EXPAT_LIBEXPAT) $(LIBS)
+ifdef PRIVATE_CURL_UNIVERSAL
+	/usr/bin/install_name_tool -change $(PRIVATE_CURL_UNIVERSAL) @loader_path/$(PRIVATE_CURL_UNIVERSAL) $@
+endif
 
 scalar$X: $(SCALAR_OBJS) GIT-LDFLAGS $(GITLIBS)
 	$(QUIET_LINK)$(CC) $(ALL_CFLAGS) -o $@ $(ALL_LDFLAGS) \
@@ -2914,6 +2923,9 @@ scalar$X: $(SCALAR_OBJS) GIT-LDFLAGS $(GITLIBS)
 git-gvfs-helper$X: gvfs-helper.o http.o GIT-LDFLAGS $(GITLIBS) $(LAZYLOAD_LIBCURL_OBJ)
 	$(QUIET_LINK)$(CC) $(ALL_CFLAGS) -o $@ $(ALL_LDFLAGS) $(filter %.o,$^) \
 		$(CURL_LIBCURL) $(EXPAT_LIBEXPAT) $(LIBS)
+ifdef PRIVATE_CURL_UNIVERSAL
+	/usr/bin/install_name_tool -change $(PRIVATE_CURL_UNIVERSAL) @loader_path/$(PRIVATE_CURL_UNIVERSAL) $@
+endif
 
 $(LIB_FILE): $(LIB_OBJS)
 	$(QUIET_AR)$(RM) $@ && $(AR) $(ARFLAGS) $@ $^
@@ -3550,6 +3562,10 @@ install: all
 	$(INSTALL) -m 644 $(SCRIPT_LIB) '$(DESTDIR_SQ)$(gitexec_instdir_SQ)'
 	$(INSTALL) $(INSTALL_STRIP) $(install_bindir_xprograms) '$(DESTDIR_SQ)$(bindir_SQ)'
 	$(INSTALL) $(BINDIR_PROGRAMS_NO_X) '$(DESTDIR_SQ)$(bindir_SQ)'
+
+ifdef PRIVATE_CURL_UNIVERSAL
+	$(INSTALL) $(PRIVATE_CURL_UNIVERSAL) -m 755 '$(DESTDIR_SQ)$(gitexe_instdir_SQ)'
+endif
 
 ifdef MSVC
 	# We DO NOT install the individual foo.o.pdb files because they
