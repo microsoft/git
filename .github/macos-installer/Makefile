@@ -48,8 +48,16 @@ $(BUILD_DIR)/git-$(VERSION)/osx-built:
 	echo "================"
 	echo "Dumping Linkage"
 	cd $(BUILD_DIR)/git-$(VERSION); ./git version
+	echo "===="
 	cd $(BUILD_DIR)/git-$(VERSION); /usr/bin/otool -L ./git
-	cd $(BUILD_DIR)/git-$(VERSION); /usr/bin/otool -L ./git-remote-https
+	echo "===="
+	cd $(BUILD_DIR)/git-$(VERSION); /usr/bin/otool -L ./git-http-fetch
+	echo "===="
+	cd $(BUILD_DIR)/git-$(VERSION); /usr/bin/otool -L ./git-http-push
+	echo "===="
+	cd $(BUILD_DIR)/git-$(VERSION); /usr/bin/otool -L ./git-remote-http
+	echo "===="
+	cd $(BUILD_DIR)/git-$(VERSION); /usr/bin/otool -L ./git-gvfs-helper
 	echo "================"
 	touch $@
 

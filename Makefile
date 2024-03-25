@@ -2925,6 +2925,9 @@ git-gvfs-helper$X: gvfs-helper.o http.o GIT-LDFLAGS $(GITLIBS) $(LAZYLOAD_LIBCUR
 		$(CURL_LIBCURL) $(EXPAT_LIBEXPAT) $(LIBS)
 ifdef PRIVATE_CURL_UNIVERSAL
 	/usr/bin/install_name_tool -change $(PRIVATE_CURL_UNIVERSAL) @loader_path/$(PRIVATE_CURL_UNIVERSAL) $@
+	echo "===="
+	/usr/bin/otool -L $@
+	echo "===="
 endif
 
 $(LIB_FILE): $(LIB_OBJS)
@@ -3564,7 +3567,12 @@ install: all
 	$(INSTALL) $(BINDIR_PROGRAMS_NO_X) '$(DESTDIR_SQ)$(bindir_SQ)'
 
 ifdef PRIVATE_CURL_UNIVERSAL
-	$(INSTALL) $(PRIVATE_CURL_UNIVERSAL) -m 755 '$(DESTDIR_SQ)$(gitexe_instdir_SQ)'
+	echo "========"
+	echo "PREPARE TO INSTALL private curl universal"
+	pwd
+	/usr/bin/ls -l
+	echo "========"
+	$(INSTALL) $(PRIVATE_CURL_UNIVERSAL) -m 755 '$(DESTDIR_SQ)$(gitexec_instdir_SQ)'
 endif
 
 ifdef MSVC
