@@ -1432,16 +1432,18 @@ enum pattern_match_result path_matches_pattern_list(
 	int result = NOT_MATCHED;
 	size_t slash_pos;
 
-	/*
-	 * The virtual file system data is used to prevent git from traversing
-	 * any part of the tree that is not in the virtual file system.  Return
-	 * 1 to exclude the entry if it is not found in the virtual file system,
-	 * else fall through to the regular excludes logic as it may further exclude.
-	 */
-	if (*dtype == DT_UNKNOWN)
-		*dtype = resolve_dtype(DT_UNKNOWN, istate, pathname, pathlen);
-	if (is_excluded_from_virtualfilesystem(pathname, pathlen, *dtype) > 0)
-		return 1;
+	if (core_virtualfilesystem) {
+		/*
+		* The virtual file system data is used to prevent git from traversing
+		* any part of the tree that is not in the virtual file system.  Return
+		* 1 to exclude the entry if it is not found in the virtual file system,
+		* else fall through to the regular excludes logic as it may further exclude.
+		*/
+		if (*dtype == DT_UNKNOWN)
+			*dtype = resolve_dtype(DT_UNKNOWN, istate, pathname, pathlen);
+		if (is_excluded_from_virtualfilesystem(pathname, pathlen, *dtype) > 0)
+			return 1;
+	}
 
 	if (!pl->use_cone_patterns) {
 		pattern = last_matching_pattern_from_list(pathname, pathlen, basename,
@@ -1796,16 +1798,18 @@ int is_excluded(struct dir_struct *dir, struct index_state *istate,
 {
 	struct path_pattern *pattern;
 
-	/*
-	 * The virtual file system data is used to prevent git from traversing
-	 * any part of the tree that is not in the virtual file system.  Return
-	 * 1 to exclude the entry if it is not found in the virtual file system,
-	 * else fall through to the regular excludes logic as it may further exclude.
-	 */
-	if (*dtype_p == DT_UNKNOWN)
-		*dtype_p = resolve_dtype(DT_UNKNOWN, istate, pathname, strlen(pathname));
-	if (is_excluded_from_virtualfilesystem(pathname, strlen(pathname), *dtype_p) > 0)
-		return 1;
+	if (core_virtualfilesystem) {
+		/*
+		* The virtual file system data is used to prevent git from traversing
+		* any part of the tree that is not in the virtual file system.  Return
+		* 1 to exclude the entry if it is not found in the virtual file system,
+		* else fall through to the regular excludes logic as it may further exclude.
+		*/
+		if (*dtype_p == DT_UNKNOWN)
+			*dtype_p = resolve_dtype(DT_UNKNOWN, istate, pathname, strlen(pathname));
+		if (is_excluded_from_virtualfilesystem(pathname, strlen(pathname), *dtype_p) > 0)
+			return 1;
+	}
 
 	pattern = last_matching_pattern(dir, istate, pathname, dtype_p);
 	if (pattern)
