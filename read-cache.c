@@ -5,6 +5,7 @@
  */
 #include "git-compat-util.h"
 #include "bulk-checkin.h"
+#include "virtualfilesystem.h"
 #include "config.h"
 #include "date.h"
 #include "diff.h"
@@ -465,6 +466,17 @@ int ie_modified(struct index_state *istate,
 	 * then we know it is.
 	 */
 	if ((changed & DATA_CHANGED) &&
+#ifdef GIT_WINDOWS_NATIVE
+	    /*
+	     * Work around Git for Windows v2.27.0 fixing a bug where symlinks'
+	     * target path lengths were not read at all, and instead recorded
+	     * as 4096: now, all symlinks would appear as modified.
+	     *
+	     * So let's just special-case symlinks with a target path length
+	     * (i.e. `sd_size`) of 4096 and force them to be re-checked.
+	     */
+	    (!S_ISLNK(st->st_mode) || ce->ce_stat_data.sd_size != MAX_LONG_PATH) &&
+#endif
 	    (S_ISGITLINK(ce->ce_mode) || ce->ce_stat_data.sd_size != 0))
 		return changed;
 
@@ -1560,6 +1572,7 @@ int refresh_index(struct index_state *istate, unsigned int flags,
 	typechange_fmt = in_porcelain ? "T\t%s\n" : "%s: needs update\n";
 	added_fmt      = in_porcelain ? "A\t%s\n" : "%s: needs update\n";
 	unmerged_fmt   = in_porcelain ? "U\t%s\n" : "%s: needs merge\n";
+	enable_fscache(0);
 	/*
 	 * Use the multi-threaded preload_index() to refresh most of the
 	 * cache entries quickly then in the single threaded loop below,
@@ -1654,6 +1667,7 @@ int refresh_index(struct index_state *istate, unsigned int flags,
 	display_progress(progress, istate->cache_nr);
 	stop_progress(&progress);
 	trace_performance_leave("refresh index");
+	disable_fscache();
 	return has_errors;
 }
 
@@ -1778,7 +1792,10 @@ static int read_index_extension(struct index_state *istate,
 {
 	switch (CACHE_EXT(ext)) {
 	case CACHE_EXT_TREE:
+		trace2_region_enter("index", "read/extension/cache_tree", NULL);
 		istate->cache_tree = cache_tree_read(data, sz);
+		trace2_data_intmax("index", NULL, "read/extension/cache_tree/bytes", (intmax_t)sz);
+		trace2_region_leave("index", "read/extension/cache_tree", NULL);
 		break;
 	case CACHE_EXT_RESOLVE_UNDO:
 		istate->resolve_undo = resolve_undo_read(data, sz);
@@ -1994,6 +2011,7 @@ static void post_read_index_from(struct index_state *istate)
 	tweak_untracked_cache(istate);
 	tweak_split_index(istate);
 	tweak_fsmonitor(istate);
+	apply_virtualfilesystem(istate);
 }
 
 static size_t estimate_cache_size_from_compressed(unsigned int entries)
@@ -2064,6 +2082,17 @@ static void *load_index_extensions(void *_data)
 	}
 
 	return NULL;
+}
+
+static void *load_index_extensions_threadproc(void *_data)
+{
+	void *result;
+
+	trace2_thread_start("load_index_extensions");
+	result = load_index_extensions(_data);
+	trace2_thread_exit();
+
+	return result;
 }
 
 /*
@@ -2142,12 +2171,17 @@ static void *load_cache_entries_thread(void *_data)
 	struct load_cache_entries_thread_data *p = _data;
 	int i;
 
+	trace2_thread_start("load_cache_entries");
+
 	/* iterate across all ieot blocks assigned to this thread */
 	for (i = p->ieot_start; i < p->ieot_start + p->ieot_blocks; i++) {
 		p->consumed += load_cache_entry_block(p->istate, p->ce_mem_pool,
 			p->offset, p->ieot->entries[i].nr, p->mmap, p->ieot->entries[i].offset, NULL);
 		p->offset += p->ieot->entries[i].nr;
 	}
+
+	trace2_thread_exit();
+
 	return NULL;
 }
 
@@ -2315,7 +2349,7 @@ int do_read_index(struct index_state *istate, const char *path, int must_exist)
 			int err;
 
 			p.src_offset = extension_offset;
-			err = pthread_create(&p.pthread, NULL, load_index_extensions, &p);
+			err = pthread_create(&p.pthread, NULL, load_index_extensions_threadproc, &p);
 			if (err)
 				die(_("unable to create load_index_extensions thread: %s"), strerror(err));
 
@@ -3043,9 +3077,13 @@ static int do_write_index(struct index_state *istate, struct tempfile *tempfile,
 	    !drop_cache_tree && istate->cache_tree) {
 		struct strbuf sb = STRBUF_INIT;
 
+		trace2_region_enter("index", "write/extension/cache_tree", NULL);
 		cache_tree_write(&sb, istate->cache_tree);
 		err = write_index_ext_header(f, eoie_c, CACHE_EXT_TREE, sb.len) < 0;
 		hashwrite(f, sb.buf, sb.len);
+		trace2_data_intmax("index", NULL, "write/extension/cache_tree/bytes", (intmax_t)sb.len);
+		trace2_region_leave("index", "write/extension/cache_tree", NULL);
+
 		strbuf_release(&sb);
 		if (err)
 			return -1;
@@ -3930,7 +3968,7 @@ static void update_callback(struct diff_queue_struct *q,
 		struct diff_filepair *p = q->queue[i];
 		const char *path = p->one->path;
 
-		if (!data->include_sparse &&
+		if (!data->include_sparse && !core_virtualfilesystem &&
 		    !path_in_sparse_checkout(path, data->index))
 			continue;
 

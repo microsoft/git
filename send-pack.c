@@ -4,6 +4,7 @@
 #include "date.h"
 #include "gettext.h"
 #include "hex.h"
+#include "gvfs.h"
 #include "object-store-ll.h"
 #include "pkt-line.h"
 #include "sideband.h"
@@ -44,7 +45,7 @@ int option_parse_push_signed(const struct option *opt,
 
 static void feed_object(const struct object_id *oid, FILE *fh, int negative)
 {
-	if (negative &&
+	if (negative && !gvfs_config_is_set(GVFS_MISSING_OK) &&
 	    !repo_has_object_file_with_flags(the_repository, oid,
 					     OBJECT_INFO_SKIP_FETCH_OBJECT |
 					     OBJECT_INFO_QUICK))
@@ -477,7 +478,7 @@ int send_pack(struct send_pack_args *args,
 	int need_pack_data = 0;
 	int allow_deleting_refs = 0;
 	int status_report = 0;
-	int use_sideband = 0;
+	int use_sideband = 1;
 	int quiet_supported = 0;
 	int agent_supported = 0;
 	int advertise_sid = 0;
@@ -500,6 +501,7 @@ int send_pack(struct send_pack_args *args,
 		return 0;
 	}
 
+	git_config_get_bool("sendpack.sideband", &use_sideband);
 	git_config_get_bool("push.negotiate", &push_negotiate);
 	if (push_negotiate)
 		get_commons_through_negotiation(args->url, remote_refs, &commons);
@@ -518,8 +520,7 @@ int send_pack(struct send_pack_args *args,
 		allow_deleting_refs = 1;
 	if (server_supports("ofs-delta"))
 		args->use_ofs_delta = 1;
-	if (server_supports("side-band-64k"))
-		use_sideband = 1;
+	use_sideband = use_sideband && server_supports("side-band-64k");
 	if (server_supports("quiet"))
 		quiet_supported = 1;
 	if (server_supports("agent"))

@@ -16,6 +16,7 @@
 #include "environment.h"
 #include "hex.h"
 #include "repository.h"
+#include "gvfs.h"
 #include "config.h"
 #include "tempfile.h"
 #include "lockfile.h"
@@ -638,6 +639,9 @@ int cmd_gc(int argc, const char **argv, const char *prefix)
 	if (quiet)
 		strvec_push(&repack, "-q");
 
+	if ((!auto_gc || (auto_gc && gc_auto_threshold > 0)) && gvfs_config_is_set(GVFS_BLOCK_COMMANDS))
+		die(_("'git gc' is not supported on a GVFS repo"));
+
 	if (auto_gc) {
 		/*
 		 * Auto-gc should be least intrusive as possible.
@@ -1043,6 +1047,8 @@ static int write_loose_object_to_stdin(const struct object_id *oid,
 	return ++(d->count) > d->batch_size;
 }
 
+static const char *object_dir = NULL;
+
 static int pack_loose(struct maintenance_run_opts *opts)
 {
 	struct repository *r = the_repository;
@@ -1050,11 +1056,14 @@ static int pack_loose(struct maintenance_run_opts *opts)
 	struct write_loose_object_data data;
 	struct child_process pack_proc = CHILD_PROCESS_INIT;
 
+	if (!object_dir)
+		object_dir = r->objects->odb->path;
+
 	/*
 	 * Do not start pack-objects process
 	 * if there are no loose objects.
 	 */
-	if (!for_each_loose_file_in_objdir(r->objects->odb->path,
+	if (!for_each_loose_file_in_objdir(object_dir,
 					   bail_on_loose,
 					   NULL, NULL, NULL))
 		return 0;
@@ -1064,7 +1073,7 @@ static int pack_loose(struct maintenance_run_opts *opts)
 	strvec_push(&pack_proc.args, "pack-objects");
 	if (opts->quiet)
 		strvec_push(&pack_proc.args, "--quiet");
-	strvec_pushf(&pack_proc.args, "%s/pack/loose", r->objects->odb->path);
+	strvec_pushf(&pack_proc.args, "%s/pack/loose", object_dir);
 
 	pack_proc.in = -1;
 
@@ -1077,7 +1086,7 @@ static int pack_loose(struct maintenance_run_opts *opts)
 	data.count = 0;
 	data.batch_size = 50000;
 
-	for_each_loose_file_in_objdir(r->objects->odb->path,
+	for_each_loose_file_in_objdir(object_dir,
 				      write_loose_object_to_stdin,
 				      NULL,
 				      NULL,
@@ -1455,6 +1464,7 @@ static int maintenance_run(int argc, const char **argv, const char *prefix)
 {
 	int i;
 	struct maintenance_run_opts opts;
+	const char *tmp_obj_dir = NULL;
 	struct option builtin_maintenance_run_options[] = {
 		OPT_BOOL(0, "auto", &opts.auto_flag,
 			 N_("run tasks based on the state of the repository")),
@@ -1488,6 +1498,18 @@ static int maintenance_run(int argc, const char **argv, const char *prefix)
 	if (argc != 0)
 		usage_with_options(builtin_maintenance_run_usage,
 				   builtin_maintenance_run_options);
+
+	/*
+	 * To enable the VFS for Git/Scalar shared object cache, use
+	 * the gvfs.sharedcache config option to redirect the
+	 * maintenance to that location.
+	 */
+	if (!git_config_get_value("gvfs.sharedcache", &tmp_obj_dir) &&
+	    tmp_obj_dir) {
+		object_dir = xstrdup(tmp_obj_dir);
+		setenv(DB_ENVIRONMENT, object_dir, 1);
+	}
+
 	return maintenance_run_tasks(&opts);
 }
 
@@ -1649,6 +1671,42 @@ static const char *get_frequency(enum schedule_priority schedule)
 	default:
 		BUG("invalid schedule %d", schedule);
 	}
+}
+
+static const char *extraconfig[] = {
+	"credential.interactive=false",
+	"core.askPass=true", /* 'true' returns success, but no output. */
+	NULL
+};
+
+static const char *get_extra_config_parameters(void) {
+	static const char *result = NULL;
+	struct strbuf builder = STRBUF_INIT;
+
+	if (result)
+		return result;
+
+	for (const char **s = extraconfig; s && *s; s++)
+		strbuf_addf(&builder, "-c %s ", *s);
+
+	result = strbuf_detach(&builder, NULL);
+	return result;
+}
+
+static const char *get_extra_launchctl_strings(void) {
+	static const char *result = NULL;
+	struct strbuf builder = STRBUF_INIT;
+
+	if (result)
+		return result;
+
+	for (const char **s = extraconfig; s && *s; s++) {
+		strbuf_addstr(&builder, "<string>-c</string>\n");
+		strbuf_addf(&builder, "<string>%s</string>\n", *s);
+	}
+
+	result = strbuf_detach(&builder, NULL);
+	return result;
 }
 
 /*
@@ -1857,6 +1915,7 @@ static int launchctl_schedule_plist(const char *exec_path, enum schedule_priorit
 		   "<array>\n"
 		   "<string>%s/git</string>\n"
 		   "<string>--exec-path=%s</string>\n"
+		   "%s" /* For extra config parameters. */
 		   "<string>for-each-repo</string>\n"
 		   "<string>--keep-going</string>\n"
 		   "<string>--config=maintenance.repo</string>\n"
@@ -1866,7 +1925,8 @@ static int launchctl_schedule_plist(const char *exec_path, enum schedule_priorit
 		   "</array>\n"
 		   "<key>StartCalendarInterval</key>\n"
 		   "<array>\n";
-	strbuf_addf(&plist, preamble, name, exec_path, exec_path, frequency);
+	strbuf_addf(&plist, preamble, name, exec_path, exec_path,
+		    get_extra_launchctl_strings(), frequency);
 
 	switch (schedule) {
 	case SCHEDULE_HOURLY:
@@ -2101,11 +2161,12 @@ static int schtasks_schedule_task(const char *exec_path, enum schedule_priority 
 	      "<Actions Context=\"Author\">\n"
 	      "<Exec>\n"
 	      "<Command>\"%s\\headless-git.exe\"</Command>\n"
-	      "<Arguments>--exec-path=\"%s\" for-each-repo --keep-going --config=maintenance.repo maintenance run --schedule=%s</Arguments>\n"
+	      "<Arguments>--exec-path=\"%s\" %s for-each-repo --keep-going --config=maintenance.repo maintenance run --schedule=%s</Arguments>\n"
 	      "</Exec>\n"
 	      "</Actions>\n"
 	      "</Task>\n";
-	fprintf(tfile->fp, xml, exec_path, exec_path, frequency);
+	fprintf(tfile->fp, xml, exec_path, exec_path,
+		get_extra_config_parameters(), frequency);
 	strvec_split(&child.args, cmd);
 	strvec_pushl(&child.args, "/create", "/tn", name, "/f", "/xml",
 				  get_tempfile_path(tfile), NULL);
@@ -2246,8 +2307,8 @@ static int crontab_update_schedule(int run_maintenance, int fd)
 			"# replaced in the future by a Git command.\n\n");
 
 		strbuf_addf(&line_format,
-			    "%%d %%s * * %%s \"%s/git\" --exec-path=\"%s\" for-each-repo --keep-going --config=maintenance.repo maintenance run --schedule=%%s\n",
-			    exec_path, exec_path);
+			    "%%d %%s * * %%s \"%s/git\" --exec-path=\"%s\" %s for-each-repo --keep-going --config=maintenance.repo maintenance run --schedule=%%s\n",
+			    exec_path, exec_path, get_extra_config_parameters());
 		fprintf(cron_in, line_format.buf, minute, "1-23", "*", "hourly");
 		fprintf(cron_in, line_format.buf, minute, "0", "1-6", "daily");
 		fprintf(cron_in, line_format.buf, minute, "0", "0", "weekly");
@@ -2447,7 +2508,7 @@ static int systemd_timer_write_service_template(const char *exec_path)
 	       "\n"
 	       "[Service]\n"
 	       "Type=oneshot\n"
-	       "ExecStart=\"%s/git\" --exec-path=\"%s\" for-each-repo --keep-going --config=maintenance.repo maintenance run --schedule=%%i\n"
+	       "ExecStart=\"%s/git\" --exec-path=\"%s\" %s for-each-repo --keep-going --config=maintenance.repo maintenance run --schedule=%%i\n"
 	       "LockPersonality=yes\n"
 	       "MemoryDenyWriteExecute=yes\n"
 	       "NoNewPrivileges=yes\n"
@@ -2457,7 +2518,7 @@ static int systemd_timer_write_service_template(const char *exec_path)
 	       "RestrictSUIDSGID=yes\n"
 	       "SystemCallArchitectures=native\n"
 	       "SystemCallFilter=@system-service\n";
-	if (fprintf(file, unit, exec_path, exec_path) < 0) {
+	if (fprintf(file, unit, exec_path, exec_path, get_extra_config_parameters()) < 0) {
 		error(_("failed to write to '%s'"), filename);
 		fclose(file);
 		goto error;

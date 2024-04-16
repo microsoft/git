@@ -1,10 +1,10 @@
-Thanks for taking the time to contribute to Git! Please be advised that the
-Git community does not use github.com for their contributions. Instead, we use
-a mailing list (git@vger.kernel.org) for code submissions, code reviews, and
-bug reports. Nevertheless, you can use GitGitGadget (https://gitgitgadget.github.io/)
-to conveniently send your Pull Requests commits to our mailing list.
+Thanks for taking the time to contribute to Git!
 
-For a single-commit pull request, please *leave the pull request description
-empty*: your commit message itself should describe your changes.
+This fork contains changes specific to monorepo scenarios. If you are an
+external contributor, then please detail your reason for submitting to
+this fork:
 
-Please read the "guidelines for contributing" linked above!
+* [ ] This is an early version of work already under review upstream.
+* [ ] This change only applies to interactions with Azure DevOps and the
+      GVFS Protocol.
+* [ ] This change only applies to the virtualization hook and VFS for Git.

@@ -1506,10 +1506,19 @@ const char *setup_git_directory_gently(int *nongit_ok)
 		break;
 	case GIT_DIR_INVALID_OWNERSHIP:
 		if (!nongit_ok) {
+			struct strbuf prequoted = STRBUF_INIT;
 			struct strbuf quoted = STRBUF_INIT;
 
 			strbuf_complete(&report, '\n');
-			sq_quote_buf_pretty(&quoted, dir.buf);
+
+#ifdef __MINGW32__
+			if (dir.buf[0] == '/')
+				strbuf_addstr(&prequoted, "%(prefix)/");
+#endif
+
+			strbuf_add(&prequoted, dir.buf, dir.len);
+			sq_quote_buf_pretty(&quoted, prequoted.buf);
+
 			die(_("detected dubious ownership in repository at '%s'\n"
 			      "%s"
 			      "To add an exception for this directory, call:\n"
@@ -1793,7 +1802,7 @@ static void copy_templates_1(struct strbuf *path, struct strbuf *template_path,
 			if (strbuf_readlink(&lnk, template_path->buf,
 					    st_template.st_size) < 0)
 				die_errno(_("cannot readlink '%s'"), template_path->buf);
-			if (symlink(lnk.buf, path->buf))
+			if (create_symlink(NULL, lnk.buf, path->buf))
 				die_errno(_("cannot symlink '%s' '%s'"),
 					  lnk.buf, path->buf);
 			strbuf_release(&lnk);
@@ -1889,6 +1898,13 @@ void initialize_repository_version(int hash_algo,
 	char repo_version_string[10];
 	int repo_version = GIT_REPO_VERSION;
 
+	/*
+	 * Note that we initialize the repository version to 1 when the ref
+	 * storage format is unknown. This is on purpose so that we can add the
+	 * correct object format to the config during git-clone(1). The format
+	 * version will get adjusted by git-clone(1) once it has learned about
+	 * the remote repository's format.
+	 */
 	if (hash_algo != GIT_HASH_SHA1 ||
 	    ref_storage_format != REF_STORAGE_FORMAT_FILES)
 		repo_version = GIT_REPO_VERSION_READ;
@@ -1898,7 +1914,7 @@ void initialize_repository_version(int hash_algo,
 		  "%d", repo_version);
 	git_config_set("core.repositoryformatversion", repo_version_string);
 
-	if (hash_algo != GIT_HASH_SHA1)
+	if (hash_algo != GIT_HASH_SHA1 && hash_algo != GIT_HASH_UNKNOWN)
 		git_config_set("extensions.objectformat",
 			       hash_algos[hash_algo].name);
 	else if (reinit)
@@ -2065,7 +2081,7 @@ static int create_default_files(const char *template_path,
 		path = git_path_buf(&buf, "tXXXXXX");
 		if (!close(xmkstemp(path)) &&
 		    !unlink(path) &&
-		    !symlink("testing", path) &&
+		    !create_symlink(NULL, "testing", path) &&
 		    !lstat(path, &st1) &&
 		    S_ISLNK(st1.st_mode))
 			unlink(path); /* good */
@@ -2197,7 +2213,7 @@ int init_db(const char *git_dir, const char *real_git_dir,
 	startup_info->have_repository = 1;
 
 	/* Ensure `core.hidedotfiles` is processed */
-	git_config(platform_core_config, NULL);
+	git_config(git_default_core_config, NULL);
 
 	safe_create_dir(git_dir, 0);
 

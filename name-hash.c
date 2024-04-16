@@ -685,13 +685,20 @@ static int same_name(const struct cache_entry *ce, const char *name, int namelen
 	return slow_same_name(name, namelen, ce->name, len);
 }
 
-int index_dir_exists(struct index_state *istate, const char *name, int namelen)
+int index_dir_find(struct index_state *istate, const char *name, int namelen,
+		   struct strbuf *canonical_path)
 {
 	struct dir_entry *dir;
 
 	lazy_init_name_hash(istate);
 	expand_to_path(istate, name, namelen, 0);
 	dir = find_dir_entry(istate, name, namelen);
+
+	if (canonical_path && dir && dir->nr) {
+		strbuf_reset(canonical_path);
+		strbuf_add(canonical_path, dir->name, dir->namelen);
+	}
+
 	return dir && dir->nr;
 }
 
@@ -733,6 +740,26 @@ struct cache_entry *index_file_exists(struct index_state *istate, const char *na
 		if (same_name(ce, name, namelen, icase))
 			return ce;
 	}
+	return NULL;
+}
+
+struct cache_entry *index_file_next_match(struct index_state *istate, struct cache_entry *ce, int igncase)
+{
+	struct cache_entry *next;
+
+	if (!igncase || !ce) {
+		return NULL;
+	}
+
+	next = hashmap_get_next_entry(&istate->name_hash, ce, ent);
+	if (!next)
+		return NULL;
+
+	hashmap_for_each_entry_from(&istate->name_hash, next, ent) {
+		if (same_name(next, ce->name, ce_namelen(ce), igncase))
+			return next;
+	}
+
 	return NULL;
 }
 
