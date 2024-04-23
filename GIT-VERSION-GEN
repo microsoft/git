@@ -3,6 +3,9 @@
 GVF=GIT-VERSION-FILE
 DEF_VER=v2.45.2
 
+# Identify microsoft/git via a distinct version suffix
+DEF_VER=$DEF_VER.vfs.0.0
+
 LF='
 '
 
