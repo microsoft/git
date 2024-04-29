@@ -61,6 +61,9 @@ supported:
 	following kinds of information are reported:
 +
 * Reference counts categorized by type
+* Symbolic reference counts
+* Loose and packed reference counts (with the `files` reference backend)
+* Maximum and total reference-name lengths for local and remote references
 * Reachable object counts categorized by type
 * Total inflated size of reachable objects by type
 * Total disk size of reachable objects by type
@@ -70,6 +73,12 @@ supported:
 +
 By default every reference enumerated by `for-each-ref` contributes to
 the counts and object walk. Use `--ref-filter` to narrow the scope.
++
+Symbolic references also contribute to their usual reference-type counts.
+Reference-name lengths are measured in bytes, including the full `refs/`
+prefix. Remote references are those under `refs/remotes/`; all other
+references, including tags, are considered local for these measurements.
+Loose and packed counts are zero for reference backends other than `files`.
 
 	`--ref-filter=<pattern>`;;
 		Only count references whose full name matches one of the
