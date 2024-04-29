@@ -1,15 +1,20 @@
 #include "builtin.h"
 #include "config.h"
+#include "environment.h"
 #include "json-writer.h"
+#include "list-objects.h"
+#include "object-name.h"
 #include "object-store.h"
 #include "parse-options.h"
 #include "progress.h"
 #include "ref-filter.h"
 #include "refs.h"
+#include "revision.h"
 #include "strbuf.h"
 #include "strmap.h"
 #include "strvec.h"
 #include "trace2.h"
+#include "tree-walk.h"
 
 static const char * const survey_usage[] = {
 	N_("(EXPERIMENTAL!) git survey <options>"),
@@ -245,6 +250,93 @@ static void do_load_refs(struct ref_array *ref_array)
 }
 
 /*
+ * Populate a "rev_info" with the OIDs of the REFS of interest.
+ * The treewalk will start from all of those starting points
+ * and walk backwards in the DAG to get the set of all reachable
+ * objects from those starting points.
+ */
+static void load_rev_info(struct rev_info *rev_info,
+			  struct ref_array *ref_array)
+{
+	unsigned int add_flags = 0;
+	int k;
+
+	for (k = 0; k < ref_array->nr; k++) {
+		struct ref_array_item *p = ref_array->items[k];
+		struct object_id peeled;
+
+		switch (p->kind) {
+		case FILTER_REFS_TAGS:
+			if (!peel_iterated_oid(rev_info->repo, &p->objectname, &peeled))
+				add_pending_oid(rev_info, NULL, &peeled, add_flags);
+			else
+				add_pending_oid(rev_info, NULL, &p->objectname, add_flags);
+			break;
+		case FILTER_REFS_BRANCHES:
+			add_pending_oid(rev_info, NULL, &p->objectname, add_flags);
+			break;
+		case FILTER_REFS_REMOTES:
+			add_pending_oid(rev_info, NULL, &p->objectname, add_flags);
+			break;
+		case FILTER_REFS_OTHERS:
+			/*
+			 * This may be a note, stash, or custom namespace branch.
+			 */
+			add_pending_oid(rev_info, NULL, &p->objectname, add_flags);
+			break;
+		case FILTER_REFS_DETACHED_HEAD:
+			add_pending_oid(rev_info, NULL, &p->objectname, add_flags);
+			break;
+		default:
+			break;
+		}
+	}
+}
+
+static void traverse_commit_cb(struct commit *commit, void *data)
+{
+	if ((++survey_progress_total % 1000) == 0)
+		display_progress(survey_progress, survey_progress_total);
+}
+
+static void traverse_object_cb(struct object *obj, const char *name, void *data)
+{
+	if ((++survey_progress_total % 1000) == 0)
+		display_progress(survey_progress, survey_progress_total);
+}
+
+/*
+ * Treewalk all of the commits and objects reachable from the
+ * set of refs.
+ */
+static void do_treewalk_reachable(struct ref_array *ref_array)
+{
+	struct rev_info rev_info = REV_INFO_INIT;
+
+	repo_init_revisions(the_repository, &rev_info, NULL);
+	rev_info.tree_objects = 1;
+	rev_info.blob_objects = 1;
+	load_rev_info(&rev_info, ref_array);
+	if (prepare_revision_walk(&rev_info))
+		die(_("revision walk setup failed"));
+
+	if (survey_opts.show_progress) {
+		survey_progress_total = 0;
+		survey_progress = start_progress(_("Walking reachable objects..."), 0);
+	}
+
+	traverse_commit_list(&rev_info,
+			     traverse_commit_cb,
+			     traverse_object_cb,
+			     NULL);
+
+	if (survey_opts.show_progress)
+		stop_progress(&survey_progress);
+
+	release_revisions(&rev_info);
+}
+
+/*
  * If we want this type of ref, increment counters and return 1.
  */
 static int maybe_count_ref(struct repository *r, struct ref_array_item *p)
@@ -437,6 +529,10 @@ static void survey_phase_refs(struct repository *r)
 	trace2_region_enter("survey", "phase/refs", the_repository);
 	do_load_refs(&ref_array);
 	trace2_region_leave("survey", "phase/refs", the_repository);
+
+	trace2_region_enter("survey", "phase/treewalk", the_repository);
+	do_treewalk_reachable(&ref_array);
+	trace2_region_leave("survey", "phase/treewalk", the_repository);
 
 	trace2_region_enter("survey", "phase/calcstats", the_repository);
 	do_calc_stats_refs(r, &ref_array);
