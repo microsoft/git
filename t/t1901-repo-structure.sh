@@ -21,6 +21,38 @@ object_type_disk_usage() {
 	fi
 }
 
+check_structure_summary() {
+	sed -n "1,$(wc -l <expect)p" "$1" >summary &&
+	test_cmp expect summary
+}
+
+expected_size_histograms() {
+	git rev-list --all --objects --no-object-names >oids &&
+	git cat-file \
+		--batch-check="%(objecttype) %(objectsize) %(objectsize:disk)" \
+		<oids >sizes &&
+	awk '
+		$1 == "tag" { next }
+		{
+			bin = 0
+			for (size = $2; size >= 16; size = int(size / 16))
+				bin++
+			key = "objects." $1 "s.histogram.size." bin
+			count[key]++
+			inflated[key] += $2
+			disk[key] += $3
+		}
+		END {
+			for (key in count) {
+				printf "%s.count=%.0f\n", key, count[key]
+				printf "%s.inflated_size=%.0f\n",
+					key, inflated[key]
+				printf "%s.disk_size=%.0f\n", key, disk[key]
+			}
+		}
+	' sizes
+}
+
 test_expect_success 'empty repository' '
 	test_when_finished "rm -rf repo" &&
 	git init repo &&
@@ -163,7 +195,7 @@ test_expect_success SHA1 'repository with references and objects' '
 
 		git repo structure >out 2>err &&
 
-		test_cmp expect out &&
+		check_structure_summary out &&
 		test_line_count = 0 err
 	)
 '
@@ -218,13 +250,13 @@ test_expect_success SHA1 'lines and nul format' '
 
 		git repo structure --format=lines >out 2>err &&
 
-		test_cmp expect out &&
+		check_structure_summary out &&
 		test_line_count = 0 err &&
 
 		git repo structure --format=nul >out 2>err &&
 		tr "\012\000" "=\012" <out >actual &&
 
-		test_cmp expect actual &&
+		check_structure_summary actual &&
 		test_line_count = 0 err &&
 
 		# "-z", as a synonym to "--format=nul", participates in the
@@ -232,7 +264,7 @@ test_expect_success SHA1 'lines and nul format' '
 		git repo structure --format=table -z >out 2>err &&
 		tr "\012\000" "=\012" <out >actual &&
 
-		test_cmp expect actual &&
+		check_structure_summary actual &&
 		test_line_count = 0 err
 	)
 '
@@ -254,6 +286,155 @@ test_expect_success 'progress meter option' '
 
 		test_file_not_empty out &&
 		test_line_count = 0 err
+	)
+'
+
+test_expect_success 'object histograms cover size and entry boundaries' '
+	test_when_finished "rm -rf repo" &&
+	git init repo &&
+	(
+		cd repo &&
+		for size in 0 1 15 16 255 256 4095 4096
+		do
+			test-tool genzeros "$size" >blob-$size &&
+			git add blob-$size || return 1
+		done &&
+		tree=$(git write-tree) &&
+		commit=$(git commit-tree "$tree" -m blobs) &&
+		git update-ref refs/heads/blobs "$commit" &&
+		empty_blob=$(git hash-object -w --stdin </dev/null) &&
+		for entries in 0 3 4 15 16 63 64
+		do
+			i=0 &&
+			while test "$i" -lt "$entries"
+			do
+				printf "100644 blob %s\tfile-%s\n" \
+					"$empty_blob" "$i" &&
+				i=$((i + 1)) || return 1
+			done >tree-input &&
+			tree=$(git mktree <tree-input) &&
+			commit=$(git commit-tree "$tree" -m "tree $entries") &&
+			git update-ref refs/heads/tree-$entries "$commit" ||
+			return 1
+		done &&
+
+		for storage in loose packed
+		do
+			if test "$storage" = packed
+			then
+				git repack -ad
+			fi &&
+			expected_size_histograms >expect-unsorted &&
+			sort expect-unsorted >expect-sizes &&
+			git repo structure --format=lines >out &&
+			sed -n "/^objects\..*\.histogram\.size\./p" \
+				out >actual-unsorted &&
+			sort actual-unsorted >actual-sizes &&
+			test_cmp expect-sizes actual-sizes &&
+
+			cat >expect <<-\EOF &&
+			objects.blobs.histogram.size.0.count=3
+			objects.blobs.histogram.size.1.count=2
+			objects.blobs.histogram.size.2.count=2
+			objects.blobs.histogram.size.3.count=1
+			EOF
+			sed -n "/^objects\.blobs\.histogram\..*\.count=/p" \
+				out >actual &&
+			test_cmp expect actual &&
+
+			key=objects.trees.histogram.entries &&
+			cat >expect <<-EOF &&
+			$key.0.count=2
+			$key.1.count=3
+			$key.2.count=2
+			$key.3.count=1
+			EOF
+			sed -n "/^$key\..*\.count=/p" out >actual &&
+			test_cmp expect actual &&
+
+			git repo structure --format=nul >nul &&
+			tr "\012\000" "=\012" <nul >decoded &&
+			test_cmp out decoded &&
+
+			git repo structure >table &&
+			for kind in "Commit parent" "Commit size" \
+				"Tree entry" "Tree size" "Blob size"
+			do
+				test_grep "| $kind histogram " table ||
+				return 1
+			done &&
+			sed -n "/^| Blob size histogram /,\$p" table >blobs &&
+			for range in 0..15 16..255 256..4095 4096..65535
+			do
+				test_grep -F "| * $range " blobs || return 1
+			done &&
+
+			tree=$(git rev-parse refs/heads/tree-16^{tree}) &&
+			format="%(objectsize) %(objectsize:disk)" &&
+			echo "$tree" |
+				git cat-file --batch-check="$format" \
+				>tree-size &&
+			read inflated disk <tree-size &&
+			cat >expect <<-EOF &&
+			$key.2.count=1
+			$key.2.inflated_size=$inflated
+			$key.2.disk_size=$disk
+			EOF
+			git repo structure --format=lines \
+				--ref-filter=refs/heads/tree-16 >filtered &&
+			sed -n "/^objects\.trees\.histogram\.entries\./p" \
+				filtered >actual &&
+			test_cmp expect actual || return 1
+		done &&
+
+		git repo structure --format=lines \
+			--ref-filter=refs/heads/missing >out &&
+		test_grep ! "\.histogram\." out
+	)
+'
+
+test_expect_success 'commit parent histogram groups 31 or more parents' '
+	test_when_finished "rm -rf repo" &&
+	git init repo &&
+	(
+		cd repo &&
+		tree=$(git mktree </dev/null) &&
+		set -- &&
+		for i in $(test_seq 1 32)
+		do
+			parent=$(git commit-tree "$tree" -m "parent $i") &&
+			set -- "$@" -p "$parent" &&
+			if test "$i" = 1
+			then
+				root=$parent
+			fi &&
+			if test "$i" = 31
+			then
+				commit=$(git commit-tree "$tree" \
+					"$@" -m boundary) &&
+				git update-ref refs/heads/boundary "$commit"
+			fi || return 1
+		done &&
+		commit=$(git commit-tree "$tree" "$@" -m overflow) &&
+		git update-ref refs/heads/overflow "$commit" &&
+		one=$(git commit-tree "$tree" -p "$root" -m one) &&
+		git update-ref refs/heads/one "$one" &&
+		two=$(git commit-tree "$tree" -p "$root" -p "$one" -m two) &&
+		git update-ref refs/heads/two "$two" &&
+
+		cat >expect <<-\EOF &&
+		objects.commits.histogram.parents.0.count=32
+		objects.commits.histogram.parents.1.count=1
+		objects.commits.histogram.parents.2.count=1
+		objects.commits.histogram.parents.31.count=2
+		EOF
+		git repo structure --format=lines >out &&
+		sed -n "/^objects\.commits\.histogram\.parents\./p" \
+			out >actual &&
+		test_cmp expect actual &&
+		test_grep "^objects.commits.max_parents=32$" out &&
+		git repo structure >table &&
+		test_grep "^| 31+ *| *2 *|$" table
 	)
 '
 
