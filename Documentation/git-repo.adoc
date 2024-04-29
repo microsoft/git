@@ -68,6 +68,8 @@ supported:
 * Total inflated size of reachable objects by type
 * Total disk size of reachable objects by type
 * Largest reachable objects in the repository by type
+* Histograms of commit, tree, and blob sizes, tree entry counts, and
+  commit parent counts
 * Optionally, the top-_N_ largest paths by count, on-disk size, and
   inflated size (see `--top` below)
 +
@@ -123,6 +125,27 @@ supported:
 	quoted.
 +
 `-z` is an alias for `--format=nul`.
+
+STRUCTURE HISTOGRAMS
+--------------------
+Size histograms group commits, trees, and blobs by inflated size in bytes:
+`0..15`, `16..255`, `256..4095`, and so on. Tree entry histograms use the
+ranges `0..3`, `4..15`, `16..63`, and so on. Each bucket reports the number
+of objects and their total inflated and on-disk sizes. Empty buckets are
+omitted.
+
+The commit parent histogram reports exact parent counts from 0 through 30.
+Its final bucket, shown as `31+` in tables, includes all commits with at
+least 31 parents.
+
+In `lines` and `nul` output, size histogram keys have the form
+`objects.<type>.histogram.size.<bucket>.<metric>`, where `<type>` is
+`commits`, `trees`, or `blobs`, and `<metric>` is `count`, `inflated_size`,
+or `disk_size`. Tree entry histograms use
+`objects.trees.histogram.entries.<bucket>.<metric>`. Bucket numbers start
+at zero for the first range listed above. Parent counts use
+`objects.commits.histogram.parents.<parents>.count`, with `31` identifying
+the final bucket. All histograms honor `--ref-filter`.
 
 INFO KEYS
 ---------
