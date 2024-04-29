@@ -373,6 +373,19 @@ struct object_values {
 	size_t blobs;
 };
 
+/* Log16 size buckets and log4 entry buckets cover the full size_t range. */
+#define HBIN_SHIFT 4
+#define HBIN_LEN (sizeof(size_t) * CHAR_BIT / HBIN_SHIFT)
+#define QBIN_SHIFT 2
+#define QBIN_LEN (sizeof(size_t) * CHAR_BIT / QBIN_SHIFT)
+#define PBIN_VEC_LEN 32
+
+struct object_histogram_bin {
+	size_t count;
+	size_t inflated_size;
+	size_t disk_size;
+};
+
 struct object_stats {
 	struct object_values type_counts;
 	struct object_values inflated_sizes;
@@ -380,6 +393,11 @@ struct object_stats {
 	struct largest_objects largest;
 	struct top_paths top_trees;
 	struct top_paths top_blobs;
+	struct object_histogram_bin commit_sizes[HBIN_LEN];
+	struct object_histogram_bin tree_sizes[HBIN_LEN];
+	struct object_histogram_bin blob_sizes[HBIN_LEN];
+	struct object_histogram_bin tree_entries[QBIN_LEN];
+	size_t commit_parents[PBIN_VEC_LEN];
 };
 
 struct repo_structure {
@@ -676,9 +694,9 @@ static void stats_table_setup_top_paths(struct stats_table *table,
 
 #define INDEX_WIDTH 4
 
-static void stats_table_print_structure(const struct stats_table *table)
+static void stats_table_print(const struct stats_table *table,
+			      const char *name_col_title)
 {
-	const char *name_col_title = _("Repository structure");
 	const char *value_col_title = _("Value");
 	int title_name_width = utf8_strwidth(name_col_title);
 	int title_value_width = utf8_strwidth(value_col_title);
@@ -763,6 +781,72 @@ static void stats_table_clear(struct stats_table *table)
 	string_list_clear(&table->annotations, 1);
 }
 
+static void histogram_table_print(const char *title,
+				  const struct object_histogram_bin *bins,
+				  size_t nr, unsigned int shift)
+{
+	struct stats_table table = {
+		.rows = STRING_LIST_INIT_DUP,
+		.annotations = STRING_LIST_INIT_DUP,
+	};
+
+	for (size_t i = 0; i < nr; i++) {
+		size_t lower, upper;
+
+		if (!bins[i].count)
+			continue;
+
+		lower = i ? (size_t)1 << (i * shift) : 0;
+		upper = SIZE_MAX >> (sizeof(size_t) * CHAR_BIT -
+				    (i + 1) * shift);
+		stats_table_addf(&table, "* %" PRIuMAX "..%" PRIuMAX,
+				 (uintmax_t)lower, (uintmax_t)upper);
+		stats_table_count_addf(&table, bins[i].count,
+				       "  * %s", _("Count"));
+		stats_table_size_addf(&table, bins[i].inflated_size,
+				      "  * %s", _("Inflated size"));
+		stats_table_size_addf(&table, bins[i].disk_size,
+				      "  * %s", _("Disk size"));
+	}
+
+	if (table.rows.nr) {
+		putchar('\n');
+		stats_table_print(&table, title);
+	}
+	stats_table_clear(&table);
+}
+
+static void structure_histograms_table_print(struct object_stats *stats)
+{
+	struct stats_table table = {
+		.rows = STRING_LIST_INIT_DUP,
+		.annotations = STRING_LIST_INIT_DUP,
+	};
+
+	for (size_t i = 0; i < ARRAY_SIZE(stats->commit_parents); i++) {
+		if (!stats->commit_parents[i])
+			continue;
+		stats_table_count_addf(&table, stats->commit_parents[i],
+				       "%" PRIuMAX "%s", (uintmax_t)i,
+				       i == PBIN_VEC_LEN - 1 ? "+" : "");
+	}
+
+	if (table.rows.nr) {
+		putchar('\n');
+		stats_table_print(&table, _("Commit parent histogram"));
+	}
+	stats_table_clear(&table);
+
+	histogram_table_print(_("Commit size histogram"), stats->commit_sizes,
+			      ARRAY_SIZE(stats->commit_sizes), HBIN_SHIFT);
+	histogram_table_print(_("Tree entry histogram"), stats->tree_entries,
+			      ARRAY_SIZE(stats->tree_entries), QBIN_SHIFT);
+	histogram_table_print(_("Tree size histogram"), stats->tree_sizes,
+			      ARRAY_SIZE(stats->tree_sizes), HBIN_SHIFT);
+	histogram_table_print(_("Blob size histogram"), stats->blob_sizes,
+			      ARRAY_SIZE(stats->blob_sizes), HBIN_SHIFT);
+}
+
 static inline void print_keyvalue(const char *key, char key_delim, size_t value,
 				  char value_delim)
 {
@@ -823,6 +907,26 @@ static void top_paths_keyvalue_print(const char *prefix,
 		print_keyvalue("inflated_size", key_delim,
 			       top->by_inflated.data[i].inflated_size,
 			       value_delim);
+	}
+}
+
+static void histogram_keyvalue_print(const char *prefix,
+				     const struct object_histogram_bin *bins,
+				     size_t nr, char key_delim,
+				     char value_delim)
+{
+	for (size_t i = 0; i < nr; i++) {
+		if (!bins[i].count)
+			continue;
+
+		printf("%s.%" PRIuMAX ".", prefix, (uintmax_t)i);
+		print_keyvalue("count", key_delim, bins[i].count, value_delim);
+		printf("%s.%" PRIuMAX ".", prefix, (uintmax_t)i);
+		print_keyvalue("inflated_size", key_delim,
+			       bins[i].inflated_size, value_delim);
+		printf("%s.%" PRIuMAX ".", prefix, (uintmax_t)i);
+		print_keyvalue("disk_size", key_delim,
+			       bins[i].disk_size, value_delim);
 	}
 }
 
@@ -898,6 +1002,32 @@ static void structure_keyvalue_print(struct repo_structure *stats,
 	top_paths_keyvalue_print("objects.trees.top", &stats->objects.top_trees,
 				 key_delim, value_delim);
 	top_paths_keyvalue_print("objects.blobs.top", &stats->objects.top_blobs,
+				 key_delim, value_delim);
+
+	for (size_t i = 0; i < ARRAY_SIZE(stats->objects.commit_parents); i++) {
+		if (!stats->objects.commit_parents[i])
+			continue;
+		printf("objects.commits.histogram.parents.%" PRIuMAX ".",
+		       (uintmax_t)i);
+		print_keyvalue("count", key_delim,
+			       stats->objects.commit_parents[i], value_delim);
+	}
+
+	histogram_keyvalue_print("objects.commits.histogram.size",
+				 stats->objects.commit_sizes,
+				 ARRAY_SIZE(stats->objects.commit_sizes),
+				 key_delim, value_delim);
+	histogram_keyvalue_print("objects.trees.histogram.entries",
+				 stats->objects.tree_entries,
+				 ARRAY_SIZE(stats->objects.tree_entries),
+				 key_delim, value_delim);
+	histogram_keyvalue_print("objects.trees.histogram.size",
+				 stats->objects.tree_sizes,
+				 ARRAY_SIZE(stats->objects.tree_sizes),
+				 key_delim, value_delim);
+	histogram_keyvalue_print("objects.blobs.histogram.size",
+				 stats->objects.blob_sizes,
+				 ARRAY_SIZE(stats->objects.blob_sizes),
 				 key_delim, value_delim);
 
 	fflush(stdout);
@@ -1126,6 +1256,19 @@ static size_t count_tree_entries(struct object *obj)
 	return count;
 }
 
+static void increment_histogram(struct object_histogram_bin *bins,
+				unsigned int shift, size_t value,
+				size_t inflated, off_t disk)
+{
+	size_t bin = 0;
+
+	while (value >>= shift)
+		bin++;
+	bins[bin].count++;
+	bins[bin].inflated_size += inflated;
+	bins[bin].disk_size += disk;
+}
+
 static int count_objects(const char *path, struct oid_array *oids,
 			 enum object_type type, void *cb_data)
 {
@@ -1136,7 +1279,7 @@ static int count_objects(const char *path, struct oid_array *oids,
 
 	for (size_t i = 0; i < oids->nr; i++) {
 		struct object_info oi = OBJECT_INFO_INIT;
-		size_t inflated;
+		size_t inflated, count;
 		struct commit *commit;
 		struct object *obj;
 		void *content;
@@ -1169,22 +1312,33 @@ static int count_objects(const char *path, struct oid_array *oids,
 			break;
 		case OBJ_COMMIT:
 			commit = object_as_type(obj, OBJ_COMMIT, 0);
+			count = commit_list_count(commit->parents);
 			stats->type_counts.commits++;
 			stats->inflated_sizes.commits += inflated;
 			stats->disk_sizes.commits += disk;
 			check_largest(&stats->largest.commit_size, &oids->oid[i],
 				      inflated);
 			check_largest(&stats->largest.parent_count, &oids->oid[i],
-				      commit_list_count(commit->parents));
+				      count);
+			if (count >= PBIN_VEC_LEN)
+				count = PBIN_VEC_LEN - 1;
+			stats->commit_parents[count]++;
+			increment_histogram(stats->commit_sizes, HBIN_SHIFT,
+					    inflated, inflated, disk);
 			break;
 		case OBJ_TREE:
+			count = count_tree_entries(obj);
 			stats->type_counts.trees++;
 			stats->inflated_sizes.trees += inflated;
 			stats->disk_sizes.trees += disk;
 			check_largest(&stats->largest.tree_size, &oids->oid[i],
 				      inflated);
 			check_largest(&stats->largest.tree_entries, &oids->oid[i],
-				      count_tree_entries(obj));
+				      count);
+			increment_histogram(stats->tree_entries, QBIN_SHIFT,
+					    count, inflated, disk);
+			increment_histogram(stats->tree_sizes, HBIN_SHIFT,
+					    inflated, inflated, disk);
 			break;
 		case OBJ_BLOB:
 			stats->type_counts.blobs++;
@@ -1192,6 +1346,8 @@ static int count_objects(const char *path, struct oid_array *oids,
 			stats->disk_sizes.blobs += disk;
 			check_largest(&stats->largest.blob_size, &oids->oid[i],
 				      inflated);
+			increment_histogram(stats->blob_sizes, HBIN_SHIFT,
+					    inflated, inflated, disk);
 			break;
 		default:
 			BUG("invalid object type");
@@ -1321,7 +1477,8 @@ static int cmd_repo_structure(int argc, const char **argv, const char *prefix,
 	case FORMAT_TABLE:
 		stats_table_setup_structure(&table, &stats);
 		stats_table_setup_top_paths(&table, &stats.objects);
-		stats_table_print_structure(&table);
+		stats_table_print(&table, _("Repository structure"));
+		structure_histograms_table_print(&stats.objects);
 		break;
 	case FORMAT_NEWLINE_TERMINATED:
 		structure_keyvalue_print(&stats, '=', '\n');
