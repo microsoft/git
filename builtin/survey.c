@@ -1,6 +1,7 @@
 #include "builtin.h"
 #include "config.h"
 #include "environment.h"
+#include "hex.h"
 #include "json-writer.h"
 #include "list-objects.h"
 #include "object-name.h"
@@ -14,6 +15,7 @@
 #include "strmap.h"
 #include "strvec.h"
 #include "trace2.h"
+#include "tree.h"
 #include "tree-walk.h"
 
 static const char * const survey_usage[] = {
@@ -191,8 +193,162 @@ struct survey_stats_refs {
 	struct strintmap refsmap;
 };
 
+/*
+ * HBIN -- hex binning (histogram bucketing).
+ *
+ * We create histograms for various counts and sums.  Since we have a
+ * wide range of values (objects range in size from 1 to 4G bytes), a
+ * linear bucketing is not interesting.  Instead, lets use a
+ * log16()-based bucketing.  This gives us a better spread on the low
+ * and middle range and a coarse bucketing on the high end.
+ *
+ * The idea here is that it doesn't matter if you have n 1GB blobs or
+ * n/2 1GB blobs and n/2 1.5GB blobs -- either way you have a scaling
+ * problem that we want to report on.
+ */
+#define HBIN_LEN (sizeof(unsigned long) * 2)
+#define HBIN_MASK (0xF)
+#define HBIN_SHIFT (4)
+
+static int hbin(unsigned long value)
+{
+	int k;
+
+	for (k = 0; k < HBIN_LEN; k++) {
+		if ((value & ~(HBIN_MASK)) == 0)
+			return k;
+		value >>= HBIN_SHIFT;
+	}
+
+	return 0; /* should not happen */
+}
+
+/*
+ * QBIN -- base4 binning (histogram bucketing).
+ *
+ * This is the same idea as the above, but we want better granularity
+ * in the low end and don't expect as many large values.
+ */
+#define QBIN_LEN (sizeof(unsigned long) * 4)
+#define QBIN_MASK (0x3)
+#define QBIN_SHIFT (2)
+
+static int qbin(unsigned long value)
+{
+	int k;
+
+	for (k = 0; k < QBIN_LEN; k++) {
+		if ((value & ~(QBIN_MASK)) == 0)
+			return k;
+		value >>= (QBIN_SHIFT);
+	}
+
+	return 0; /* should not happen */
+}
+
+/*
+ * histogram bin for objects.
+ */
+struct obj_hist_bin {
+	uint64_t sum_size;      /* sum(object_size) for all objects in this bin */
+	uint64_t sum_disk_size; /* sum(on_disk_size) for all objects in this bin */
+	uint32_t cnt_seen;      /* number seen in this bin */
+};
+
+static void incr_obj_hist_bin(struct obj_hist_bin *pbin,
+			       unsigned long object_length,
+			       off_t disk_sizep)
+{
+	pbin->sum_size += object_length;
+	pbin->sum_disk_size += disk_sizep;
+	pbin->cnt_seen++;
+}
+
+/*
+ * Common fields for any type of object.
+ */
+struct survey_stats_base_object {
+	uint32_t cnt_seen;
+
+	uint32_t cnt_missing; /* we may have a partial clone. */
+
+	/*
+	 * Number of objects grouped by where they are stored on disk.
+	 * This is a function of how the ODB is packed.
+	 */
+	uint32_t cnt_cached;   /* see oi.whence */
+	uint32_t cnt_loose;    /* see oi.whence */
+	uint32_t cnt_packed;   /* see oi.whence */
+	uint32_t cnt_dbcached; /* see oi.whence */
+
+	uint64_t sum_size; /* sum(object_size) */
+	uint64_t sum_disk_size; /* sum(disk_size) */
+
+	/*
+	 * A histogram of the count of objects, the observed size, and
+	 * the on-disk size grouped by the observed size.
+	 */
+	struct obj_hist_bin size_hbin[HBIN_LEN];
+};
+
+/*
+ * PBIN -- parent vector binning (histogram bucketing).
+ *
+ * We create a histogram based upon the number of parents
+ * in a commit.  This is a simple linear vector.  It starts
+ * at zero for "initial" commits.
+ *
+ * If a commit has more parents, just put it in the last bin.
+ */
+#define PBIN_VEC_LEN (17)
+
+struct survey_stats_commits {
+	struct survey_stats_base_object base;
+
+	/*
+	 * Count of commits with k parents.
+	 */
+	uint32_t parent_cnt_pbin[PBIN_VEC_LEN];
+};
+
+/*
+ * Stats for reachable trees.
+ */
+struct survey_stats_trees {
+	struct survey_stats_base_object base;
+
+	/*
+	 * In the following, nr_entries refers to the number of files or
+	 * subdirectories in a tree.  We are interested in how wide the
+	 * tree is and if the repo has gigantic directories.
+	 */
+	uint64_t max_entries; /* max(nr_entries) -- the width of the largest tree */
+
+	/*
+	 * Computing the sum of the number of entries across all trees
+	 * is probably not that interesting.
+	 */
+	uint64_t sum_entries; /* sum(nr_entries) -- sum across all trees */
+
+	/*
+	 * A histogram of the count of trees, the observed size, and
+	 * the on-disk size grouped by the number of entries in the tree.
+	 */
+	struct obj_hist_bin entry_qbin[QBIN_LEN];
+};
+
+/*
+ * Stats for reachable blobs.
+ */
+struct survey_stats_blobs {
+	struct survey_stats_base_object base;
+};
+
 struct survey_stats {
-	struct survey_stats_refs refs;
+	struct survey_stats_refs    refs;
+	struct survey_stats_commits commits;
+	struct survey_stats_trees   trees;
+	struct survey_stats_blobs   blobs;
 };
 
 static struct survey_stats survey_stats = { 0 };
@@ -293,16 +449,134 @@ static void load_rev_info(struct rev_info *rev_info,
 	}
 }
 
+static int fill_in_base_object(struct survey_stats_base_object *base,
+			       struct object *object,
+			       enum object_type type_expected,
+			       unsigned long *p_object_length,
+			       off_t *p_disk_sizep)
+{
+	struct object_info oi = OBJECT_INFO_INIT;
+	unsigned oi_flags = OBJECT_INFO_FOR_PREFETCH;
+	unsigned long object_length = 0;
+	off_t disk_sizep = 0;
+	enum object_type type;
+	int hb;
+
+	base->cnt_seen++;
+
+	oi.typep = &type;
+	oi.sizep = &object_length;
+	oi.disk_sizep = &disk_sizep;
+
+	if (oid_object_info_extended(the_repository, &object->oid, &oi, oi_flags) < 0 ||
+	    type != type_expected) {
+		base->cnt_missing++;
+		return 1;
+	}
+
+	switch (oi.whence) {
+	case OI_CACHED:
+		base->cnt_cached++;
+		break;
+	case OI_LOOSE:
+		base->cnt_loose++;
+		break;
+	case OI_PACKED:
+		base->cnt_packed++;
+		break;
+	case OI_DBCACHED:
+		base->cnt_dbcached++;
+		break;
+	default:
+		break;
+	}
+
+	base->sum_size += object_length;
+	base->sum_disk_size += disk_sizep;
+
+	hb = hbin(object_length);
+	incr_obj_hist_bin(&base->size_hbin[hb], object_length, disk_sizep);
+
+	if (p_object_length)
+		*p_object_length = object_length;
+	if (p_disk_sizep)
+		*p_disk_sizep = disk_sizep;
+
+	return 0;
+}
+
 static void traverse_commit_cb(struct commit *commit, void *data)
 {
+	struct survey_stats_commits *psc = &survey_stats.commits;
+	unsigned k;
+
 	if ((++survey_progress_total % 1000) == 0)
 		display_progress(survey_progress, survey_progress_total);
+
+	fill_in_base_object(&psc->base, &commit->object, OBJ_COMMIT, NULL, NULL);
+
+	k = commit_list_count(commit->parents);
+	if (k >= PBIN_VEC_LEN)
+		k = PBIN_VEC_LEN - 1;
+
+	psc->parent_cnt_pbin[k]++;
+}
+
+static void traverse_object_cb_tree(struct object *obj)
+{
+	struct survey_stats_trees *pst = &survey_stats.trees;
+	unsigned long object_length;
+	off_t disk_sizep;
+	struct tree_desc desc;
+	struct name_entry entry;
+	struct tree *tree;
+	int nr_entries;
+	int qb;
+
+	if (fill_in_base_object(&pst->base, obj, OBJ_TREE, &object_length, &disk_sizep))
+		return;
+
+	tree = lookup_tree(the_repository, &obj->oid);
+	if (!tree)
+		return;
+	init_tree_desc(&desc, &obj->oid, tree->buffer, tree->size);
+	nr_entries = 0;
+	while (tree_entry(&desc, &entry))
+		nr_entries++;
+
+	pst->sum_entries += nr_entries;
+
+	if (nr_entries > pst->max_entries)
+		pst->max_entries = nr_entries;
+
+	qb = qbin(nr_entries);
+	incr_obj_hist_bin(&pst->entry_qbin[qb], object_length, disk_sizep);
+}
+
+static void traverse_object_cb_blob(struct object *obj)
+{
+	struct survey_stats_blobs *psb = &survey_stats.blobs;
+
+	fill_in_base_object(&psb->base, obj, OBJ_BLOB, NULL, NULL);
 }
 
 static void traverse_object_cb(struct object *obj, const char *name, void *data)
 {
 	if ((++survey_progress_total % 1000) == 0)
 		display_progress(survey_progress, survey_progress_total);
+
+	switch (obj->type) {
+	case OBJ_TREE:
+		traverse_object_cb_tree(obj);
+		return;
+	case OBJ_BLOB:
+		traverse_object_cb_blob(obj);
+		return;
+	case OBJ_TAG:    /* ignore     -- counted when loading REFS */
+	case OBJ_COMMIT: /* ignore/bug -- seen in the other callback */
+	default:         /* ignore/bug -- unknown type */
+		return;
+	}
 }
 
 /*
@@ -639,6 +913,198 @@ static void json_refs_section(struct json_writer *jw_top, int pretty, int want_t
 	jw_release(&jw_refs);
 }
 
+#define JW_OBJ_INT_NZ(jw, key, value) do { if (value) jw_object_intmax((jw), (key), (value)); } while (0)
+
+static void write_qbin_json(struct json_writer *jw, const char *label,
+			    struct obj_hist_bin qbin[QBIN_LEN])
+{
+	struct strbuf buf = STRBUF_INIT;
+	uint32_t lower = 0;
+	uint32_t upper = QBIN_MASK;
+	int k;
+
+	jw_object_inline_begin_object(jw, label);
+	{
+		for (k = 0; k < QBIN_LEN; k++) {
+			struct obj_hist_bin *p = &qbin[k];
+			uint32_t lower_k = lower;
+			uint32_t upper_k = upper;
+
+			lower = upper+1;
+			upper = (upper << QBIN_SHIFT) + QBIN_MASK;
+
+			if (!p->cnt_seen)
+				continue;
+
+			strbuf_reset(&buf);
+			strbuf_addf(&buf, "Q%02d", k);
+			jw_object_inline_begin_object(jw, buf.buf);
+			{
+				jw_object_intmax(jw, "count", p->cnt_seen);
+				jw_object_intmax(jw, "sum_size", p->sum_size);
+				jw_object_intmax(jw, "sum_disk_size", p->sum_disk_size);
+
+				/* maybe only include these in verbose mode */
+				jw_object_intmax(jw, "qbin_lower", lower_k);
+				jw_object_intmax(jw, "qbin_upper", upper_k);
+			}
+			jw_end(jw);
+		}
+	}
+	jw_end(jw);
+
+	strbuf_release(&buf);
+}
+
+static void write_hbin_json(struct json_writer *jw, const char *label,
+			    struct obj_hist_bin hbin[HBIN_LEN])
+{
+	struct strbuf buf = STRBUF_INIT;
+	uint32_t lower = 0;
+	uint32_t upper = HBIN_MASK;
+	int k;
+
+	jw_object_inline_begin_object(jw, label);
+	{
+		for (k = 0; k < HBIN_LEN; k++) {
+			struct obj_hist_bin *p = &hbin[k];
+			uint32_t lower_k = lower;
+			uint32_t upper_k = upper;
+
+			lower = upper+1;
+			upper = (upper << HBIN_SHIFT) + HBIN_MASK;
+
+			if (!p->cnt_seen)
+				continue;
+
+			strbuf_reset(&buf);
+			strbuf_addf(&buf, "H%d", k);
+			jw_object_inline_begin_object(jw, buf.buf);
+			{
+				jw_object_intmax(jw, "count", p->cnt_seen);
+				jw_object_intmax(jw, "sum_size", p->sum_size);
+				jw_object_intmax(jw, "sum_disk_size", p->sum_disk_size);
+
+				/* maybe only include these in verbose mode */
+				jw_object_intmax(jw, "hbin_lower", lower_k);
+				jw_object_intmax(jw, "hbin_upper", upper_k);
+			}
+			jw_end(jw);
+		}
+	}
+	jw_end(jw);
+
+	strbuf_release(&buf);
+}
+
+static void write_base_object_json(struct json_writer *jw,
+				   struct survey_stats_base_object *base)
+{
+	jw_object_intmax(jw, "count", base->cnt_seen);
+
+	jw_object_intmax(jw, "sum_size", base->sum_size);
+	jw_object_intmax(jw, "sum_disk_size", base->sum_disk_size);
+
+	jw_object_inline_begin_object(jw, "count_by_whence");
+	{
+		/*
+		 * Missing is not technically a "whence" value, but
+		 * we don't need to clutter up the results with that
+		 * distinction.
+		 */
+		JW_OBJ_INT_NZ(jw, "missing", base->cnt_missing);
+
+		JW_OBJ_INT_NZ(jw, "cached", base->cnt_cached);
+		JW_OBJ_INT_NZ(jw, "loose", base->cnt_loose);
+		JW_OBJ_INT_NZ(jw, "packed", base->cnt_packed);
+		JW_OBJ_INT_NZ(jw, "dbcached", base->cnt_dbcached);
+	}
+	jw_end(jw);
+
+	write_hbin_json(jw, "dist_by_size", base->size_hbin);
+}
+
+static void json_commits_section(struct json_writer *jw_top, int pretty, int want_trace2)
+{
+	struct survey_stats_commits *psc = &survey_stats.commits;
+	struct json_writer jw_commits = JSON_WRITER_INIT;
+
+	jw_object_begin(&jw_commits, pretty);
+	{
+		write_base_object_json(&jw_commits, &psc->base);
+
+		jw_object_inline_begin_object(&jw_commits, "count_by_nr_parents");
+		{
+			struct strbuf parent_key = STRBUF_INIT;
+			int k;
+
+			for (k = 0; k < PBIN_VEC_LEN; k++)
+				if (psc->parent_cnt_pbin[k]) {
+					strbuf_reset(&parent_key);
+					strbuf_addf(&parent_key, "P%02d", k);
+					jw_object_intmax(&jw_commits, parent_key.buf, psc->parent_cnt_pbin[k]);
+				}
+
+			strbuf_release(&parent_key);
+		}
+		jw_end(&jw_commits);
+	}
+	jw_end(&jw_commits);
+
+	if (jw_top)
+		jw_object_sub_jw(jw_top, "commits", &jw_commits);
+
+	if (want_trace2)
+		trace2_data_json("survey", the_repository, "commits", &jw_commits);
+
+	jw_release(&jw_commits);
+}
+
+static void json_trees_section(struct json_writer *jw_top, int pretty, int want_trace2)
+{
+	struct survey_stats_trees *pst = &survey_stats.trees;
+	struct json_writer jw_trees = JSON_WRITER_INIT;
+
+	jw_object_begin(&jw_trees, pretty);
+	{
+		write_base_object_json(&jw_trees, &pst->base);
+
+		jw_object_intmax(&jw_trees, "max_entries", pst->max_entries);
+		jw_object_intmax(&jw_trees, "sum_entries", pst->sum_entries);
+
+		write_qbin_json(&jw_trees, "dist_by_nr_entries", pst->entry_qbin);
+	}
+	jw_end(&jw_trees);
+
+	if (jw_top)
+		jw_object_sub_jw(jw_top, "trees", &jw_trees);
+
+	if (want_trace2)
+		trace2_data_json("survey", the_repository, "trees", &jw_trees);
+
+	jw_release(&jw_trees);
+}
+
+static void json_blobs_section(struct json_writer *jw_top, int pretty, int want_trace2)
+{
+	struct survey_stats_blobs *psb = &survey_stats.blobs;
+	struct json_writer jw_blobs = JSON_WRITER_INIT;
+
+	jw_object_begin(&jw_blobs, pretty);
+	{
+		write_base_object_json(&jw_blobs, &psb->base);
+	}
+	jw_end(&jw_blobs);
+
+	if (jw_top)
+		jw_object_sub_jw(jw_top, "blobs", &jw_blobs);
+
+	if (want_trace2)
+		trace2_data_json("survey", the_repository, "blobs", &jw_blobs);
+
+	jw_release(&jw_blobs);
+}
+
 static void survey_print_json(void)
 {
 	struct json_writer jw_top = JSON_WRITER_INIT;
@@ -647,6 +1113,9 @@ static void survey_print_json(void)
 	jw_object_begin(&jw_top, pretty);
 	{
 		json_refs_section(&jw_top, pretty, 0);
+		json_commits_section(&jw_top, pretty, 0);
+		json_trees_section(&jw_top, pretty, 0);
+		json_blobs_section(&jw_top, pretty, 0);
 	}
 	jw_end(&jw_top);
 
@@ -661,6 +1130,9 @@ static void survey_emit_trace2(void)
 		return;
 
 	json_refs_section(NULL, 0, 1);
+	json_commits_section(NULL, 0, 1);
+	json_trees_section(NULL, 0, 1);
+	json_blobs_section(NULL, 0, 1);
 }
 
 int cmd_survey(int argc, const char **argv, const char *prefix)
