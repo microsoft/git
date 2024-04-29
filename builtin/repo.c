@@ -357,6 +357,13 @@ struct ref_stats {
 	size_t tags;
 	size_t annotated_tags;
 	size_t others;
+	size_t symbolic;
+	size_t loose;
+	size_t packed;
+	size_t max_local_refname_length;
+	size_t total_local_refname_length;
+	size_t max_remote_refname_length;
+	size_t total_remote_refname_length;
 };
 
 struct object_values {
@@ -547,6 +554,21 @@ static void stats_table_setup_structure(struct stats_table *table,
 			       "      * %s", _("Annotated"));
 	stats_table_count_addf(table, refs->remotes, "    * %s", _("Remotes"));
 	stats_table_count_addf(table, refs->others, "    * %s", _("Others"));
+	stats_table_count_addf(table, refs->symbolic,
+			       "  * %s", _("Symbolic refs"));
+	stats_table_count_addf(table, refs->loose, "  * %s", _("Loose refs"));
+	stats_table_count_addf(table, refs->packed, "  * %s", _("Packed refs"));
+	stats_table_addf(table, "  * %s", _("Refname length"));
+	stats_table_addf(table, "    * %s", _("Local"));
+	stats_table_count_addf(table, refs->max_local_refname_length,
+			       "      * %s", _("Maximum"));
+	stats_table_count_addf(table, refs->total_local_refname_length,
+			       "      * %s", _("Total"));
+	stats_table_addf(table, "    * %s", _("Remote"));
+	stats_table_count_addf(table, refs->max_remote_refname_length,
+			       "      * %s", _("Maximum"));
+	stats_table_count_addf(table, refs->total_remote_refname_length,
+			       "      * %s", _("Total"));
 
 	object_count_total = get_total_object_values(&objects->type_counts);
 	stats_table_addf(table, "");
@@ -817,6 +839,20 @@ static void structure_keyvalue_print(struct repo_structure *stats,
 		       stats->refs.remotes, value_delim);
 	print_keyvalue("references.others.count", key_delim,
 		       stats->refs.others, value_delim);
+	print_keyvalue("references.symbolic.count", key_delim,
+		       stats->refs.symbolic, value_delim);
+	print_keyvalue("references.loose.count", key_delim,
+		       stats->refs.loose, value_delim);
+	print_keyvalue("references.packed.count", key_delim,
+		       stats->refs.packed, value_delim);
+	print_keyvalue("references.local.max_length", key_delim,
+		       stats->refs.max_local_refname_length, value_delim);
+	print_keyvalue("references.local.total_length", key_delim,
+		       stats->refs.total_local_refname_length, value_delim);
+	print_keyvalue("references.remotes.max_length", key_delim,
+		       stats->refs.max_remote_refname_length, value_delim);
+	print_keyvalue("references.remotes.total_length", key_delim,
+		       stats->refs.total_remote_refname_length, value_delim);
 
 	print_keyvalue("objects.commits.count", key_delim,
 		       stats->objects.type_counts.commits, value_delim);
@@ -898,12 +934,14 @@ static int count_references(const struct reference *ref, void *cb_data)
 {
 	struct count_references_data *data = cb_data;
 	struct ref_stats *stats = data->stats;
-	size_t ref_count;
+	size_t ref_count, refname_length;
+	unsigned int ref_kind;
 
 	if (!ref_matches_any_filter(ref->name, data->filters))
 		return 0;
 
-	switch (ref_kind_from_refname(ref->name)) {
+	ref_kind = ref_kind_from_refname(ref->name);
+	switch (ref_kind) {
 	case FILTER_REFS_BRANCHES:
 		stats->branches++;
 		break;
@@ -921,6 +959,29 @@ static int count_references(const struct reference *ref, void *cb_data)
 		break;
 	default:
 		BUG("unexpected reference type");
+	}
+
+	if (ref->flags & REF_ISSYMREF)
+		stats->symbolic++;
+
+	if (data->repo->ref_storage_format == REF_STORAGE_FORMAT_FILES) {
+		/* A symref can inherit REF_ISPACKED from its target. */
+		if ((ref->flags & REF_ISPACKED) &&
+		    !(ref->flags & REF_ISSYMREF))
+			stats->packed++;
+		else
+			stats->loose++;
+	}
+
+	refname_length = strlen(ref->name);
+	if (ref_kind == FILTER_REFS_REMOTES) {
+		stats->total_remote_refname_length += refname_length;
+		if (refname_length > stats->max_remote_refname_length)
+			stats->max_remote_refname_length = refname_length;
+	} else {
+		stats->total_local_refname_length += refname_length;
+		if (refname_length > stats->max_local_refname_length)
+			stats->max_local_refname_length = refname_length;
 	}
 
 	/*
