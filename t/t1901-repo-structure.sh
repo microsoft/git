@@ -36,6 +36,16 @@ test_expect_success 'empty repository' '
 		|       * Annotated         |    0   |
 		|     * Remotes             |    0   |
 		|     * Others              |    0   |
+		|   * Symbolic refs         |    0   |
+		|   * Loose refs            |    0   |
+		|   * Packed refs           |    0   |
+		|   * Refname length        |        |
+		|     * Local               |        |
+		|       * Maximum           |    0   |
+		|       * Total             |    0   |
+		|     * Remote              |        |
+		|       * Maximum           |    0   |
+		|       * Total             |    0   |
 		|                           |        |
 		| * Reachable objects       |        |
 		|   * Count                 |    0   |
@@ -76,7 +86,7 @@ test_expect_success 'empty repository' '
 
 test_expect_success SHA1 'repository with references and objects' '
 	test_when_finished "rm -rf repo" &&
-	git init repo &&
+	git init --initial-branch=main --ref-format=files repo &&
 	(
 		cd repo &&
 		test_commit_bulk 1005 &&
@@ -84,6 +94,8 @@ test_expect_success SHA1 'repository with references and objects' '
 
 		oid="$(git rev-parse HEAD)" &&
 		git update-ref refs/remotes/origin/foo "$oid" &&
+		git symbolic-ref refs/remotes/origin/HEAD \
+			refs/remotes/origin/foo &&
 
 		# Also creates a commit, tree, and blob.
 		git notes add -m foo &&
@@ -95,12 +107,22 @@ test_expect_success SHA1 'repository with references and objects' '
 		| Repository structure      | Value      |
 		| ------------------------- | ---------- |
 		| * References              |            |
-		|   * Count                 |      4     |
+		|   * Count                 |      5     |
 		|     * Branches            |      1     |
 		|     * Tags                |      1     |
 		|       * Annotated         |      1     |
-		|     * Remotes             |      1     |
+		|     * Remotes             |      2     |
 		|     * Others              |      1     |
+		|   * Symbolic refs         |      1     |
+		|   * Loose refs            |      5     |
+		|   * Packed refs           |      0     |
+		|   * Refname length        |            |
+		|     * Local               |            |
+		|       * Maximum           |     18     |
+		|       * Total             |     46     |
+		|     * Remote              |            |
+		|       * Maximum           |     24     |
+		|       * Total             |     47     |
 		|                           |            |
 		| * Reachable objects       |            |
 		|   * Count                 |   3.02 k   |
@@ -148,7 +170,7 @@ test_expect_success SHA1 'repository with references and objects' '
 
 test_expect_success SHA1 'lines and nul format' '
 	test_when_finished "rm -rf repo" &&
-	git init repo &&
+	git init --initial-branch=main --ref-format=files repo &&
 	(
 		cd repo &&
 		test_commit_bulk 42 &&
@@ -161,6 +183,13 @@ test_expect_success SHA1 'lines and nul format' '
 		references.tags.annotated.count=1
 		references.remotes.count=0
 		references.others.count=0
+		references.symbolic.count=0
+		references.loose.count=3
+		references.packed.count=0
+		references.local.max_length=53
+		references.local.total_length=81
+		references.remotes.max_length=0
+		references.remotes.total_length=0
 		objects.commits.count=42
 		objects.trees.count=42
 		objects.blobs.count=42
@@ -227,6 +256,84 @@ test_expect_success 'progress meter option' '
 		test_line_count = 0 err
 	)
 '
+
+for ref_format in files reftable
+do
+	test_expect_success "$ref_format reference statistics" '
+		test_when_finished "rm -rf repo" &&
+		git init --initial-branch=main \
+			--ref-format="$ref_format" repo &&
+		(
+			cd repo &&
+			test_commit --no-tag one &&
+			git tag v1 &&
+			git update-ref refs/notes/commits HEAD &&
+			git update-ref refs/remotes/origin/long-branch HEAD &&
+			git symbolic-ref refs/heads/alias refs/heads/main &&
+			git symbolic-ref refs/remotes/origin/HEAD \
+				refs/remotes/origin/long-branch &&
+			git pack-refs --all &&
+			test_commit --no-tag two &&
+
+			if test "$ref_format" = files
+			then
+				loose=3 &&
+				packed=3
+			else
+				loose=0 &&
+				packed=0
+			fi &&
+			cat >expect <<-EOF &&
+			references.branches.count=2
+			references.tags.count=1
+			references.tags.annotated.count=0
+			references.remotes.count=2
+			references.others.count=1
+			references.symbolic.count=2
+			references.loose.count=$loose
+			references.packed.count=$packed
+			references.local.max_length=18
+			references.local.total_length=61
+			references.remotes.max_length=31
+			references.remotes.total_length=55
+			EOF
+			git repo structure --format=lines >out &&
+			sed -n "/^references\./p" out >actual &&
+			test_cmp expect actual &&
+
+			if test "$ref_format" = files
+			then
+				loose=1 &&
+				packed=1
+			fi &&
+			cat >expect <<-EOF &&
+			references.branches.count=0
+			references.tags.count=0
+			references.tags.annotated.count=0
+			references.remotes.count=2
+			references.others.count=0
+			references.symbolic.count=1
+			references.loose.count=$loose
+			references.packed.count=$packed
+			references.local.max_length=0
+			references.local.total_length=0
+			references.remotes.max_length=31
+			references.remotes.total_length=55
+			EOF
+			git repo structure --format=nul \
+				--ref-filter="refs/remotes/origin/*" >out &&
+			tr "\012\000" "=\012" <out >decoded &&
+			sed -n "/^references\./p" decoded >actual &&
+			test_cmp expect actual &&
+
+			sed "s/=[0-9]*$/=0/" expect >expect-empty &&
+			git repo structure --format=lines \
+				--ref-filter="refs/does-not-exist/" >out &&
+			sed -n "/^references\./p" out >actual &&
+			test_cmp expect-empty actual
+		)
+	'
+done
 
 test_expect_success '--ref-filter narrows the set of refs' '
 	test_when_finished "rm -rf repo" &&
