@@ -434,7 +434,231 @@ test_expect_success 'commit parent histogram groups 31 or more parents' '
 		test_cmp expect actual &&
 		test_grep "^objects.commits.max_parents=32$" out &&
 		git repo structure >table &&
-		test_grep "^| 31+ *| *2 *|$" table
+		test_grep "^| 31+ *| *2 *|$" table &&
+
+		key=objects.commits.largest.by_parents &&
+		boundary=$(git rev-parse refs/heads/boundary) &&
+		cat >expect <<-EOF &&
+		$key.1.parents=32
+		$key.1.oid=$commit
+		$key.2.parents=31
+		$key.2.oid=$boundary
+		$key.3.parents=2
+		$key.3.oid=$two
+		EOF
+		git repo structure --format=lines --commit-parents=3 >out &&
+		sed -n "/^$key\./p" out >actual &&
+		test_cmp expect actual &&
+
+		for limit in 9 10 12
+		do
+			git repo structure --commit-parents=$limit >table &&
+			sed -n "/^| Largest commits by parent count /,/^$/p" \
+				table >parents &&
+			test_line_count = $((limit + 3)) parents &&
+			awk "
+				!NF { next }
+				!width { width = length }
+				length != width {
+					print length, width
+					exit 1
+				}
+			" parents || return 1
+		done
+	)
+'
+
+test_expect_success 'largest object lists have independent sorted limits' '
+	test_when_finished "rm -rf repo" &&
+	git init --initial-branch=main repo &&
+	(
+		cd repo &&
+		empty_blob=$(git hash-object -w --stdin </dev/null) &&
+		test-tool genzeros 16 >big &&
+		big=$(git hash-object -w big) &&
+		printf abcdefghijklmnop >tied &&
+		tied=$(git hash-object -w tied) &&
+		empty_tree=$(git mktree </dev/null) &&
+		cat >tree-input <<-EOF &&
+		100644 blob $empty_blob	a
+		100644 blob $big	b
+		100644 blob $tied	c
+		EOF
+		wide=$(git mktree <tree-input) &&
+		long=$(printf "%0200d" 0) &&
+		cat >tree-input <<-EOF &&
+		100644 blob $empty_blob	$long-a
+		100644 blob $big	$long-b
+		EOF
+		narrow=$(git mktree <tree-input) &&
+		printf "%04096d\n" 0 >message &&
+		root=$(git commit-tree "$empty_tree" -F message) &&
+		other=$(git commit-tree "$narrow" -m other) &&
+		child=$(git commit-tree "$wide" -p "$root" -m child) &&
+		merge=$(git commit-tree "$wide" -p "$child" -p "$other" \
+			-m merge) &&
+		git update-ref refs/heads/main "$merge" &&
+		git update-ref refs/heads/empty "$root" &&
+		root_size=$(git cat-file -s "$root") &&
+		narrow_size=$(git cat-file -s "$narrow") &&
+		commit_parents=objects.commits.largest.by_parents &&
+		commit_sizes=objects.commits.largest.by_size &&
+		tree_entries=objects.trees.largest.by_entries &&
+		tree_sizes=objects.trees.largest.by_size &&
+		blob_sizes=objects.blobs.largest.by_size &&
+
+		set -- --commit-parents=2 --commit-sizes=1 \
+			--tree-entries=4 --tree-sizes=1 --blob-sizes=4 &&
+		for storage in loose packed
+		do
+			if test "$storage" = packed
+			then
+				git repack -ad
+			fi &&
+			git repo structure --format=lines "$@" >out &&
+			cat >expect <<-EOF &&
+			$commit_parents.1.parents=2
+			$commit_parents.1.oid=$merge
+			$commit_parents.2.parents=1
+			$commit_parents.2.oid=$child
+			$commit_sizes.1.inflated_size=$root_size
+			$commit_sizes.1.oid=$root
+			$tree_entries.1.entries=3
+			$tree_entries.1.oid=$wide
+			$tree_entries.2.entries=2
+			$tree_entries.2.oid=$narrow
+			$tree_entries.3.entries=0
+			$tree_entries.3.oid=$empty_tree
+			$tree_sizes.1.inflated_size=$narrow_size
+			$tree_sizes.1.oid=$narrow
+			EOF
+			sed -n "/^$blob_sizes\./d; /\.largest\./p" \
+				out >actual &&
+			test_cmp expect actual &&
+			cat >expect <<-EOF &&
+			$blob_sizes.1.inflated_size=16
+			$blob_sizes.2.inflated_size=16
+			$blob_sizes.3.inflated_size=0
+			EOF
+			sed -n "/^$blob_sizes\..*\.inflated_size=/p" \
+				out >actual &&
+			test_cmp expect actual &&
+			printf "%s\n" "$big" "$tied" >expect-unsorted &&
+			sort expect-unsorted >expect &&
+			sed -n "s/^$blob_sizes\.[12]\.oid=//p" \
+				out >actual-unsorted &&
+			sort actual-unsorted >actual &&
+			test_cmp expect actual &&
+			test_grep "^$blob_sizes.3.oid=$empty_blob$" out &&
+			test_grep ! "^$blob_sizes.4." out &&
+
+			git repo structure --format=nul "$@" >nul &&
+			tr "\012\000" "=\012" <nul >decoded &&
+			test_cmp out decoded &&
+			git repo structure "$@" >table &&
+			sed -n "/^| Largest commits by parent count /,/^$/p" \
+				table >parents &&
+			test_grep "^| 1 *\[1\] | *2 *|$" parents &&
+			sed -n "/^| Largest blobs by size /,/^$/p" \
+				table >blobs &&
+			test_grep "^| 1 *\[1\] | *16 B *|$" blobs ||
+			return 1
+		done &&
+
+		git repo structure --format=lines "$@" \
+			--ref-filter=refs/heads/empty >out &&
+		test_grep "^$commit_parents.1.parents=0$" out &&
+		test_grep ! "^$commit_parents.2." out &&
+		test_grep "^$tree_entries.1.entries=0$" out &&
+		test_grep ! "^$tree_entries.2." out &&
+		test_grep ! "^$blob_sizes." out &&
+		git repo structure --format=lines "$@" \
+			--ref-filter=refs/heads/missing >out &&
+		test_grep ! "\.largest\." out
+	)
+'
+
+for spec in \
+	"commit-parents showCommitParents commits by_parents parents" \
+	"commit-sizes showCommitSizes commits by_size inflated_size" \
+	"tree-entries showTreeEntries trees by_entries entries" \
+	"tree-sizes showTreeSizes trees by_size inflated_size" \
+	"blob-sizes showBlobSizes blobs by_size inflated_size"
+do
+	set -- $spec
+	option=$1 config=$2 type=$3 dimension=$4 metric=$5
+
+	test_expect_success "--$option is opt-in and overrides its config" '
+		test_when_finished "rm -rf repo" &&
+		git init repo &&
+		(
+			cd repo &&
+			test_commit --no-tag one file &&
+			case "$type" in
+			commits) oid=$(git rev-parse HEAD) ;;
+			trees) oid=$(git rev-parse HEAD^{tree}) ;;
+			blobs) oid=$(git rev-parse HEAD:file) ;;
+			esac &&
+			case "$metric" in
+			parents) value=0 ;;
+			entries) value=1 ;;
+			inflated_size) value=$(git cat-file -s "$oid") ;;
+			esac &&
+			key=objects.$type.largest.$dimension &&
+			cat >expect <<-EOF &&
+			$key.1.$metric=$value
+			$key.1.oid=$oid
+			EOF
+			git repo structure --format=lines >default &&
+			test_grep ! "\.largest\." default &&
+			git repo structure --format=lines "--$option=3" >out &&
+			sed -n "/\.largest\./p" out >actual &&
+			test_cmp expect actual &&
+			git -c repo.structure.$config=3 repo structure \
+				--format=lines >configured &&
+			test_cmp out configured &&
+			git -c repo.structure.$config=3 repo structure \
+				--format=lines "--$option=0" >disabled &&
+			test_cmp default disabled &&
+			git -c repo.structure.$config=0 repo structure \
+				--format=lines "--$option=3" >override &&
+			test_cmp out override &&
+
+			test_commit --no-tag two other "larger content" &&
+			git -c repo.structure.$config=1 repo structure \
+				--format=lines >limit-one &&
+			git -c repo.structure.$config=2 repo structure \
+				--format=lines >limit-two &&
+			git repo structure --format=lines "--$option=2" \
+				>expected-two &&
+			test_cmp expected-two limit-two &&
+			sed -n "/\.largest\..*\.oid=/p" limit-one >oids &&
+			test_line_count = 1 oids &&
+			sed -n "/\.largest\..*\.oid=/p" limit-two >oids &&
+			test_line_count = 2 oids &&
+
+			test_must_fail git repo structure "--$option=-1" \
+				2>err &&
+			test_grep "must be non-negative" err &&
+			test_must_fail git -c repo.structure.$config=-1 \
+				repo structure 2>err &&
+			test_grep "must be non-negative" err &&
+			test_must_fail git repo structure "--$option=bad" \
+				2>err
+		)
+	'
+done
+
+test_expect_success 'largest object lists are empty in an empty repository' '
+	test_when_finished "rm -rf repo" &&
+	git init repo &&
+	(
+		cd repo &&
+		git repo structure >expect &&
+		git repo structure --commit-parents=3 --commit-sizes=3 \
+			--tree-entries=3 --tree-sizes=3 --blob-sizes=3 \
+			>actual &&
+		test_cmp expect actual
 	)
 '
 
