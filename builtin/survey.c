@@ -55,12 +55,35 @@ static struct survey_refs_wanted refs_if_unspecified = {
 struct survey_opts {
 	int verbose;
 	int show_progress;
+
+	int show_largest_commits_by_nr_parents;
+	int show_largest_commits_by_size_bytes;
+
+	int show_largest_trees_by_nr_entries;
+	int show_largest_trees_by_size_bytes;
+
+	int show_largest_blobs_by_size_bytes;
+
 	struct survey_refs_wanted refs;
 };
+
+#define DEFAULT_SHOW_LARGEST_VALUE (10)
 
 static struct survey_opts survey_opts = {
 	.verbose = 0,
 	.show_progress = -1, /* defaults to isatty(2) */
+
+	/*
+	 * Show the largest `n` objects for some scaling dimension.
+	 * We allow each to be requested independently.
+	 */
+	.show_largest_commits_by_nr_parents = DEFAULT_SHOW_LARGEST_VALUE,
+	.show_largest_commits_by_size_bytes = DEFAULT_SHOW_LARGEST_VALUE,
+
+	.show_largest_trees_by_nr_entries = DEFAULT_SHOW_LARGEST_VALUE,
+	.show_largest_trees_by_size_bytes = DEFAULT_SHOW_LARGEST_VALUE,
+
+	.show_largest_blobs_by_size_bytes = DEFAULT_SHOW_LARGEST_VALUE,
 
 	.refs.want_all_refs = 0,
 
@@ -139,6 +162,14 @@ static struct option survey_options[] = {
 	OPT_BOOL_F(0, "detached", &survey_opts.refs.want_detached, N_("include detached HEAD"),     PARSE_OPT_NONEG),
 	OPT_BOOL_F(0, "other",    &survey_opts.refs.want_other,    N_("include notes and stashes"), PARSE_OPT_NONEG),
 
+	OPT_INTEGER_F(0, "commit-parents", &survey_opts.show_largest_commits_by_nr_parents, N_("show N largest commits by parent count"),  PARSE_OPT_NONEG),
+	OPT_INTEGER_F(0, "commit-sizes",   &survey_opts.show_largest_commits_by_size_bytes, N_("show N largest commits by size in bytes"), PARSE_OPT_NONEG),
+
+	OPT_INTEGER_F(0, "tree-entries",   &survey_opts.show_largest_trees_by_nr_entries,   N_("show N largest trees by entry count"),     PARSE_OPT_NONEG),
+	OPT_INTEGER_F(0, "tree-sizes",     &survey_opts.show_largest_trees_by_size_bytes,   N_("show N largest trees by size in bytes"),   PARSE_OPT_NONEG),
+
+	OPT_INTEGER_F(0, "blob-sizes",     &survey_opts.show_largest_blobs_by_size_bytes,   N_("show N largest blobs by size in bytes"),   PARSE_OPT_NONEG),
+
 	OPT_END(),
 };
 
@@ -151,6 +182,29 @@ static int survey_load_config_cb(const char *var, const char *value,
 	}
 	if (!strcmp(var, "survey.progress")) {
 		survey_opts.show_progress = git_config_bool(var, value);
+		return 0;
+	}
+
+	if (!strcmp(var, "survey.showcommitparents")) {
+		survey_opts.show_largest_commits_by_nr_parents = git_config_ulong(var, value, ctx->kvi);
+		return 0;
+	}
+	if (!strcmp(var, "survey.showcommitsizes")) {
+		survey_opts.show_largest_commits_by_size_bytes = git_config_ulong(var, value, ctx->kvi);
+		return 0;
+	}
+
+	if (!strcmp(var, "survey.showtreeentries")) {
+		survey_opts.show_largest_trees_by_nr_entries = git_config_ulong(var, value, ctx->kvi);
+		return 0;
+	}
+	if (!strcmp(var, "survey.showtreesizes")) {
+		survey_opts.show_largest_trees_by_size_bytes = git_config_ulong(var, value, ctx->kvi);
+		return 0;
+	}
+
+	if (!strcmp(var, "survey.showblobsizes")) {
+		survey_opts.show_largest_blobs_by_size_bytes = git_config_ulong(var, value, ctx->kvi);
 		return 0;
 	}
 
@@ -265,6 +319,84 @@ static void incr_obj_hist_bin(struct obj_hist_bin *pbin,
 }
 
 /*
+ * Remember the largest n objects for some scaling dimension.  This
+ * could be the observed object size or number of entries in a tree.
+ * We'll use this to generate a sorted vector in the output for that
+ * dimension.
+ */
+struct large_item {
+	uint64_t size;
+	struct object_id oid;
+};
+
+struct large_item_vec {
+	char *dimension_label;
+	char *item_label;
+	uint64_t nr_items;
+	struct large_item items[FLEX_ARRAY]; /* nr_items */
+};
+
+static struct large_item_vec *alloc_large_item_vec(const char *dimension_label,
+						   const char *item_label,
+						   uint64_t nr_items)
+{
+	struct large_item_vec *vec;
+	size_t flex_len = nr_items * sizeof(struct large_item);
+
+	if (!nr_items)
+		return NULL;
+
+	vec = xcalloc(1, (sizeof(struct large_item_vec) + flex_len));
+	vec->dimension_label = strdup(dimension_label);
+	vec->item_label = strdup(item_label);
+	vec->nr_items = nr_items;
+
+	return vec;
+}
+
+static void free_large_item_vec(struct large_item_vec *vec)
+{
+	free(vec->dimension_label);
+	free(vec->item_label);
+	free(vec);
+}
+
+static void maybe_insert_large_item(struct large_item_vec *vec,
+				    uint64_t size,
+				    struct object_id *oid)
+{
+	size_t rest_len;
+	size_t k;
+
+	if (!vec || !vec->nr_items)
+		return;
+
+	/*
+	 * Since the odds an object being among the largest n
+	 * is small, shortcut and see if it is smaller than
+	 * the smallest one in our set and quickly reject it.
+	 */
+	if (size < vec->items[vec->nr_items - 1].size)
+		return;
+
+	for (k = 0; k < vec->nr_items; k++) {
+		if (size < vec->items[k].size)
+			continue;
+
+		/* push items[k..] down one and insert it here */
+
+		rest_len = (vec->nr_items - k - 1) * sizeof(struct large_item);
+		if (rest_len)
+			memmove(&vec->items[k + 1], &vec->items[k], rest_len);
+
+		memset(&vec->items[k], 0, sizeof(struct large_item));
+		vec->items[k].size = size;
+		oidcpy(&vec->items[k].oid, oid);
+		return;
+	}
+}
+
+/*
  * Common fields for any type of object.
  */
 struct survey_stats_base_object {
@@ -309,6 +441,9 @@ struct survey_stats_commits {
 	 * Count of commits with k parents.
 	 */
 	uint32_t parent_cnt_pbin[PBIN_VEC_LEN];
+
+	struct large_item_vec *vec_largest_by_nr_parents;
+	struct large_item_vec *vec_largest_by_size_bytes;
 };
 
 /*
@@ -318,11 +453,18 @@ struct survey_stats_trees {
 	struct survey_stats_base_object base;
 
 	/*
-	 * In the following, nr_entries refers to the number of files or
-	 * subdirectories in a tree.  We are interested in how wide the
-	 * tree is and if the repo has gigantic directories.
+	 * Keep a vector of the trees with the most number of entries.
+	 * This gives us a feel for the width of a tree when there are
+	 * gigantic directories.
 	 */
-	uint64_t max_entries; /* max(nr_entries) -- the width of the largest tree */
+	struct large_item_vec *vec_largest_by_nr_entries;
+
+	/*
+	 * Keep a vector of the trees with the largest size in bytes.
+	 * The contents of this may or may not match items in the other
+	 * vector, since entryname length can alter the results.
+	 */
+	struct large_item_vec *vec_largest_by_size_bytes;
 
 	/*
 	 * Computing the sum of the number of entries across all trees
@@ -342,6 +484,11 @@ struct survey_stats_trees {
  */
 struct survey_stats_blobs {
 	struct survey_stats_base_object base;
+
+	/*
+	 * Remember the OIDs of the largest n blobs.
+	 */
+	struct large_item_vec *vec_largest_by_size_bytes;
 };
 
 struct survey_stats {
@@ -508,17 +655,21 @@ static int fill_in_base_object(struct survey_stats_base_object *base,
 static void traverse_commit_cb(struct commit *commit, void *data)
 {
 	struct survey_stats_commits *psc = &survey_stats.commits;
+	unsigned long object_length;
 	unsigned k;
 
 	if ((++survey_progress_total % 1000) == 0)
 		display_progress(survey_progress, survey_progress_total);
 
-	fill_in_base_object(&psc->base, &commit->object, OBJ_COMMIT, NULL, NULL);
+	fill_in_base_object(&psc->base, &commit->object, OBJ_COMMIT, &object_length, NULL);
 
 	k = commit_list_count(commit->parents);
+
+	maybe_insert_large_item(psc->vec_largest_by_nr_parents, k, &commit->object.oid);
+	maybe_insert_large_item(psc->vec_largest_by_size_bytes, object_length, &commit->object.oid);
+
 	if (k >= PBIN_VEC_LEN)
 		k = PBIN_VEC_LEN - 1;
-
 	psc->parent_cnt_pbin[k]++;
 }
 
@@ -546,8 +697,8 @@ static void traverse_object_cb_tree(struct object *obj)
 
 	pst->sum_entries += nr_entries;
 
-	if (nr_entries > pst->max_entries)
-		pst->max_entries = nr_entries;
+	maybe_insert_large_item(pst->vec_largest_by_nr_entries, nr_entries, &obj->oid);
+	maybe_insert_large_item(pst->vec_largest_by_size_bytes, object_length, &obj->oid);
 
 	qb = qbin(nr_entries);
 	incr_obj_hist_bin(&pst->entry_qbin[qb], object_length, disk_sizep);
@@ -556,8 +707,11 @@ static void traverse_object_cb_tree(struct object *obj)
 static void traverse_object_cb_blob(struct object *obj)
 {
 	struct survey_stats_blobs *psb = &survey_stats.blobs;
+	unsigned long object_length;
 
-	fill_in_base_object(&psb->base, obj, OBJ_BLOB, NULL, NULL);
+	fill_in_base_object(&psb->base, obj, OBJ_BLOB, &object_length, NULL);
+
+	maybe_insert_large_item(psb->vec_largest_by_size_bytes, object_length, &obj->oid);
 }
 
 static void traverse_object_cb(struct object *obj, const char *name, void *data)
@@ -1024,6 +1178,32 @@ static void write_base_object_json(struct json_writer *jw,
 	write_hbin_json(jw, "dist_by_size", base->size_hbin);
 }
 
+static void write_large_item_vec_json(struct json_writer *jw,
+				      struct large_item_vec *vec)
+{
+	if (!vec || !vec->nr_items)
+		return;
+
+	jw_object_inline_begin_array(jw, vec->dimension_label);
+	{
+		int k;
+
+		for (k = 0; k < vec->nr_items; k++) {
+			struct large_item *pk = &vec->items[k];
+			if (is_null_oid(&pk->oid))
+				break;
+
+			jw_array_inline_begin_object(jw);
+			{
+				jw_object_intmax(jw, vec->item_label, pk->size);
+				jw_object_string(jw, "oid", oid_to_hex(&pk->oid));
+			}
+			jw_end(jw);
+		}
+	}
+	jw_end(jw);
+}
+
 static void json_commits_section(struct json_writer *jw_top, int pretty, int want_trace2)
 {
 	struct survey_stats_commits *psc = &survey_stats.commits;
@@ -1032,6 +1212,9 @@ static void json_commits_section(struct json_writer *jw_top, int pretty, int wan
 	jw_object_begin(&jw_commits, pretty);
 	{
 		write_base_object_json(&jw_commits, &psc->base);
+
+		write_large_item_vec_json(&jw_commits, psc->vec_largest_by_nr_parents);
+		write_large_item_vec_json(&jw_commits, psc->vec_largest_by_size_bytes);
 
 		jw_object_inline_begin_object(&jw_commits, "count_by_nr_parents");
 		{
@@ -1069,8 +1252,10 @@ static void json_trees_section(struct json_writer *jw_top, int pretty, int want_
 	{
 		write_base_object_json(&jw_trees, &pst->base);
 
-		jw_object_intmax(&jw_trees, "max_entries", pst->max_entries);
 		jw_object_intmax(&jw_trees, "sum_entries", pst->sum_entries);
+
+		write_large_item_vec_json(&jw_trees, pst->vec_largest_by_nr_entries);
+		write_large_item_vec_json(&jw_trees, pst->vec_largest_by_size_bytes);
 
 		write_qbin_json(&jw_trees, "dist_by_nr_entries", pst->entry_qbin);
 	}
@@ -1093,6 +1278,8 @@ static void json_blobs_section(struct json_writer *jw_top, int pretty, int want_
 	jw_object_begin(&jw_blobs, pretty);
 	{
 		write_base_object_json(&jw_blobs, &psb->base);
+
+		write_large_item_vec_json(&jw_blobs, psb->vec_largest_by_size_bytes);
 	}
 	jw_end(&jw_blobs);
 
@@ -1147,12 +1334,50 @@ int cmd_survey(int argc, const char **argv, const char *prefix)
 		survey_opts.show_progress = isatty(2);
 	fixup_refs_wanted();
 
+	if (survey_opts.show_largest_commits_by_nr_parents)
+		survey_stats.commits.vec_largest_by_nr_parents =
+			alloc_large_item_vec(
+				"largest_commits_by_nr_parents",
+				"nr_parents",
+				survey_opts.show_largest_commits_by_nr_parents);
+	if (survey_opts.show_largest_commits_by_size_bytes)
+		survey_stats.commits.vec_largest_by_size_bytes =
+			alloc_large_item_vec(
+				"largest_commits_by_size_bytes",
+				"size",
+				survey_opts.show_largest_commits_by_size_bytes);
+
+	if (survey_opts.show_largest_trees_by_nr_entries)
+		survey_stats.trees.vec_largest_by_nr_entries =
+			alloc_large_item_vec(
+				"largest_trees_by_nr_entries",
+				"nr_entries",
+				survey_opts.show_largest_trees_by_nr_entries);
+	if (survey_opts.show_largest_trees_by_size_bytes)
+		survey_stats.trees.vec_largest_by_size_bytes =
+			alloc_large_item_vec(
+				"largest_trees_by_size_bytes",
+				"size",
+				survey_opts.show_largest_trees_by_size_bytes);
+
+	if (survey_opts.show_largest_blobs_by_size_bytes)
+		survey_stats.blobs.vec_largest_by_size_bytes =
+			alloc_large_item_vec(
+				"largest_blobs_by_size_bytes",
+				"size",
+				survey_opts.show_largest_blobs_by_size_bytes);
+
 	survey_phase_refs(the_repository);
 
 	survey_emit_trace2();
 	survey_print_json();
 
 	strvec_clear(&survey_vec_refs_wanted);
+	free_large_item_vec(survey_stats.commits.vec_largest_by_nr_parents);
+	free_large_item_vec(survey_stats.commits.vec_largest_by_size_bytes);
+	free_large_item_vec(survey_stats.trees.vec_largest_by_nr_entries);
+	free_large_item_vec(survey_stats.trees.vec_largest_by_size_bytes);
+	free_large_item_vec(survey_stats.blobs.vec_largest_by_size_bytes);
 
 	return 0;
 }
