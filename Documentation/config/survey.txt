@@ -1,0 +1,36 @@
+survey.progress::
+	Boolean to show/hide progress information.  Defaults to
+	true when interactive (stderr is bound to a TTY).
+
+survey.showBlobSizes::
+	A non-negative integer value.  Requests details on the <n>
+	largest file blobs by size in bytes.  Provides a default
+	value for `--blob-sizes=<n>` in linkgit:git-survey[1].
+
+survey.showCommitParents::
+	A non-negative integer value.  Requests details on the <n>
+	commits with the most number of parents.  Provides a default
+	value for `--commit-parents=<n>` in linkgit:git-survey[1].
+
+survey.showCommitSizes::
+	A non-negative integer value.  Requests details on the <n>
+	largest commits by size in bytes.  Generally, these are the
+	commits with the largest commit messages.  Provides a default
+	value for `--commit-sizes=<n>` in linkgit:git-survey[1].
+
+survey.showTreeEntries::
+	A non-negative integer value.  Requests details on the <n>
+	trees (directories) with the most number of entries (files
+	and subdirectories).  Provides a default value for
+	`--tree-entries=<n>` in linkgit:git-survey[1].
+
+survey.showTreeSizes::
+	A non-negative integer value.  Requests details on the <n>
+	largest trees (directories) by size in bytes.  This will
+	set will usually be equal to the `survey.showTreeEntries`
+	set, but may be skewed by very long file or subdirectory
+	entry names.  Provides a default value for
+	`--tree-sizes=<n>` in linkgit:git-survey[1].
+
+survey.verbose::
+	Boolean to show/hide verbose output.  Default to false.
