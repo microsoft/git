@@ -8,4 +8,26 @@ repo.structure.*::
 		number of largest paths to report in each detail table.
 		Must be non-negative; defaults to `0`, which disables the
 		detail tables.
+	showBlobSizes::
+		A non-negative integer specifying the default for
+		`--blob-sizes=<n>` in linkgit:git-repo[1]. Defaults to `0`,
+		which disables the list of largest blobs.
+	showCommitParents::
+		A non-negative integer specifying the default for
+		`--commit-parents=<n>` in linkgit:git-repo[1]. Defaults to
+		`0`, which disables the list of commits with the most
+		parents.
+	showCommitSizes::
+		A non-negative integer specifying the default for
+		`--commit-sizes=<n>` in linkgit:git-repo[1]. Defaults to
+		`0`, which disables the list of largest commits.
+	showTreeEntries::
+		A non-negative integer specifying the default for
+		`--tree-entries=<n>` in linkgit:git-repo[1]. Defaults to
+		`0`, which disables the list of trees with the most
+		entries.
+	showTreeSizes::
+		A non-negative integer specifying the default for
+		`--tree-sizes=<n>` in linkgit:git-repo[1]. Defaults to `0`,
+		which disables the list of largest trees.
 --
