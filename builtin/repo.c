@@ -307,10 +307,15 @@ struct object_data {
 	size_t value;
 };
 
+struct top_object {
+	struct object_data object;
+	char *path;
+};
+
 struct top_objects {
 	size_t nr;
 	size_t alloc;
-	struct object_data *data;
+	struct top_object *data;
 };
 
 struct largest_objects {
@@ -874,26 +879,34 @@ static void top_objects_table_print(const char *title, struct top_objects *top,
 		.rows = STRING_LIST_INIT_DUP,
 		.annotations = STRING_LIST_INIT_DUP,
 	};
+	struct strbuf label = STRBUF_INIT;
 
 	for (size_t i = 0; i < top->nr; i++) {
-		struct object_data *item = &top->data[i];
+		struct object_data *item = &top->data[i].object;
+		const char *path = top->data[i].path;
+
+		strbuf_reset(&label);
+		strbuf_addf(&label, "%" PRIuMAX, (uintmax_t)(i + 1));
+		if (path && *path) {
+			strbuf_addstr(&label, ": ");
+			quote_c_style(path, &label, NULL, 0);
+		}
 
 		if (by_size)
 			stats_table_object_size_addf(&table, &item->oid,
 						     item->value,
-						     "%" PRIuMAX,
-						     (uintmax_t)(i + 1));
+						     "%s", label.buf);
 		else
 			stats_table_object_count_addf(&table, &item->oid,
 						      item->value,
-						      "%" PRIuMAX,
-						      (uintmax_t)(i + 1));
+						      "%s", label.buf);
 	}
 
 	if (table.rows.nr) {
 		putchar('\n');
 		stats_table_print(&table, title);
 	}
+	strbuf_release(&label);
 	stats_table_clear(&table);
 }
 
@@ -999,12 +1012,19 @@ static void top_objects_keyvalue_print(const char *prefix, const char *metric,
 				       char key_delim, char value_delim)
 {
 	for (size_t i = 0; i < top->nr; i++) {
+		const struct top_object *item = &top->data[i];
+
 		printf("%s.%" PRIuMAX ".", prefix, (uintmax_t)(i + 1));
-		print_keyvalue(metric, key_delim, top->data[i].value,
+		print_keyvalue(metric, key_delim, item->object.value,
 			       value_delim);
 		printf("%s.%" PRIuMAX ".oid%c%s%c", prefix,
 		       (uintmax_t)(i + 1), key_delim,
-		       oid_to_hex(&top->data[i].oid), value_delim);
+		       oid_to_hex(&item->object.oid), value_delim);
+		if (item->path) {
+			printf("%s.%" PRIuMAX ".", prefix, (uintmax_t)(i + 1));
+			print_keyvalue_path("path", key_delim, item->path,
+					    value_delim);
+		}
 	}
 }
 
@@ -1350,22 +1370,33 @@ static void init_top_objects(struct top_objects *top, int limit,
 		ALLOC_ARRAY(top->data, top->alloc);
 }
 
+static void clear_top_objects(struct top_objects *top)
+{
+	for (size_t i = 0; i < top->nr; i++)
+		free(top->data[i].path);
+	free(top->data);
+}
+
 static void maybe_insert_top_object(struct top_objects *top,
-				    const struct object_id *oid, size_t value)
+				    const struct object_id *oid, size_t value,
+				    const char *path)
 {
 	size_t pos = top->nr;
 
-	while (pos > 0 && value >= top->data[pos - 1].value)
+	while (pos > 0 && value >= top->data[pos - 1].object.value)
 		pos--;
 	if (pos >= top->alloc)
 		return;
-	if (top->nr < top->alloc)
+	if (top->nr == top->alloc)
+		free(top->data[top->nr - 1].path);
+	else
 		top->nr++;
 	for (size_t i = top->nr - 1; i > pos; i--)
 		top->data[i] = top->data[i - 1];
 
-	oidcpy(&top->data[pos].oid, oid);
-	top->data[pos].value = value;
+	oidcpy(&top->data[pos].object.oid, oid);
+	top->data[pos].object.value = value;
+	top->data[pos].path = xstrdup_or_null(path);
 }
 
 static size_t count_tree_entries(struct object *obj)
@@ -1447,9 +1478,9 @@ static int count_objects(const char *path, struct oid_array *oids,
 			check_largest(&stats->largest.parent_count, &oids->oid[i],
 				      count);
 			maybe_insert_top_object(&stats->top_commit_parents,
-						&oids->oid[i], count);
+						&oids->oid[i], count, NULL);
 			maybe_insert_top_object(&stats->top_commit_sizes,
-						&oids->oid[i], inflated);
+						&oids->oid[i], inflated, NULL);
 			if (count >= PBIN_VEC_LEN)
 				count = PBIN_VEC_LEN - 1;
 			stats->commit_parents[count]++;
@@ -1466,9 +1497,9 @@ static int count_objects(const char *path, struct oid_array *oids,
 			check_largest(&stats->largest.tree_entries, &oids->oid[i],
 				      count);
 			maybe_insert_top_object(&stats->top_tree_entries,
-						&oids->oid[i], count);
+						&oids->oid[i], count, path);
 			maybe_insert_top_object(&stats->top_tree_sizes,
-						&oids->oid[i], inflated);
+						&oids->oid[i], inflated, path);
 			increment_histogram(stats->tree_entries, QBIN_SHIFT,
 					    count, inflated, disk);
 			increment_histogram(stats->tree_sizes, HBIN_SHIFT,
@@ -1481,7 +1512,7 @@ static int count_objects(const char *path, struct oid_array *oids,
 			check_largest(&stats->largest.blob_size, &oids->oid[i],
 				      inflated);
 			maybe_insert_top_object(&stats->top_blob_sizes,
-						&oids->oid[i], inflated);
+						&oids->oid[i], inflated, path);
 			increment_histogram(stats->blob_sizes, HBIN_SHIFT,
 					    inflated, inflated, disk);
 			break;
@@ -1682,11 +1713,11 @@ static int cmd_repo_structure(int argc, const char **argv, const char *prefix,
 		clear_top_paths(&stats.objects.top_trees);
 		clear_top_paths(&stats.objects.top_blobs);
 	}
-	free(stats.objects.top_commit_parents.data);
-	free(stats.objects.top_commit_sizes.data);
-	free(stats.objects.top_tree_entries.data);
-	free(stats.objects.top_tree_sizes.data);
-	free(stats.objects.top_blob_sizes.data);
+	clear_top_objects(&stats.objects.top_commit_parents);
+	clear_top_objects(&stats.objects.top_commit_sizes);
+	clear_top_objects(&stats.objects.top_tree_entries);
+	clear_top_objects(&stats.objects.top_tree_sizes);
+	clear_top_objects(&stats.objects.top_blob_sizes);
 	release_revisions(&revs);
 
 	return 0;
