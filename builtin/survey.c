@@ -327,7 +327,21 @@ static void incr_obj_hist_bin(struct obj_hist_bin *pbin,
 struct large_item {
 	uint64_t size;
 	struct object_id oid;
+
+	/*
+	 * For blobs and trees the name field is the pathname of the
+	 * file or directory.  Root trees will have a zero-length
+	 * name.  The name field is not currenly used for commits.
+	 */
 	struct strbuf *name;
+
+	/*
+	 * For blobs and trees remember the transient commit from
+	 * the treewalk so that we can say that this large item
+	 * first appeared in this commit (relative to the treewalk
+	 * order).
+	 */
+	struct object_id containing_commit_oid;
 };
 
 struct large_item_vec {
@@ -379,7 +393,8 @@ static void free_large_item_vec(struct large_item_vec *vec)
 static void maybe_insert_large_item(struct large_item_vec *vec,
 				    uint64_t size,
 				    struct object_id *oid,
-				    const char *name)
+				    const char *name,
+				    const struct object_id *containing_commit_oid)
 {
 	struct strbuf *pbuf_temp;
 	size_t rest_len;
@@ -419,6 +434,7 @@ static void maybe_insert_large_item(struct large_item_vec *vec,
 		memset(&vec->items[k], 0, sizeof(struct large_item));
 		vec->items[k].size = size;
 		oidcpy(&vec->items[k].oid, oid);
+		oidcpy(&vec->items[k].containing_commit_oid, containing_commit_oid);
 
 		vec->items[k].name = pbuf_temp;
 
@@ -682,6 +698,14 @@ static int fill_in_base_object(struct survey_stats_base_object *base,
 	return 0;
 }
 
+/*
+ * Transient OID of the commit currently being visited
+ * during the treewalk.  We can use this to create the
+ * <ref>:<pathname> pair when a notable large file was
+ * created, for example.
+ */
+static struct object_id treewalk_transient_commit_oid;
+
 static void traverse_commit_cb(struct commit *commit, void *data)
 {
 	struct survey_stats_commits *psc = &survey_stats.commits;
@@ -691,12 +715,23 @@ static void traverse_commit_cb(struct commit *commit, void *data)
 	if ((++survey_progress_total % 1000) == 0)
 		display_progress(survey_progress, survey_progress_total);
 
+	oidcpy(&treewalk_transient_commit_oid, &commit->object.oid);
+
 	fill_in_base_object(&psc->base, &commit->object, OBJ_COMMIT, &object_length, NULL);
 
 	k = commit_list_count(commit->parents);
 
-	maybe_insert_large_item(psc->vec_largest_by_nr_parents, k, &commit->object.oid, NULL);
-	maybe_insert_large_item(psc->vec_largest_by_size_bytes, object_length, &commit->object.oid, NULL);
+	/*
+	 * Send the commit-oid as both the OID and the CONTAINING-COMMIT-OID.
+	 * This is somewhat redundant, but lets us later do `git name-rev`
+	 * using the containing-oid in a consistent fashion.
+	 */
+	maybe_insert_large_item(psc->vec_largest_by_nr_parents, k,
+				&commit->object.oid, NULL,
+				&commit->object.oid);
+	maybe_insert_large_item(psc->vec_largest_by_size_bytes, object_length,
+				&commit->object.oid, NULL,
+				&commit->object.oid);
 
 	if (k >= PBIN_VEC_LEN)
 		k = PBIN_VEC_LEN - 1;
@@ -727,8 +762,12 @@ static void traverse_object_cb_tree(struct object *obj, const char *name)
 
 	pst->sum_entries += nr_entries;
 
-	maybe_insert_large_item(pst->vec_largest_by_nr_entries, nr_entries, &obj->oid, name);
-	maybe_insert_large_item(pst->vec_largest_by_size_bytes, object_length, &obj->oid, name);
+	maybe_insert_large_item(pst->vec_largest_by_nr_entries, nr_entries,
+				&obj->oid, name,
+				&treewalk_transient_commit_oid);
+	maybe_insert_large_item(pst->vec_largest_by_size_bytes, object_length,
+				&obj->oid, name,
+				&treewalk_transient_commit_oid);
 
 	qb = qbin(nr_entries);
 	incr_obj_hist_bin(&pst->entry_qbin[qb], object_length, disk_sizep);
@@ -741,7 +780,9 @@ static void traverse_object_cb_blob(struct object *obj, const char *name)
 
 	fill_in_base_object(&psb->base, obj, OBJ_BLOB, &object_length, NULL);
 
-	maybe_insert_large_item(psb->vec_largest_by_size_bytes, object_length, &obj->oid, name);
+	maybe_insert_large_item(psb->vec_largest_by_size_bytes, object_length,
+				&obj->oid, name,
+				&treewalk_transient_commit_oid);
 }
 
 static void traverse_object_cb(struct object *obj, const char *name, void *data)
@@ -774,6 +815,7 @@ static void do_treewalk_reachable(struct ref_array *ref_array)
 	repo_init_revisions(the_repository, &rev_info, NULL);
 	rev_info.tree_objects = 1;
 	rev_info.blob_objects = 1;
+	rev_info.tree_blobs_in_commit_order = 1;
 	load_rev_info(&rev_info, ref_array);
 	if (prepare_revision_walk(&rev_info))
 		die(_("revision walk setup failed"));
@@ -783,10 +825,12 @@ static void do_treewalk_reachable(struct ref_array *ref_array)
 		survey_progress = start_progress(_("Walking reachable objects..."), 0);
 	}
 
+	oidcpy(&treewalk_transient_commit_oid, null_oid());
 	traverse_commit_list(&rev_info,
 			     traverse_commit_cb,
 			     traverse_object_cb,
 			     NULL);
+	oidcpy(&treewalk_transient_commit_oid, null_oid());
 
 	if (survey_opts.show_progress)
 		stop_progress(&survey_progress);
@@ -1229,6 +1273,9 @@ static void write_large_item_vec_json(struct json_writer *jw,
 				jw_object_string(jw, "oid", oid_to_hex(&pk->oid));
 				if (pk->name->len)
 					jw_object_string(jw, "name", pk->name->buf);
+				if (!is_null_oid(&pk->containing_commit_oid))
+					jw_object_string(jw, "commit_oid",
+							 oid_to_hex(&pk->containing_commit_oid));
 			}
 			jw_end(jw);
 		}
