@@ -184,6 +184,13 @@ has an `oid` field. Its value field is named `parents` for `by_parents`,
 `entries` for `by_entries`, or `inflated_size` for `by_size`. Parent counts
 in these lists are not capped by the histogram's final bucket.
 
+Tree and blob entries also have a `path` field containing the first path
+associated with that object by the path walk. This is a suggested location,
+not necessarily a path in `HEAD`: an unchanged object may occur at multiple
+paths. An empty path denotes a root tree. Table and `lines` output quote
+unusual paths according to `core.quotePath`; `nul` output preserves the
+path bytes without quoting.
+
 INFO KEYS
 ---------
 In order to obtain a set of values from `git repo info`, you should provide
