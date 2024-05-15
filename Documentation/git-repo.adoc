@@ -191,6 +191,10 @@ paths. An empty path denotes a root tree. Table and `lines` output quote
 unusual paths according to `core.quotePath`; `nul` output preserves the
 path bytes without quoting.
 
+Entries also have a `commit_oid` field when an associated commit is known.
+Currently this is available only for commit objects, where it equals
+`oid`. Table output shows this ID as `(commit <oid>)`.
+
 INFO KEYS
 ---------
 In order to obtain a set of values from `git repo info`, you should provide
