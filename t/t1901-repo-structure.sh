@@ -506,6 +506,11 @@ test_expect_success 'largest object lists have independent sorted limits' '
 		tree_entries=objects.trees.largest.by_entries &&
 		tree_sizes=objects.trees.largest.by_size &&
 		blob_sizes=objects.blobs.largest.by_size &&
+		printf "%s %s\n" \
+			"$big" b "$big" "$long-b" \
+			"$tied" c \
+			"$empty_blob" a "$empty_blob" "$long-a" \
+			>allowed-paths &&
 
 		set -- --commit-parents=2 --commit-sizes=1 \
 			--tree-entries=4 --tree-sizes=1 --blob-sizes=4 &&
@@ -525,12 +530,16 @@ test_expect_success 'largest object lists have independent sorted limits' '
 			$commit_sizes.1.oid=$root
 			$tree_entries.1.entries=3
 			$tree_entries.1.oid=$wide
+			$tree_entries.1.path=
 			$tree_entries.2.entries=2
 			$tree_entries.2.oid=$narrow
+			$tree_entries.2.path=
 			$tree_entries.3.entries=0
 			$tree_entries.3.oid=$empty_tree
+			$tree_entries.3.path=
 			$tree_sizes.1.inflated_size=$narrow_size
 			$tree_sizes.1.oid=$narrow
+			$tree_sizes.1.path=
 			EOF
 			sed -n "/^$blob_sizes\./d; /\.largest\./p" \
 				out >actual &&
@@ -551,6 +560,15 @@ test_expect_success 'largest object lists have independent sorted limits' '
 			test_cmp expect actual &&
 			test_grep "^$blob_sizes.3.oid=$empty_blob$" out &&
 			test_grep ! "^$blob_sizes.4." out &&
+			for rank in 1 2 3
+			do
+				oid=$(sed -n \
+					"s/^$blob_sizes.$rank.oid=//p" out) &&
+				path=$(sed -n \
+					"s/^$blob_sizes.$rank.path=//p" out) &&
+				test_grep -F -x "$oid $path" allowed-paths ||
+				return 1
+			done &&
 
 			git repo structure --format=nul "$@" >nul &&
 			tr "\012\000" "=\012" <nul >decoded &&
@@ -561,7 +579,7 @@ test_expect_success 'largest object lists have independent sorted limits' '
 			test_grep "^| 1 *\[1\] | *2 *|$" parents &&
 			sed -n "/^| Largest blobs by size /,/^$/p" \
 				table >blobs &&
-			test_grep "^| 1 *\[1\] | *16 B *|$" blobs ||
+			test_grep "^| 1: .* \[1\] | *16 B *|$" blobs ||
 			return 1
 		done &&
 
@@ -575,6 +593,116 @@ test_expect_success 'largest object lists have independent sorted limits' '
 		git repo structure --format=lines "$@" \
 			--ref-filter=refs/heads/missing >out &&
 		test_grep ! "\.largest\." out
+	)
+'
+
+test_expect_success 'largest object paths stay with their ranked objects' '
+	test_when_finished "rm -rf repo" &&
+	git init repo &&
+	(
+		cd repo &&
+		mkdir dir &&
+		i=0 &&
+		>objects &&
+		for size in 1 9 2 8 3 7
+		do
+			i=$((i + 1)) &&
+			test-tool genzeros "$size" >"dir/$i" &&
+			oid=$(git hash-object -w "dir/$i") &&
+			printf "%s %s %s\n" "$size" "$oid" "dir/$i" \
+				>>objects || return 1
+		done &&
+		git add dir &&
+		test_tick &&
+		git commit -m paths &&
+		dir=$(git rev-parse HEAD:dir) &&
+		dir_size=$(git cat-file -s "$dir") &&
+		entries=objects.trees.largest.by_entries &&
+		sizes=objects.trees.largest.by_size &&
+		blobs=objects.blobs.largest.by_size &&
+		sort -rn objects >sorted &&
+		for limit in 1 2 4
+		do
+			cat >expect <<-EOF &&
+			$entries.1.entries=6
+			$entries.1.oid=$dir
+			$entries.1.path=dir/
+			$sizes.1.inflated_size=$dir_size
+			$sizes.1.oid=$dir
+			$sizes.1.path=dir/
+			EOF
+			sed -n "1,${limit}p" sorted >selected &&
+			rank=0 &&
+			while read -r size oid path
+			do
+				rank=$((rank + 1)) &&
+				key=$blobs.$rank &&
+				printf "%s=%s\n" \
+					"$key.inflated_size" "$size" \
+					"$key.oid" "$oid" \
+					"$key.path" "$path" >>expect ||
+				return 1
+			done <selected &&
+			git repo structure --format=lines --tree-entries=1 \
+				--tree-sizes=1 --blob-sizes="$limit" >out &&
+			sed -n "/\.largest\./p" out >actual &&
+			test_cmp expect actual || return 1
+		done
+	)
+'
+
+test_expect_success 'largest object paths are quoted except in NUL output' '
+	test_when_finished "rm -rf repo" &&
+	git init --initial-branch=main repo &&
+	(
+		cd repo &&
+		test-tool genzeros 16 >blob &&
+		blob=$(git hash-object -w blob) &&
+		printf "100644 blob %s\tfile\0" "$blob" >tree-input &&
+		dir=$(git mktree -z <tree-input) &&
+		name=$(printf "d\011\012\042\134x") &&
+		printf "040000 tree %s\t%s\0" "$dir" "$name" >tree-input &&
+		root=$(git mktree -z <tree-input) &&
+		commit=$(git commit-tree "$root" -m paths) &&
+		git update-ref refs/heads/main "$commit" &&
+		root_size=$(git cat-file -s "$root") &&
+		dir_size=$(git cat-file -s "$dir") &&
+		trees=objects.trees.largest.by_size &&
+		blobs=objects.blobs.largest.by_size &&
+		set -- --tree-sizes=2 --blob-sizes=1 &&
+
+		cat >expect <<-\EOF &&
+		objects.trees.largest.by_size.1.path=
+		objects.trees.largest.by_size.2.path="d\t\n\"\\x/"
+		objects.blobs.largest.by_size.1.path="d\t\n\"\\x/file"
+		EOF
+		git repo structure --format=lines "$@" >out &&
+		sed -n "/\.largest\..*\.path=/p" out >actual &&
+		test_cmp expect actual &&
+
+		cat >patterns <<-\EOF &&
+		2: "d\t\n\"\\x/"
+		1: "d\t\n\"\\x/file"
+		EOF
+		git repo structure "$@" >table &&
+		while IFS= read -r pattern
+		do
+			test_grep -F "$pattern" table || return 1
+		done <patterns &&
+
+		git repo structure --format=nul >expect &&
+		printf "%s\n%s\0" \
+			"$trees.1.inflated_size" "$root_size" \
+			"$trees.1.oid" "$root" \
+			"$trees.1.path" "" \
+			"$trees.2.inflated_size" "$dir_size" \
+			"$trees.2.oid" "$dir" \
+			"$trees.2.path" "$name/" \
+			"$blobs.1.inflated_size" 16 \
+			"$blobs.1.oid" "$blob" \
+			"$blobs.1.path" "$name/file" >>expect &&
+		git repo structure --format=nul "$@" >actual &&
+		test_cmp expect actual
 	)
 '
 
@@ -609,6 +737,10 @@ do
 			$key.1.$metric=$value
 			$key.1.oid=$oid
 			EOF
+			case "$type" in
+			trees) echo "$key.1.path=" >>expect ;;
+			blobs) echo "$key.1.path=file" >>expect ;;
+			esac &&
 			git repo structure --format=lines >default &&
 			test_grep ! "\.largest\." default &&
 			git repo structure --format=lines "--$option=3" >out &&
