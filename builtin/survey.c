@@ -327,6 +327,7 @@ static void incr_obj_hist_bin(struct obj_hist_bin *pbin,
 struct large_item {
 	uint64_t size;
 	struct object_id oid;
+	struct strbuf *name;
 };
 
 struct large_item_vec {
@@ -342,6 +343,7 @@ static struct large_item_vec *alloc_large_item_vec(const char *dimension_label,
 {
 	struct large_item_vec *vec;
 	size_t flex_len = nr_items * sizeof(struct large_item);
+	size_t k;
 
 	if (!nr_items)
 		return NULL;
@@ -351,11 +353,24 @@ static struct large_item_vec *alloc_large_item_vec(const char *dimension_label,
 	vec->item_label = strdup(item_label);
 	vec->nr_items = nr_items;
 
+	for (k = 0; k < nr_items; k++) {
+		struct strbuf *p = xcalloc(1, sizeof(struct strbuf));
+		strbuf_init(p, 0);
+		vec->items[k].name = p;
+	}
+
 	return vec;
 }
 
 static void free_large_item_vec(struct large_item_vec *vec)
 {
+	size_t k;
+
+	for (k = 0; k < vec->nr_items; k++) {
+		strbuf_release(vec->items[k].name);
+		free(vec->items[k].name);
+	}
+
 	free(vec->dimension_label);
 	free(vec->item_label);
 	free(vec);
@@ -363,8 +378,10 @@ static void free_large_item_vec(struct large_item_vec *vec)
 
 static void maybe_insert_large_item(struct large_item_vec *vec,
 				    uint64_t size,
-				    struct object_id *oid)
+				    struct object_id *oid,
+				    const char *name)
 {
+	struct strbuf *pbuf_temp;
 	size_t rest_len;
 	size_t k;
 
@@ -383,7 +400,17 @@ static void maybe_insert_large_item(struct large_item_vec *vec,
 		if (size < vec->items[k].size)
 			continue;
 
-		/* push items[k..] down one and insert it here */
+		/*
+		 * The last large_item in the vector is about to be
+		 * overwritten by the previous one during the shift.
+		 * Steal its allocated strbuf and reuse it.
+		 */
+		pbuf_temp = vec->items[vec->nr_items - 1].name;
+		strbuf_reset(pbuf_temp);
+		if (name && *name)
+			strbuf_addstr(pbuf_temp, name);
+
+		/* push items[k..] down one and insert data for this item here */
 
 		rest_len = (vec->nr_items - k - 1) * sizeof(struct large_item);
 		if (rest_len)
@@ -392,6 +419,9 @@ static void maybe_insert_large_item(struct large_item_vec *vec,
 		memset(&vec->items[k], 0, sizeof(struct large_item));
 		vec->items[k].size = size;
 		oidcpy(&vec->items[k].oid, oid);
+
+		vec->items[k].name = pbuf_temp;
+
 		return;
 	}
 }
@@ -665,15 +695,15 @@ static void traverse_commit_cb(struct commit *commit, void *data)
 
 	k = commit_list_count(commit->parents);
 
-	maybe_insert_large_item(psc->vec_largest_by_nr_parents, k, &commit->object.oid);
-	maybe_insert_large_item(psc->vec_largest_by_size_bytes, object_length, &commit->object.oid);
+	maybe_insert_large_item(psc->vec_largest_by_nr_parents, k, &commit->object.oid, NULL);
+	maybe_insert_large_item(psc->vec_largest_by_size_bytes, object_length, &commit->object.oid, NULL);
 
 	if (k >= PBIN_VEC_LEN)
 		k = PBIN_VEC_LEN - 1;
 	psc->parent_cnt_pbin[k]++;
 }
 
-static void traverse_object_cb_tree(struct object *obj)
+static void traverse_object_cb_tree(struct object *obj, const char *name)
 {
 	struct survey_stats_trees *pst = &survey_stats.trees;
 	unsigned long object_length;
@@ -697,21 +727,21 @@ static void traverse_object_cb_tree(struct object *obj)
 
 	pst->sum_entries += nr_entries;
 
-	maybe_insert_large_item(pst->vec_largest_by_nr_entries, nr_entries, &obj->oid);
-	maybe_insert_large_item(pst->vec_largest_by_size_bytes, object_length, &obj->oid);
+	maybe_insert_large_item(pst->vec_largest_by_nr_entries, nr_entries, &obj->oid, name);
+	maybe_insert_large_item(pst->vec_largest_by_size_bytes, object_length, &obj->oid, name);
 
 	qb = qbin(nr_entries);
 	incr_obj_hist_bin(&pst->entry_qbin[qb], object_length, disk_sizep);
 }
 
-static void traverse_object_cb_blob(struct object *obj)
+static void traverse_object_cb_blob(struct object *obj, const char *name)
 {
 	struct survey_stats_blobs *psb = &survey_stats.blobs;
 	unsigned long object_length;
 
 	fill_in_base_object(&psb->base, obj, OBJ_BLOB, &object_length, NULL);
 
-	maybe_insert_large_item(psb->vec_largest_by_size_bytes, object_length, &obj->oid);
+	maybe_insert_large_item(psb->vec_largest_by_size_bytes, object_length, &obj->oid, name);
 }
 
 static void traverse_object_cb(struct object *obj, const char *name, void *data)
@@ -721,10 +751,10 @@ static void traverse_object_cb(struct object *obj, const char *name, void *data)
 
 	switch (obj->type) {
 	case OBJ_TREE:
-		traverse_object_cb_tree(obj);
+		traverse_object_cb_tree(obj, name);
 		return;
 	case OBJ_BLOB:
-		traverse_object_cb_blob(obj);
+		traverse_object_cb_blob(obj, name);
 		return;
 	case OBJ_TAG:    /* ignore     -- counted when loading REFS */
 	case OBJ_COMMIT: /* ignore/bug -- seen in the other callback */
@@ -1197,6 +1227,8 @@ static void write_large_item_vec_json(struct json_writer *jw,
 			{
 				jw_object_intmax(jw, vec->item_label, pk->size);
 				jw_object_string(jw, "oid", oid_to_hex(&pk->oid));
+				if (pk->name->len)
+					jw_object_string(jw, "name", pk->name->buf);
 			}
 			jw_end(jw);
 		}
