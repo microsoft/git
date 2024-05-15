@@ -441,10 +441,13 @@ test_expect_success 'commit parent histogram groups 31 or more parents' '
 		cat >expect <<-EOF &&
 		$key.1.parents=32
 		$key.1.oid=$commit
+		$key.1.commit_oid=$commit
 		$key.2.parents=31
 		$key.2.oid=$boundary
+		$key.2.commit_oid=$boundary
 		$key.3.parents=2
 		$key.3.oid=$two
+		$key.3.commit_oid=$two
 		EOF
 		git repo structure --format=lines --commit-parents=3 >out &&
 		sed -n "/^$key\./p" out >actual &&
@@ -452,6 +455,12 @@ test_expect_success 'commit parent histogram groups 31 or more parents' '
 
 		for limit in 9 10 12
 		do
+			git repo structure --format=lines \
+				--commit-parents=$limit >out &&
+			sed -n "s/\.oid=/.commit_oid=/p" out >expect &&
+			sed -n "/\.commit_oid=/p" out >actual &&
+			test_line_count = $limit actual &&
+			test_cmp expect actual &&
 			git repo structure --commit-parents=$limit >table &&
 			sed -n "/^| Largest commits by parent count /,/^$/p" \
 				table >parents &&
@@ -524,10 +533,13 @@ test_expect_success 'largest object lists have independent sorted limits' '
 			cat >expect <<-EOF &&
 			$commit_parents.1.parents=2
 			$commit_parents.1.oid=$merge
+			$commit_parents.1.commit_oid=$merge
 			$commit_parents.2.parents=1
 			$commit_parents.2.oid=$child
+			$commit_parents.2.commit_oid=$child
 			$commit_sizes.1.inflated_size=$root_size
 			$commit_sizes.1.oid=$root
+			$commit_sizes.1.commit_oid=$root
 			$tree_entries.1.entries=3
 			$tree_entries.1.oid=$wide
 			$tree_entries.1.path=
@@ -576,7 +588,8 @@ test_expect_success 'largest object lists have independent sorted limits' '
 			git repo structure "$@" >table &&
 			sed -n "/^| Largest commits by parent count /,/^$/p" \
 				table >parents &&
-			test_grep "^| 1 *\[1\] | *2 *|$" parents &&
+			test_grep "^| 1 (commit $merge) *\[1\] | *2 *|$" \
+				parents &&
 			sed -n "/^| Largest blobs by size /,/^$/p" \
 				table >blobs &&
 			test_grep "^| 1: .* \[1\] | *16 B *|$" blobs ||
@@ -738,6 +751,7 @@ do
 			$key.1.oid=$oid
 			EOF
 			case "$type" in
+			commits) echo "$key.1.commit_oid=$oid" >>expect ;;
 			trees) echo "$key.1.path=" >>expect ;;
 			blobs) echo "$key.1.path=file" >>expect ;;
 			esac &&
@@ -746,6 +760,14 @@ do
 			git repo structure --format=lines "--$option=3" >out &&
 			sed -n "/\.largest\./p" out >actual &&
 			test_cmp expect actual &&
+			git repo structure --format=nul "--$option=3" >nul &&
+			tr "\012\000" "=\012" <nul >decoded &&
+			test_cmp out decoded &&
+			git repo structure "--$option=3" >table &&
+			case "$type" in
+			commits) test_grep -F "(commit $oid)" table ;;
+			*) test_grep ! -F "(commit " table ;;
+			esac &&
 			git -c repo.structure.$config=3 repo structure \
 				--format=lines >configured &&
 			test_cmp out configured &&
