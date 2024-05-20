@@ -11,6 +11,7 @@
 #include "ref-filter.h"
 #include "refs.h"
 #include "revision.h"
+#include "run-command.h"
 #include "strbuf.h"
 #include "strmap.h"
 #include "strvec.h"
@@ -342,6 +343,12 @@ struct large_item {
 	 * order).
 	 */
 	struct object_id containing_commit_oid;
+
+	/*
+	 * Lookup `containing_commit_oid` using `git name-rev`.
+	 * Lazy allocate this post-treewalk.
+	 */
+	struct strbuf *name_rev;
 };
 
 struct large_item_vec {
@@ -383,6 +390,11 @@ static void free_large_item_vec(struct large_item_vec *vec)
 	for (k = 0; k < vec->nr_items; k++) {
 		strbuf_release(vec->items[k].name);
 		free(vec->items[k].name);
+
+		if (vec->items[k].name_rev) {
+			strbuf_release(vec->items[k].name_rev);
+			free(vec->items[k].name_rev);
+		}
 	}
 
 	free(vec->dimension_label);
@@ -419,6 +431,9 @@ static void maybe_insert_large_item(struct large_item_vec *vec,
 		 * The last large_item in the vector is about to be
 		 * overwritten by the previous one during the shift.
 		 * Steal its allocated strbuf and reuse it.
+		 *
+		 * We can ignore .name_rev because it will not be
+		 * allocated until after the treewalk.
 		 */
 		pbuf_temp = vec->items[vec->nr_items - 1].name;
 		strbuf_reset(pbuf_temp);
@@ -440,6 +455,54 @@ static void maybe_insert_large_item(struct large_item_vec *vec,
 
 		return;
 	}
+}
+
+/*
+ * Try to run `git name-rev` on each of the containing-commit-oid's
+ * in this large-item-vec to get a pretty name for each OID.  Silently
+ * ignore errors if it fails because this info is nice to have but not
+ * essential.
+ */
+static void large_item_vec_lookup_name_rev(struct large_item_vec *vec)
+{
+	struct child_process cp = CHILD_PROCESS_INIT;
+	struct strbuf in = STRBUF_INIT;
+	struct strbuf out = STRBUF_INIT;
+	const char *line;
+	size_t k;
+
+	if (!vec || !vec->nr_items)
+		return;
+
+	survey_progress_total += vec->nr_items;
+	display_progress(survey_progress, survey_progress_total);
+
+	for (k = 0; k < vec->nr_items; k++)
+		strbuf_addf(&in, "%s\n", oid_to_hex(&vec->items[k].containing_commit_oid));
+
+	cp.git_cmd = 1;
+	strvec_pushl(&cp.args, "name-rev", "--name-only", "--annotate-stdin", NULL);
+	if (pipe_command(&cp, in.buf, in.len, &out, 0, NULL, 0)) {
+		strbuf_release(&in);
+		strbuf_release(&out);
+		return;
+	}
+
+	line = out.buf;
+	k = 0;
+	while (*line) {
+		const char *eol = strchrnul(line, '\n');
+
+		vec->items[k].name_rev = xcalloc(1, sizeof(struct strbuf));
+		strbuf_init(vec->items[k].name_rev, 0);
+		strbuf_add(vec->items[k].name_rev, line, (eol - line));
+
+		line = eol + 1;
+		k++;
+	}
+
+	strbuf_release(&in);
+	strbuf_release(&out);
 }
 
 /*
@@ -1010,6 +1073,25 @@ static void do_calc_stats_refs(struct repository *r, struct ref_array *ref_array
 	}
 }
 
+static void do_lookup_name_rev(void)
+{
+	if (survey_opts.show_progress) {
+		survey_progress_total = 0;
+		survey_progress = start_progress(_("Resolving name-revs..."), 0);
+	}
+
+	large_item_vec_lookup_name_rev(survey_stats.commits.vec_largest_by_nr_parents);
+	large_item_vec_lookup_name_rev(survey_stats.commits.vec_largest_by_size_bytes);
+
+	large_item_vec_lookup_name_rev(survey_stats.trees.vec_largest_by_nr_entries);
+	large_item_vec_lookup_name_rev(survey_stats.trees.vec_largest_by_size_bytes);
+
+	large_item_vec_lookup_name_rev(survey_stats.blobs.vec_largest_by_size_bytes);
+
+	if (survey_opts.show_progress)
+		stop_progress(&survey_progress);
+}
+
 /*
  * The REFS phase:
  *
@@ -1039,6 +1121,10 @@ static void survey_phase_refs(struct repository *r)
 	trace2_region_enter("survey", "phase/calcstats", the_repository);
 	do_calc_stats_refs(r, &ref_array);
 	trace2_region_leave("survey", "phase/calcstats", the_repository);
+
+	trace2_region_enter("survey", "phase/namerev", the_repository);
+	do_lookup_name_rev();
+	trace2_region_enter("survey", "phase/namerev", the_repository);
 
 	ref_array_clear(&ref_array);
 }
@@ -1276,6 +1362,9 @@ static void write_large_item_vec_json(struct json_writer *jw,
 				if (!is_null_oid(&pk->containing_commit_oid))
 					jw_object_string(jw, "commit_oid",
 							 oid_to_hex(&pk->containing_commit_oid));
+				if (pk->name_rev->len)
+					jw_object_string(jw, "name_rev",
+							 pk->name_rev->buf);
 			}
 			jw_end(jw);
 		}
