@@ -195,6 +195,16 @@ Entries also have a `commit_oid` field when an associated commit is known.
 Currently this is available only for commit objects, where it equals
 `oid`. Table output shows this ID as `(commit <oid>)`.
 
+The `name_rev` field contains the result of passing `commit_oid` to
+`git name-rev --name-only --annotate-stdin`. This uses all refs for naming,
+even when `--ref-filter` limits the objects counted. An object ID is kept
+unchanged if no name is found. Names appear in parentheses in tables and
+use the same quoting rules as paths in all output formats.
+
+No name lookup is performed for entries without a `commit_oid`. If lookup
+fails, a warning is printed and `name_rev` is omitted; the other statistics
+are still reported.
+
 INFO KEYS
 ---------
 In order to obtain a set of values from `git repo info`, you should provide

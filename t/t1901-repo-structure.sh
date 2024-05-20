@@ -442,12 +442,15 @@ test_expect_success 'commit parent histogram groups 31 or more parents' '
 		$key.1.parents=32
 		$key.1.oid=$commit
 		$key.1.commit_oid=$commit
+		$key.1.name_rev=overflow
 		$key.2.parents=31
 		$key.2.oid=$boundary
 		$key.2.commit_oid=$boundary
+		$key.2.name_rev=boundary
 		$key.3.parents=2
 		$key.3.oid=$two
 		$key.3.commit_oid=$two
+		$key.3.name_rev=two
 		EOF
 		git repo structure --format=lines --commit-parents=3 >out &&
 		sed -n "/^$key\./p" out >actual &&
@@ -460,6 +463,11 @@ test_expect_success 'commit parent histogram groups 31 or more parents' '
 			sed -n "s/\.oid=/.commit_oid=/p" out >expect &&
 			sed -n "/\.commit_oid=/p" out >actual &&
 			test_line_count = $limit actual &&
+			test_cmp expect actual &&
+			sed -n "s/^.*\.commit_oid=//p" out >oids &&
+			git name-rev --name-only --annotate-stdin \
+				<oids >expect &&
+			sed -n "s/^.*\.name_rev=//p" out >actual &&
 			test_cmp expect actual &&
 			git repo structure --commit-parents=$limit >table &&
 			sed -n "/^| Largest commits by parent count /,/^$/p" \
@@ -534,12 +542,15 @@ test_expect_success 'largest object lists have independent sorted limits' '
 			$commit_parents.1.parents=2
 			$commit_parents.1.oid=$merge
 			$commit_parents.1.commit_oid=$merge
+			$commit_parents.1.name_rev=main
 			$commit_parents.2.parents=1
 			$commit_parents.2.oid=$child
 			$commit_parents.2.commit_oid=$child
+			$commit_parents.2.name_rev=main~1
 			$commit_sizes.1.inflated_size=$root_size
 			$commit_sizes.1.oid=$root
 			$commit_sizes.1.commit_oid=$root
+			$commit_sizes.1.name_rev=empty
 			$tree_entries.1.entries=3
 			$tree_entries.1.oid=$wide
 			$tree_entries.1.path=
@@ -588,7 +599,7 @@ test_expect_success 'largest object lists have independent sorted limits' '
 			git repo structure "$@" >table &&
 			sed -n "/^| Largest commits by parent count /,/^$/p" \
 				table >parents &&
-			test_grep "^| 1 (commit $merge) *\[1\] | *2 *|$" \
+			test_grep "(commit $merge) (main) *\[1\] | *2 *|$" \
 				parents &&
 			sed -n "/^| Largest blobs by size /,/^$/p" \
 				table >blobs &&
@@ -719,6 +730,150 @@ test_expect_success 'largest object paths are quoted except in NUL output' '
 	)
 '
 
+test_expect_success 'ranked revision names are batched and use all refs' '
+	test_when_finished "rm -rf repo" &&
+	git init --initial-branch=main repo &&
+	(
+		cd repo &&
+		test_commit --no-tag one file &&
+		git tag -a -m tag v1 &&
+		name=tags/v1^0 &&
+		key=objects.commits.largest &&
+		set -- --commit-parents=4 --commit-sizes=4 \
+			--tree-entries=4 --tree-sizes=4 --blob-sizes=4 &&
+		GIT_TRACE2_EVENT="$PWD/trace" git repo structure \
+			--format=lines --progress \
+			--ref-filter=refs/heads/main "$@" >out 2>err &&
+		printf "%s=%s\n" \
+			"$key.by_parents.1.name_rev" "$name" \
+			"$key.by_size.1.name_rev" "$name" >expect &&
+		sed -n "/\.name_rev=/p" out >actual &&
+		test_cmp expect actual &&
+		test_grep "^references.tags.count=0$" out &&
+		test_grep "Resolving revision names" err &&
+		grep "child_start.*\"name-rev\"" trace >children &&
+		test_line_count = 1 children &&
+
+		GIT_TRACE2_EVENT="$PWD/default-trace" \
+			git repo structure >out &&
+		test_grep ! "child_start.*\"name-rev\"" default-trace &&
+		GIT_TRACE2_EVENT="$PWD/tree-trace" git repo structure \
+			--tree-entries=4 --tree-sizes=4 --blob-sizes=4 >out &&
+		test_grep ! "child_start.*\"name-rev\"" tree-trace
+	)
+'
+
+test_expect_success 'ranked revision names quote text but preserve NUL data' '
+	test_when_finished "rm -rf repo" &&
+	name=$(printf "q\042\303\251") &&
+	git init --ref-format=reftable --initial-branch="$name" repo &&
+	(
+		cd repo &&
+		test_commit --no-tag one file &&
+		oid=$(git rev-parse HEAD) &&
+		key=objects.commits.largest.by_parents &&
+		cat >expect <<-\EOF &&
+		objects.commits.largest.by_parents.1.name_rev="q\"\303\251"
+		EOF
+		git -c core.quotePath=true repo structure \
+			--commit-parents=2 --format=lines >out &&
+		sed -n "/\.name_rev=/p" out >actual &&
+		test_cmp expect actual &&
+		cat >pattern <<-\EOF &&
+		("q\"\303\251")
+		EOF
+		git -c core.quotePath=true repo structure \
+			--commit-parents=2 >table &&
+		grep -F -f pattern table >found &&
+		test_line_count = 1 found &&
+
+		printf "%s=\042q\134\042\303\251\042\n" \
+			"$key.1.name_rev" >expect &&
+		git -c core.quotePath=false repo structure \
+			--commit-parents=2 --format=lines >out &&
+		sed -n "/\.name_rev=/p" out >actual &&
+		test_cmp expect actual &&
+
+		git repo structure --format=nul >expect &&
+		printf "%s\n%s\0" \
+			"$key.1.parents" 0 \
+			"$key.1.oid" "$oid" \
+			"$key.1.commit_oid" "$oid" \
+			"$key.1.name_rev" "$name" >>expect &&
+		git repo structure --commit-parents=2 --format=nul >actual &&
+		test_cmp expect actual
+	)
+'
+
+test_expect_success 'revision-name failures leave other statistics intact' '
+	test_when_finished "rm -rf repo" &&
+	git init --initial-branch=main repo &&
+	(
+		cd repo &&
+		test_commit --no-tag one file &&
+		oid=$(git rev-parse HEAD) &&
+		set -- --commit-parents=3 --commit-sizes=3 --format=lines &&
+		git repo structure "$@" >original &&
+		sed "/\.name_rev=/d" original >expect &&
+		printf "%s\n" "$oid" "$oid" >expect-input &&
+		mkdir mock &&
+		write_script mock/git <<-\EOF &&
+		if test "$*" != "name-rev --name-only --annotate-stdin"
+		then
+			echo "unexpected command: $*" >&2
+			exit 1
+		fi
+		cat >name-rev-input || exit 1
+		case "$NAME_REV_MODE" in
+		fail) exit 1 ;;
+		short) printf "first\n" ;;
+		extra) printf "first\nsecond\nthird\n" ;;
+		unterminated) printf "first\nsecond" ;;
+		nul) printf "first\0ignored\nsecond\n" ;;
+		empty) printf "first\n\n" ;;
+		raw) cat name-rev-input ;;
+		crlf) printf "first\r\nsecond\r\n" ;;
+		esac
+		EOF
+		for mode in fail short extra unterminated nul empty
+		do
+			NAME_REV_MODE=$mode git --exec-path="$PWD/mock" \
+				repo structure "$@" >out 2>err &&
+			test_cmp expect-input name-rev-input &&
+			test_cmp expect out &&
+			case "$mode" in
+			fail)
+				test_grep "could not resolve revision names" err
+				;;
+			*)
+				test_grep "unexpected output.*name-rev" err
+				;;
+			esac || return 1
+		done &&
+
+		key=objects.commits.largest &&
+		for mode in raw crlf
+		do
+			NAME_REV_MODE=$mode git --exec-path="$PWD/mock" \
+				repo structure "$@" >out 2>err &&
+			test_must_be_empty err &&
+			test_cmp expect-input name-rev-input &&
+			sed "/\.name_rev=/d" out >actual &&
+			test_cmp expect actual &&
+			case "$mode" in
+			raw) first=$oid second=$oid ;;
+			crlf) first=first second=second ;;
+			esac &&
+			printf "%s=%s\n" \
+				"$key.by_parents.1.name_rev" "$first" \
+				"$key.by_size.1.name_rev" "$second" \
+				>expect-names &&
+			sed -n "/\.name_rev=/p" out >actual &&
+			test_cmp expect-names actual || return 1
+		done
+	)
+'
+
 for spec in \
 	"commit-parents showCommitParents commits by_parents parents" \
 	"commit-sizes showCommitSizes commits by_size inflated_size" \
@@ -731,7 +886,7 @@ do
 
 	test_expect_success "--$option is opt-in and overrides its config" '
 		test_when_finished "rm -rf repo" &&
-		git init repo &&
+		git init --initial-branch=main repo &&
 		(
 			cd repo &&
 			test_commit --no-tag one file &&
@@ -751,7 +906,10 @@ do
 			$key.1.oid=$oid
 			EOF
 			case "$type" in
-			commits) echo "$key.1.commit_oid=$oid" >>expect ;;
+			commits)
+				printf "%s=%s\n" "$key.1.commit_oid" "$oid" \
+					"$key.1.name_rev" main >>expect
+				;;
 			trees) echo "$key.1.path=" >>expect ;;
 			blobs) echo "$key.1.path=file" >>expect ;;
 			esac &&
@@ -765,7 +923,7 @@ do
 			test_cmp out decoded &&
 			git repo structure "--$option=3" >table &&
 			case "$type" in
-			commits) test_grep -F "(commit $oid)" table ;;
+			commits) test_grep -F "(commit $oid) (main)" table ;;
 			*) test_grep ! -F "(commit " table ;;
 			esac &&
 			git -c repo.structure.$config=3 repo structure \
