@@ -15,10 +15,13 @@
 #include "ref-filter.h"
 #include "refs.h"
 #include "revision.h"
+#include "run-command.h"
 #include "setup.h"
 #include "strbuf.h"
 #include "string-list.h"
+#include "strvec.h"
 #include "shallow.h"
+#include "trace2.h"
 #include "tree.h"
 #include "tree-walk.h"
 #include "utf8.h"
@@ -311,6 +314,7 @@ struct top_object {
 	struct object_data object;
 	char *path;
 	struct object_id containing_commit_oid;
+	char *name_rev;
 };
 
 struct top_objects {
@@ -885,6 +889,7 @@ static void top_objects_table_print(const char *title, struct top_objects *top,
 	for (size_t i = 0; i < top->nr; i++) {
 		struct object_data *item = &top->data[i].object;
 		const char *path = top->data[i].path;
+		const char *name_rev = top->data[i].name_rev;
 		const struct object_id *commit_oid =
 			&top->data[i].containing_commit_oid;
 
@@ -897,6 +902,11 @@ static void top_objects_table_print(const char *title, struct top_objects *top,
 		if (!is_null_oid(commit_oid))
 			strbuf_addf(&label, _(" (commit %s)"),
 				    oid_to_hex(commit_oid));
+		if (name_rev) {
+			strbuf_addstr(&label, " (");
+			quote_c_style(name_rev, &label, NULL, 0);
+			strbuf_addch(&label, ')');
+		}
 
 		if (by_size)
 			stats_table_object_size_addf(&table, &item->oid,
@@ -1036,6 +1046,11 @@ static void top_objects_keyvalue_print(const char *prefix, const char *metric,
 			       prefix, (uintmax_t)(i + 1), key_delim,
 			       oid_to_hex(&item->containing_commit_oid),
 			       value_delim);
+		if (item->name_rev) {
+			printf("%s.%" PRIuMAX ".", prefix, (uintmax_t)(i + 1));
+			print_keyvalue_path("name_rev", key_delim,
+					    item->name_rev, value_delim);
+		}
 	}
 }
 
@@ -1383,8 +1398,10 @@ static void init_top_objects(struct top_objects *top, int limit,
 
 static void clear_top_objects(struct top_objects *top)
 {
-	for (size_t i = 0; i < top->nr; i++)
+	for (size_t i = 0; i < top->nr; i++) {
 		free(top->data[i].path);
+		free(top->data[i].name_rev);
+	}
 	free(top->data);
 }
 
@@ -1411,6 +1428,8 @@ static void maybe_insert_top_object(struct top_objects *top,
 	top->data[pos].path = xstrdup_or_null(path);
 	oidcpy(&top->data[pos].containing_commit_oid,
 	       commit_oid ? commit_oid : null_oid(the_repository->hash_algo));
+	/* Revision names are resolved only after ranking is complete. */
+	top->data[pos].name_rev = NULL;
 }
 
 static size_t count_tree_entries(struct object *obj)
@@ -1589,6 +1608,85 @@ static void structure_count_objects(struct object_stats *stats,
 	stop_progress(&data.progress);
 }
 
+static void structure_lookup_name_revs(struct object_stats *stats,
+				       struct repository *repo,
+				       int show_progress)
+{
+	struct top_objects *lists[] = {
+		&stats->top_commit_parents,
+		&stats->top_commit_sizes,
+		&stats->top_tree_entries,
+		&stats->top_tree_sizes,
+		&stats->top_blob_sizes,
+	};
+	struct child_process cp = CHILD_PROCESS_INIT;
+	struct strbuf in = STRBUF_INIT, out = STRBUF_INIT;
+	struct string_list names = STRING_LIST_INIT_NODUP;
+	struct progress *progress = NULL;
+	size_t nr = 0, k = 0;
+	int failed = 1;
+
+	for (size_t i = 0; i < ARRAY_SIZE(lists); i++) {
+		for (size_t j = 0; j < lists[i]->nr; j++) {
+			struct top_object *item = &lists[i]->data[j];
+
+			if (is_null_oid(&item->containing_commit_oid))
+				continue;
+			strbuf_addf(&in, "%s\n",
+				    oid_to_hex(&item->containing_commit_oid));
+			nr++;
+		}
+	}
+	if (!nr)
+		return;
+
+	trace2_region_enter("repo", "name-rev", repo);
+	if (show_progress)
+		progress = start_progress(repo,
+					  _("Resolving revision names"), nr);
+
+	cp.git_cmd = 1;
+	strvec_pushl(&cp.args, "name-rev", "--name-only",
+		     "--annotate-stdin", NULL);
+	if (pipe_command(&cp, in.buf, in.len, &out, 0, NULL, 0)) {
+		warning(_("could not resolve revision names"));
+		goto cleanup;
+	}
+	if (!out.len || out.buf[out.len - 1] != '\n' ||
+	    memchr(out.buf, '\0', out.len))
+		goto invalid_output;
+	strbuf_trim_trailing_newline(&out);
+	string_list_split_in_place_f(&names, out.buf, "\n", -1,
+				     STRING_LIST_SPLIT_TRIM);
+	if (names.nr != nr)
+		goto invalid_output;
+	for (size_t i = 0; i < names.nr; i++)
+		if (!*names.items[i].string)
+			goto invalid_output;
+
+	for (size_t i = 0; i < ARRAY_SIZE(lists); i++) {
+		for (size_t j = 0; j < lists[i]->nr; j++) {
+			struct top_object *item = &lists[i]->data[j];
+
+			if (is_null_oid(&item->containing_commit_oid))
+				continue;
+			item->name_rev = xstrdup(names.items[k++].string);
+			display_progress(progress, k);
+		}
+	}
+	failed = 0;
+	goto cleanup;
+
+invalid_output:
+	warning(_("unexpected output from 'git name-rev'"));
+cleanup:
+	stop_progress_msg(&progress, failed ? _("failed") : _("done"));
+	trace2_region_leave("repo", "name-rev", repo);
+	string_list_clear(&names, 0);
+	strbuf_release(&in);
+	strbuf_release(&out);
+}
+
 struct repo_structure_opts {
 	int top_nr;
 	int commit_parents;
@@ -1707,6 +1805,7 @@ static int cmd_repo_structure(int argc, const char **argv, const char *prefix,
 				   show_progress);
 	structure_count_objects(&stats.objects, &revs, repo, opts.top_nr,
 				show_progress);
+	structure_lookup_name_revs(&stats.objects, repo, show_progress);
 
 	switch (format) {
 	case FORMAT_TABLE:
