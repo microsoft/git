@@ -56,6 +56,7 @@ static struct survey_refs_wanted refs_if_unspecified = {
 struct survey_opts {
 	int verbose;
 	int show_progress;
+	int show_json;
 
 	int show_largest_commits_by_nr_parents;
 	int show_largest_commits_by_size_bytes;
@@ -73,6 +74,7 @@ struct survey_opts {
 static struct survey_opts survey_opts = {
 	.verbose = 0,
 	.show_progress = -1, /* defaults to isatty(2) */
+	.show_json = 0, /* defaults to pretty */
 
 	/*
 	 * Show the largest `n` objects for some scaling dimension.
@@ -154,6 +156,7 @@ static void fixup_refs_wanted(void)
 static struct option survey_options[] = {
 	OPT__VERBOSE(&survey_opts.verbose, N_("verbose output")),
 	OPT_BOOL(0, "progress", &survey_opts.show_progress, N_("show progress")),
+	OPT_BOOL(0, "json",     &survey_opts.show_json, N_("report stats in JSON")),
 
 	OPT_BOOL_F(0, "all-refs", &survey_opts.refs.want_all_refs, N_("include all refs"),          PARSE_OPT_NONEG),
 
@@ -183,6 +186,10 @@ static int survey_load_config_cb(const char *var, const char *value,
 	}
 	if (!strcmp(var, "survey.progress")) {
 		survey_opts.show_progress = git_config_bool(var, value);
+		return 0;
+	}
+	if (!strcmp(var, "survey.json")) {
+		survey_opts.show_json = git_config_bool(var, value);
 		return 0;
 	}
 
@@ -1490,6 +1497,14 @@ static void survey_emit_trace2(void)
 	json_blobs_section(NULL, 0, 1);
 }
 
+/*
+ * Print all of the stats that we have collected in a more pretty format.
+ */
+static void survey_print_results_pretty(void)
+{
+	printf("TODO....\n");
+}
+
 int cmd_survey(int argc, const char **argv, const char *prefix)
 {
 	survey_load_config();
@@ -1538,7 +1553,10 @@ int cmd_survey(int argc, const char **argv, const char *prefix)
 	survey_phase_refs(the_repository);
 
 	survey_emit_trace2();
-	survey_print_json();
+	if (survey_opts.show_json)
+		survey_print_json();
+	else
+		survey_print_results_pretty();
 
 	strvec_clear(&survey_vec_refs_wanted);
 	free_large_item_vec(survey_stats.commits.vec_largest_by_nr_parents);
