@@ -32,6 +32,9 @@ OPTIONS
 --progress::
 	Show progress.  This is automatically enabled when interactive.
 
+--json::
+	Print results in JSON rather than in a human-friendly format.
+
 Ref Selection
 ~~~~~~~~~~~~~
 
