@@ -338,8 +338,9 @@ struct large_item {
 
 	/*
 	 * For blobs and trees the name field is the pathname of the
-	 * file or directory.  Root trees will have a zero-length
-	 * name.  The name field is not currenly used for commits.
+	 * file or directory (as reported by the treewalk). Root trees
+	 * are reported with a zero-length name, but we'll fix them up.
+	 * The name field is not currenly used for commits.
 	 */
 	struct strbuf *name;
 
@@ -358,16 +359,24 @@ struct large_item {
 	struct strbuf *name_rev;
 };
 
+struct large_item_vec_labels {
+	const char *dimension;
+	const char *item;
+};
+
 struct large_item_vec {
-	char *dimension_label;
-	char *item_label;
+	const struct large_item_vec_labels *labels_json;
+	const struct large_item_vec_labels *labels_pretty;
 	uint64_t nr_items;
+	enum object_type type;
 	struct large_item items[FLEX_ARRAY]; /* nr_items */
 };
 
-static struct large_item_vec *alloc_large_item_vec(const char *dimension_label,
-						   const char *item_label,
-						   uint64_t nr_items)
+static struct large_item_vec *alloc_large_item_vec(
+	const struct large_item_vec_labels *labels_json,
+	const struct large_item_vec_labels *labels_pretty,
+	uint64_t nr_items,
+	enum object_type type)
 {
 	struct large_item_vec *vec;
 	size_t flex_len = nr_items * sizeof(struct large_item);
@@ -377,9 +386,10 @@ static struct large_item_vec *alloc_large_item_vec(const char *dimension_label,
 		return NULL;
 
 	vec = xcalloc(1, (sizeof(struct large_item_vec) + flex_len));
-	vec->dimension_label = strdup(dimension_label);
-	vec->item_label = strdup(item_label);
+	vec->labels_json = labels_json;
+	vec->labels_pretty = labels_pretty;
 	vec->nr_items = nr_items;
+	vec->type = type;
 
 	for (k = 0; k < nr_items; k++) {
 		struct strbuf *p = xcalloc(1, sizeof(struct strbuf));
@@ -404,8 +414,6 @@ static void free_large_item_vec(struct large_item_vec *vec)
 		}
 	}
 
-	free(vec->dimension_label);
-	free(vec->item_label);
 	free(vec);
 }
 
@@ -446,6 +454,15 @@ static void maybe_insert_large_item(struct large_item_vec *vec,
 		strbuf_reset(pbuf_temp);
 		if (name && *name)
 			strbuf_addstr(pbuf_temp, name);
+		else if (vec->type == OBJ_TREE) {
+			/*
+			 * NEEDSWORK: Would it be better to wait and create
+			 * a name of the form "<name_rev>^{tree}" after the
+			 * treewalk is finished?
+			 */
+			strbuf_addf(pbuf_temp, "%s^{tree}",
+				    oid_to_hex(containing_commit_oid));
+		}
 
 		/* push items[k..] down one and insert data for this item here */
 
@@ -615,6 +632,95 @@ struct survey_stats {
 };
 
 static struct survey_stats survey_stats = { 0 };
+
+static void alloc_commit_by_parents(void)
+{
+	static struct large_item_vec_labels json = {
+		.dimension = "largest_commits_by_nr_parents",
+		.item = "nr_parents",
+	};
+	static struct large_item_vec_labels pretty = {
+		.dimension = "Largest Commits by Number of Parents",
+		.item = "Parents",
+	};
+
+	if (survey_opts.show_largest_commits_by_nr_parents)
+		survey_stats.commits.vec_largest_by_nr_parents =
+			alloc_large_item_vec(&json, &pretty,
+					     survey_opts.show_largest_commits_by_nr_parents,
+					     OBJ_COMMIT);
+}
+
+static void alloc_commit_by_size(void) {
+	static struct large_item_vec_labels json = {
+		.dimension = "largest_commits_by_size_bytes",
+		.item = "size",
+	};
+	static struct large_item_vec_labels pretty = {
+		.dimension = "Largest Commits by Size in Bytes",
+		.item = "Size",
+	};
+
+	if (survey_opts.show_largest_commits_by_size_bytes)
+		survey_stats.commits.vec_largest_by_size_bytes =
+			alloc_large_item_vec(&json, &pretty,
+					     survey_opts.show_largest_commits_by_size_bytes,
+					     OBJ_COMMIT);
+}
+
+static void alloc_tree_by_entries(void)
+{
+	static struct large_item_vec_labels json = {
+		.dimension = "largest_trees_by_nr_entries",
+		.item = "nr_entries",
+	};
+	static struct large_item_vec_labels pretty = {
+		.dimension = "Largest Trees by Number of Entries",
+		.item = "Entries",
+	};
+
+	if (survey_opts.show_largest_trees_by_nr_entries)
+		survey_stats.trees.vec_largest_by_nr_entries =
+			alloc_large_item_vec(&json, &pretty,
+					     survey_opts.show_largest_trees_by_nr_entries,
+					     OBJ_TREE);
+}
+
+static void alloc_tree_by_size(void)
+{
+	static struct large_item_vec_labels json = {
+		.dimension = "largest_trees_by_size_bytes",
+		.item = "size",
+	};
+	static struct large_item_vec_labels pretty = {
+		.dimension = "Largest Trees by Size in Bytes",
+		.item = "Size",
+	};
+
+	if (survey_opts.show_largest_trees_by_size_bytes)
+		survey_stats.trees.vec_largest_by_size_bytes =
+			alloc_large_item_vec(&json, &pretty,
+					     survey_opts.show_largest_trees_by_size_bytes,
+					     OBJ_TREE);
+}
+
+static void alloc_blob_by_size(void)
+{
+	static struct large_item_vec_labels json = {
+		.dimension = "largest_blobs_by_size_bytes",
+		.item = "size",
+	};
+	static struct large_item_vec_labels pretty = {
+		.dimension = "Largest Blobs by Size in Bytes",
+		.item = "Size",
+	};
+
+	if (survey_opts.show_largest_blobs_by_size_bytes)
+		survey_stats.blobs.vec_largest_by_size_bytes =
+			alloc_large_item_vec(&json, &pretty,
+					     survey_opts.show_largest_blobs_by_size_bytes,
+					     OBJ_BLOB);
+}
 
 static void do_load_refs(struct ref_array *ref_array)
 {
@@ -1351,7 +1457,7 @@ static void write_large_item_vec_json(struct json_writer *jw,
 	if (!vec || !vec->nr_items)
 		return;
 
-	jw_object_inline_begin_array(jw, vec->dimension_label);
+	jw_object_inline_begin_array(jw, vec->labels_json->dimension);
 	{
 		int k;
 
@@ -1362,7 +1468,7 @@ static void write_large_item_vec_json(struct json_writer *jw,
 
 			jw_array_inline_begin_object(jw);
 			{
-				jw_object_intmax(jw, vec->item_label, pk->size);
+				jw_object_intmax(jw, vec->labels_json->item, pk->size);
 				jw_object_string(jw, "oid", oid_to_hex(&pk->oid));
 				if (pk->name->len)
 					jw_object_string(jw, "name", pk->name->buf);
@@ -1497,12 +1603,629 @@ static void survey_emit_trace2(void)
 	json_blobs_section(NULL, 0, 1);
 }
 
+static void fmt_txt_line(struct strbuf *buf, int indent, const char *txt)
+{
+	if (indent)
+		strbuf_addchars(buf, ' ', indent);
+
+	strbuf_addstr(buf, txt);
+
+	strbuf_addch(buf, '\n');
+}
+
+static void fmt_txt_pair_ui64(struct strbuf *buf,
+			      int indent,
+			      const char *label,
+			      uint64_t value)
+{
+	int column0 = 62;
+
+	if (indent)
+		strbuf_addchars(buf, ' ', indent);
+
+	strbuf_addf(buf, "%-*s : %14"PRIu64,
+		    column0 - indent, label,
+		    value);
+
+	strbuf_addch(buf, '\n');
+}
+
+static void fmt_size_tbl_caption(struct strbuf *buf,
+				 int indent,
+				 const char *caption)
+{
+	strbuf_addch(buf, '\n');
+	fmt_txt_line(buf, indent, caption);
+}
+
+static void fmt_size_tbl_hdr(struct strbuf *buf,
+			     int indent,
+			     const char *bucket_hdr,
+			     const char *count_hdr,
+			     const char *size_hdr,
+			     const char *disk_size_hdr)
+{
+	int column0 = 28;
+
+	if (indent)
+		strbuf_addchars(buf, ' ', indent);
+
+	strbuf_addf(buf, "%-*s | %14s | %14s | %14s",
+		    column0 - indent, bucket_hdr,
+		    count_hdr, size_hdr, disk_size_hdr);
+
+	strbuf_addch(buf, '\n');
+}
+
+static void fmt_size_tbl_hr(struct strbuf *buf,
+			    int indent)
+{
+	int column0 = 28;
+
+	if (indent)
+		strbuf_addchars(buf, ' ', indent);
+
+	strbuf_addchars(buf, '-', column0 - indent);
+	strbuf_addstr(buf, "-+-");
+	strbuf_addchars(buf, '-', 14);
+	strbuf_addstr(buf, "-+-");
+	strbuf_addchars(buf, '-', 14);
+	strbuf_addstr(buf, "-+-");
+	strbuf_addchars(buf, '-', 14);
+
+	strbuf_addch(buf, '\n');
+}
+
+static void fmt_size_tbl_row(struct strbuf *buf,
+			     int indent,
+			     const char *bucket,
+			     uint64_t count,
+			     uint64_t size,
+			     uint64_t disk_size)
+{
+	int column0 = 28;
+
+	if (indent)
+		strbuf_addchars(buf, ' ', indent);
+
+	strbuf_addf(buf, "%-*s | %14"PRIu64" | %14"PRIu64" | %14"PRIu64,
+		    column0 - indent, bucket, count, size, disk_size);
+
+	strbuf_addch(buf, '\n');
+}
+
+static void fmt_qbin(struct strbuf *buf,
+		     int indent, const char *title_caption,
+		     const char *bucket_hdr,
+		     struct obj_hist_bin qbin[QBIN_LEN])
+{
+	struct strbuf bucket = STRBUF_INIT;
+	uint64_t lower = 0;
+	uint64_t upper = QBIN_MASK;
+	int k;
+
+	fmt_size_tbl_caption(buf, indent, title_caption);
+	fmt_size_tbl_hr(buf, indent);
+	fmt_size_tbl_hdr(buf, indent, bucket_hdr, "Count", "Size", "Disk Size");
+	fmt_size_tbl_hr(buf, indent);
+
+	for (k = 0; k < QBIN_LEN; k++) {
+		struct obj_hist_bin *p = &qbin[k];
+		uint64_t lower_k = lower;
+		uint64_t upper_k = upper;
+
+		lower = upper+1;
+		upper = (upper << QBIN_SHIFT) + QBIN_MASK;
+
+		if (!p->cnt_seen)
+			continue;
+
+		strbuf_reset(&bucket);
+		strbuf_addf(&bucket, "%"PRIu64"..%"PRIu64, lower_k, upper_k);
+
+		fmt_size_tbl_row(buf, indent, bucket.buf,
+			     p->cnt_seen, p->sum_size, p->sum_disk_size);
+	}
+	fmt_size_tbl_hr(buf, indent);
+
+	strbuf_release(&bucket);
+}
+
+static void fmt_hbin(struct strbuf *buf,
+		     int indent, const char *title_caption,
+		     const char *bucket_hdr,
+		     struct obj_hist_bin hbin[HBIN_LEN])
+{
+	struct strbuf bucket = STRBUF_INIT;
+	uint64_t lower = 0;
+	uint64_t upper = HBIN_MASK;
+	int k;
+
+	fmt_size_tbl_caption(buf, indent, title_caption);
+	fmt_size_tbl_hr(buf, indent);
+	fmt_size_tbl_hdr(buf, indent, bucket_hdr, "Count", "Size", "Disk Size");
+	fmt_size_tbl_hr(buf, indent);
+
+	for (k = 0; k < HBIN_LEN; k++) {
+		struct obj_hist_bin *p = &hbin[k];
+		uint64_t lower_k = lower;
+		uint64_t upper_k = upper;
+
+		lower = upper+1;
+		upper = (upper << HBIN_SHIFT) + HBIN_MASK;
+
+		if (!p->cnt_seen)
+			continue;
+
+		strbuf_reset(&bucket);
+		strbuf_addf(&bucket, "%"PRIu64"..%"PRIu64, lower_k, upper_k);
+
+		fmt_size_tbl_row(buf, indent, bucket.buf,
+				 p->cnt_seen, p->sum_size, p->sum_disk_size);
+	}
+	fmt_size_tbl_hr(buf, indent);
+
+	strbuf_release(&bucket);
+}
+
+static void fmt_pbin_hdr(struct strbuf *buf,
+			 int indent,
+			 const char *bucket,
+			 const char *count)
+{
+	int column0 = 28;
+
+	if (indent)
+		strbuf_addchars(buf, ' ', indent);
+
+	strbuf_addf(buf, "%-*s | %14s",
+		    column0 - indent, bucket,
+		    count);
+
+	strbuf_addch(buf, '\n');
+}
+
+static void fmt_pbin_hr(struct strbuf *buf,
+			int indent)
+{
+	int column0 = 28;
+
+	if (indent)
+		strbuf_addchars(buf, ' ', indent);
+
+	strbuf_addchars(buf, '-', column0 - indent);
+	strbuf_addstr(buf, "-+-");
+	strbuf_addchars(buf, '-', 14);
+
+	strbuf_addch(buf, '\n');
+}
+
+static void fmt_pbin_row(struct strbuf *buf,
+			 int indent,
+			 int nr,
+			 int count)
+{
+	struct strbuf bucket = STRBUF_INIT;
+	int column0 = 28;
+
+	if (indent)
+		strbuf_addchars(buf, ' ', indent);
+
+	strbuf_addf(&bucket, "%2d", nr);
+	strbuf_addf(buf, "%-*s | %14d",
+		    column0 - indent, bucket.buf,
+		    count);
+
+	strbuf_addch(buf, '\n');
+	strbuf_release(&bucket);
+}
+
+static void fmt_base_object(struct strbuf *buf,
+			    int indent,
+			    struct survey_stats_base_object *base)
+{
+	int indent1 = indent + 4;
+
+	fmt_txt_pair_ui64(buf, indent, "Total Count", base->cnt_seen);
+
+	strbuf_addch(buf, '\n');
+	fmt_txt_line(buf, indent, "Count by Storage Location");
+	if (base->cnt_missing)
+		fmt_txt_pair_ui64(buf, indent1, "Missing", base->cnt_missing);
+	if (base->cnt_cached)
+		fmt_txt_pair_ui64(buf, indent1, "Cached", base->cnt_cached);
+	if (base->cnt_loose)
+		fmt_txt_pair_ui64(buf, indent1, "Loose", base->cnt_loose);
+	if (base->cnt_packed)
+		fmt_txt_pair_ui64(buf, indent1, "Packed", base->cnt_packed);
+	if (base->cnt_dbcached)
+		fmt_txt_pair_ui64(buf, indent1, "DBCached", base->cnt_dbcached);
+
+	strbuf_addch(buf, '\n');
+	fmt_txt_pair_ui64(buf, indent, "Total Size in Bytes", base->sum_size);
+	fmt_txt_pair_ui64(buf, indent, "Total Disk Size in Bytes", base->sum_disk_size);
+
+	fmt_hbin(buf, indent, "Histogram by Size in Bytes", "Byte Range", base->size_hbin);
+}
+
+static void fmt_large_item_hdr(struct strbuf *buf,
+			       int indent,
+			       int name_length,
+			       int name_rev_length,
+			       const char *item_hdr_label)
+{
+	int column0 = the_hash_algo->hexsz;
+
+	if (indent)
+		strbuf_addchars(buf, ' ', indent);
+
+	strbuf_addf(buf, "%-*s | %14s", column0, "OID", item_hdr_label);
+	if (name_length)
+		strbuf_addf(buf, " | %-*s", name_length, "Name");
+	strbuf_addf(buf, " | %-*s", name_rev_length, "Name Rev");
+
+	strbuf_addch(buf, '\n');
+}
+
+static void fmt_large_item_hr(struct strbuf *buf,
+			      int indent,
+			      int name_length,
+			      int name_rev_length)
+{
+	int column0 = the_hash_algo->hexsz;
+
+	if (indent)
+		strbuf_addchars(buf, ' ', indent);
+
+	strbuf_addchars(buf, '-', column0);
+	strbuf_addstr(buf, "-+-");
+	strbuf_addchars(buf, '-', 14);
+	if (name_length) {
+		strbuf_addstr(buf, "-+-");
+		strbuf_addchars(buf, '-', name_length);
+	}
+	strbuf_addstr(buf, "-+-");
+	strbuf_addchars(buf, '-', name_rev_length);
+
+	strbuf_addch(buf, '\n');
+}
+
+static void fmt_large_item_row(struct strbuf *buf,
+			       int indent,
+			       int name_length,
+			       int name_rev_length,
+			       struct large_item *pitem)
+{
+	int column0 = the_hash_algo->hexsz;
+
+	if (indent)
+		strbuf_addchars(buf, ' ', indent);
+
+	strbuf_addf(buf, "%-*s | %14"PRIu64,
+		    column0, oid_to_hex(&pitem->oid),
+		    pitem->size);
+	if (name_length)
+		strbuf_addf(buf, " | %-*s", name_length,
+			    (pitem->name ? pitem->name->buf: ""));
+	strbuf_addf(buf, " | %-*s", name_rev_length, pitem->name_rev->buf);
+
+	strbuf_addch(buf, '\n');
+}
+
+static void fmt_large_item_vec(struct strbuf *buf,
+			       int indent,
+			       struct large_item_vec *pvec)
+{
+	int name_length = 0;
+	int name_rev_length = 10;
+	int k;
+
+	if (pvec->type != OBJ_COMMIT) {
+		/* Add "Name" column for trees and blobs. */
+		for (k = 0; k < pvec->nr_items; k++)
+			if (pvec->items[k].name && pvec->items[k].name->len > name_length)
+				name_length = pvec->items[k].name->len;
+		if (name_length)
+			if (name_length < 4) /* strlen("Name") */
+				name_length = 4;
+	}
+
+	for (k = 0; k < pvec->nr_items; k++) {
+		struct large_item *pk = &pvec->items[k];
+		if (pk->name_rev->len > name_rev_length)
+			name_rev_length = pk->name_rev->len;
+	}
+
+	strbuf_addch(buf, '\n');
+	fmt_txt_line(buf, indent, pvec->labels_pretty->dimension);
+	fmt_large_item_hr(buf, indent, name_length, name_rev_length);
+	fmt_large_item_hdr(buf, indent, name_length, name_rev_length, pvec->labels_pretty->item);
+	fmt_large_item_hr(buf, indent, name_length, name_rev_length);
+
+	for (k = 0; k < pvec->nr_items; k++) {
+		struct large_item *pk = &pvec->items[k];
+		if (is_null_oid(&pk->oid))
+			break;
+
+		fmt_large_item_row(buf, indent, name_length, name_rev_length, pk);
+	}
+
+	fmt_large_item_hr(buf, indent, name_length, name_rev_length);
+}
+
+static void pretty_print_survey_hdr(void)
+{
+	struct strbuf buf = STRBUF_INIT;
+	int indent = 0;
+	int k;
+
+	const char *intro[] = {
+		"",
+		"===============================================================================",
+		"Git Survey Results",
+		"===============================================================================",
+		"",
+		NULL
+	};
+
+	k = 0;
+	while (intro[k])
+		fmt_txt_line(&buf, indent, intro[k++]);
+
+	/*
+	 * NEEDSWORK: Consider adding information about the repo pathname,
+	 * the date, command line args, git version, etc.
+	 */
+
+	fwrite(buf.buf, 1, buf.len, stdout);
+	strbuf_release(&buf);
+}
+
+static void pretty_print_overview(int indent)
+{
+	struct survey_stats_refs *prs = &survey_stats.refs;
+	struct survey_stats_commits *psc = &survey_stats.commits;
+	struct survey_stats_trees *pst = &survey_stats.trees;
+	struct survey_stats_blobs *psb = &survey_stats.blobs;
+	struct strbuf buf = STRBUF_INIT;
+	int indent1 = indent + 4;
+	int indent2 = indent + 8;
+	int k;
+
+	const char *intro[] = {
+		"",
+		"OVERVIEW",
+		"-------------------------------------------------------------------------------",
+		"",
+		NULL
+	};
+
+	k = 0;
+	while (intro[k])
+		fmt_txt_line(&buf, indent, intro[k++]);
+
+	fmt_txt_pair_ui64(&buf, indent1, "Total Number of Refs", prs->cnt_total);
+
+	fmt_size_tbl_caption(&buf, indent1, "Overview by Object Type");
+
+	fmt_size_tbl_hr(&buf, indent1);
+	fmt_size_tbl_hdr(&buf, indent1, "Type", "Count", "Size", "Disk Size");
+	fmt_size_tbl_hr(&buf, indent1);
+
+	fmt_size_tbl_row(&buf, indent2, "Commits", psc->base.cnt_seen, psc->base.sum_size, psc->base.sum_disk_size);
+	fmt_size_tbl_row(&buf, indent2, "Trees", pst->base.cnt_seen, pst->base.sum_size, pst->base.sum_disk_size);
+	fmt_size_tbl_row(&buf, indent2, "Blobs", psb->base.cnt_seen, psb->base.sum_size, psb->base.sum_disk_size);
+
+	fmt_size_tbl_hr(&buf, indent1);
+	fmt_size_tbl_row(&buf, indent1, "Total",
+			psc->base.cnt_seen + pst->base.cnt_seen + psb->base.cnt_seen,
+			psc->base.sum_size + pst->base.sum_size + psb->base.sum_size,
+			psc->base.sum_disk_size + pst->base.sum_disk_size + psb->base.sum_disk_size);
+	fmt_size_tbl_hr(&buf, indent1);
+
+	strbuf_addch(&buf, '\n');
+	fwrite(buf.buf, 1, buf.len, stdout);
+	strbuf_release(&buf);
+}
+
+/*
+ * Pretty print information on the set of REFS that we examined.
+ */
+static void pretty_print_refs(int indent)
+{
+	struct survey_refs_wanted *prw = &survey_opts.refs;
+	struct survey_stats_refs *prs = &survey_stats.refs;
+	struct strbuf buf = STRBUF_INIT;
+	int indent1 = indent + 4;
+	int indent2 = indent + 8;
+	int indent3 = indent + 12;
+	int k;
+
+	const char *intro[] = {
+		"",
+		"REFS",
+		"-------------------------------------------------------------------------------",
+		"",
+		NULL
+	};
+
+	k = 0;
+	while (intro[k])
+		fmt_txt_line(&buf, indent, intro[k++]);
+
+	fmt_txt_pair_ui64(&buf, indent1, "Total Number of Refs", prs->cnt_total);
+
+	strbuf_addch(&buf, '\n');
+	fmt_txt_line(&buf, indent1, "Reference Count by Type");
+
+	if (prw->want_remotes && prs->cnt_remotes)
+		fmt_txt_pair_ui64(&buf, indent2, "Remote Tracking Branches", prs->cnt_remotes);
+
+	if (prw->want_branches && prs->cnt_branches)
+		fmt_txt_pair_ui64(&buf, indent2, "Branches", prs->cnt_branches);
+	if (prw->want_tags && prs->cnt_lightweight_tags)
+		fmt_txt_pair_ui64(&buf, indent2, "Tags (Lightweight)", prs->cnt_lightweight_tags);
+	if (prw->want_tags && prs->cnt_annotated_tags)
+		fmt_txt_pair_ui64(&buf, indent2, "Tags (Annotated)", prs->cnt_annotated_tags);
+	if (prw->want_detached && prs->cnt_detached)
+		fmt_txt_pair_ui64(&buf, indent2, "Detached", prs->cnt_detached);
+	if (prw->want_other && prs->cnt_other)
+		fmt_txt_pair_ui64(&buf, indent2, "Other (Notes and Stashes)", prs->cnt_other);
+
+	if (prs->cnt_symref)
+		fmt_txt_pair_ui64(&buf, indent2, "Symbolic Refs (like 'HEAD')", prs->cnt_symref);
+
+	strbuf_addch(&buf, '\n');
+	fmt_txt_pair_ui64(&buf, indent1, "Reference Count by Class", strintmap_get_size(&prs->refsmap));
+	{
+		struct hashmap_iter iter;
+		struct strmap_entry *entry;
+
+		strintmap_for_each_entry(&prs->refsmap, &iter, entry) {
+			const char *key = entry->key;
+			intptr_t count = (intptr_t)entry->value;
+			int value = count;
+
+			fmt_txt_pair_ui64(&buf, indent2, key, value);
+		}
+	}
+
+	strbuf_addch(&buf, '\n');
+	fmt_txt_line(&buf, indent1, "Reference Count by Storage Location");
+	fmt_txt_pair_ui64(&buf, indent2, "Loose", prs->cnt_loose);
+	fmt_txt_pair_ui64(&buf, indent2, "Packed", prs->cnt_packed);
+
+	strbuf_addch(&buf, '\n');
+	fmt_txt_line(&buf, indent1, "String Length of Refnames");
+	if (prs->len_sum_remote_refnames) {
+		fmt_txt_line(&buf, indent2, "Remote Refs");
+		fmt_txt_pair_ui64(&buf, indent3, "Max", prs->len_max_remote_refname);
+		fmt_txt_pair_ui64(&buf, indent3, "Sum", prs->len_sum_remote_refnames);
+		}
+	if (prs->len_sum_local_refnames) {
+		fmt_txt_line(&buf, indent2, "Local Refs");
+		fmt_txt_pair_ui64(&buf, indent3, "Max", prs->len_max_local_refname);
+		fmt_txt_pair_ui64(&buf, indent3, "Sum", prs->len_sum_local_refnames);
+	}
+
+	strbuf_addch(&buf, '\n');
+	fwrite(buf.buf, 1, buf.len, stdout);
+	strbuf_release(&buf);
+}
+
+static void pretty_print_commits(int indent)
+{
+	struct survey_stats_commits *psc = &survey_stats.commits;
+	struct survey_stats_base_object *base = &psc->base;
+	struct strbuf buf = STRBUF_INIT;
+	int indent1 = indent + 4;
+	int k;
+
+	const char *intro[] = {
+		"",
+		"COMMITS",
+		"-------------------------------------------------------------------------------",
+		"",
+		NULL
+	};
+
+	k = 0;
+	while (intro[k])
+		fmt_txt_line(&buf, indent, intro[k++]);
+
+	fmt_base_object(&buf, indent1, base);
+
+	fmt_large_item_vec(&buf, indent1, psc->vec_largest_by_size_bytes);
+
+	strbuf_addch(&buf, '\n');
+	fmt_txt_line(&buf, indent1, "Histogram by Number of Parents");
+	fmt_pbin_hr(&buf, indent1);
+	fmt_pbin_hdr(&buf, indent1, "Parents", "Count");
+	fmt_pbin_hr(&buf, indent1);
+	for (k = 0; k < PBIN_VEC_LEN; k++)
+		if (psc->parent_cnt_pbin[k])
+			fmt_pbin_row(&buf, indent1, k, psc->parent_cnt_pbin[k]);
+	fmt_pbin_hr(&buf, indent1);
+
+	fmt_large_item_vec(&buf, indent1, psc->vec_largest_by_nr_parents);
+
+	strbuf_addch(&buf, '\n');
+	fwrite(buf.buf, 1, buf.len, stdout);
+	strbuf_release(&buf);
+}
+
+static void pretty_print_trees(int indent)
+{
+	struct survey_stats_trees *pst = &survey_stats.trees;
+	struct survey_stats_base_object *base = &pst->base;
+	struct strbuf buf = STRBUF_INIT;
+	int indent1 = indent + 4;
+	int k;
+
+	const char *intro[] = {
+		"",
+		"TREES",
+		"-------------------------------------------------------------------------------",
+		"",
+		NULL
+	};
+
+	k = 0;
+	while (intro[k])
+		fmt_txt_line(&buf, indent, intro[k++]);
+
+	fmt_base_object(&buf, indent1, base);
+
+	fmt_large_item_vec(&buf, indent1, pst->vec_largest_by_size_bytes);
+
+	fmt_qbin(&buf, indent1, "Tree Histogram by Number of Entries", "Entry Range", pst->entry_qbin);
+	fmt_large_item_vec(&buf, indent1, pst->vec_largest_by_nr_entries);
+
+	strbuf_addch(&buf, '\n');
+	fwrite(buf.buf, 1, buf.len, stdout);
+	strbuf_release(&buf);
+}
+
+static void pretty_print_blobs(int indent)
+{
+	struct survey_stats_blobs *psb = &survey_stats.blobs;
+	struct survey_stats_base_object *base = &psb->base;
+	struct strbuf buf = STRBUF_INIT;
+	int indent1 = indent + 4;
+	int k;
+
+	const char *intro[] = {
+		"",
+		"BLOBS",
+		"-------------------------------------------------------------------------------",
+		"",
+		NULL
+	};
+
+	k = 0;
+	while (intro[k])
+		fmt_txt_line(&buf, indent, intro[k++]);
+
+	fmt_base_object(&buf, indent1, base);
+
+	fmt_large_item_vec(&buf, indent1, psb->vec_largest_by_size_bytes);
+
+	strbuf_addch(&buf, '\n');
+	fwrite(buf.buf, 1, buf.len, stdout);
+	strbuf_release(&buf);
+}
+
 /*
  * Print all of the stats that we have collected in a more pretty format.
  */
 static void survey_print_results_pretty(void)
 {
-	printf("TODO....\n");
+	pretty_print_survey_hdr();
+	pretty_print_overview(0);
+	pretty_print_refs(0);
+	pretty_print_commits(0);
+	pretty_print_trees(0);
+	pretty_print_blobs(0);
 }
 
 int cmd_survey(int argc, const char **argv, const char *prefix)
@@ -1517,38 +2240,11 @@ int cmd_survey(int argc, const char **argv, const char *prefix)
 		survey_opts.show_progress = isatty(2);
 	fixup_refs_wanted();
 
-	if (survey_opts.show_largest_commits_by_nr_parents)
-		survey_stats.commits.vec_largest_by_nr_parents =
-			alloc_large_item_vec(
-				"largest_commits_by_nr_parents",
-				"nr_parents",
-				survey_opts.show_largest_commits_by_nr_parents);
-	if (survey_opts.show_largest_commits_by_size_bytes)
-		survey_stats.commits.vec_largest_by_size_bytes =
-			alloc_large_item_vec(
-				"largest_commits_by_size_bytes",
-				"size",
-				survey_opts.show_largest_commits_by_size_bytes);
-
-	if (survey_opts.show_largest_trees_by_nr_entries)
-		survey_stats.trees.vec_largest_by_nr_entries =
-			alloc_large_item_vec(
-				"largest_trees_by_nr_entries",
-				"nr_entries",
-				survey_opts.show_largest_trees_by_nr_entries);
-	if (survey_opts.show_largest_trees_by_size_bytes)
-		survey_stats.trees.vec_largest_by_size_bytes =
-			alloc_large_item_vec(
-				"largest_trees_by_size_bytes",
-				"size",
-				survey_opts.show_largest_trees_by_size_bytes);
-
-	if (survey_opts.show_largest_blobs_by_size_bytes)
-		survey_stats.blobs.vec_largest_by_size_bytes =
-			alloc_large_item_vec(
-				"largest_blobs_by_size_bytes",
-				"size",
-				survey_opts.show_largest_blobs_by_size_bytes);
+	alloc_commit_by_parents();
+	alloc_commit_by_size();
+	alloc_tree_by_entries();
+	alloc_tree_by_size();
+	alloc_blob_by_size();
 
 	survey_phase_refs(the_repository);
 
