@@ -1328,21 +1328,19 @@ static int cmd_version(int argc, const char **argv)
 static int cmd_cache_server(int argc, const char **argv)
 {
 	int get = 0;
-	char *set = NULL, *list = NULL;
-	const char *default_remote = "(default)";
+	const char *set = NULL, *list = NULL;
 	struct option options[] = {
-		OPT_BOOL(0, "get", &get,
-			 N_("get the configured cache-server URL")),
+		OPT_CMDMODE(0, "get", &get,
+			    N_("get the configured cache-server URL"), 1),
 		OPT_STRING(0, "set", &set, N_("URL"),
-			    N_("configure the cache-server to use")),
-		{ OPTION_STRING, 0, "list", &list, N_("remote"),
-		  N_("list the possible cache-server URLs"),
-		  PARSE_OPT_OPTARG, NULL, (intptr_t) default_remote },
+			   N_("configure the cache-server to use")),
+		OPT_STRING(0, "list", &list, N_("remote"),
+			   N_("list the possible cache-server URLs")),
 		OPT_END(),
 	};
 	const char * const usage[] = {
-		N_("scalar cache_server "
-		   "[--get | --set <url> | --list [<remote>]] [<enlistment>]"),
+		N_("scalar cache-server "
+		   "[--get | --set <url> | --list <remote>] [<enlistment>]"),
 		NULL
 	};
 	int res = 0;
@@ -1359,31 +1357,24 @@ static int cmd_cache_server(int argc, const char **argv)
 	if (list) {
 		const char *name = list, *url = list;
 
-		if (list == default_remote)
-			list = NULL;
-
-		if (!list || !strchr(list, '/')) {
+		if (!strchr(list, '/')) {
 			struct remote *remote;
 
 			/* Look up remote */
 			remote = remote_get(list);
 			if (!remote) {
 				error("no such remote: '%s'", name);
-				free(list);
 				return 1;
 			}
 			if (!remote->url) {
-				free(list);
 				return error(_("remote '%s' has no URLs"),
 					     name);
 			}
 			url = remote->url[0];
 		}
 		res = supports_gvfs_protocol(url, NULL);
-		free(list);
 	} else if (set) {
 		res = set_config("gvfs.cache-server=%s", set);
-		free(set);
 	} else {
 		char *url = NULL;
 
