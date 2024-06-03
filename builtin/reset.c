@@ -182,7 +182,9 @@ static void update_index_from_diff(struct diff_queue_struct *q,
 		 */
 		if (core_virtualfilesystem && !file_exists(two->path))
 		{
+			respect_skip_worktree = 0;
 			pos = index_name_pos(&the_index, two->path, strlen(two->path));
+
 			if ((pos >= 0 && ce_skip_worktree(the_index.cache[pos])) &&
 			    (is_missing || !was_missing))
 			{
@@ -197,7 +199,6 @@ static void update_index_from_diff(struct diff_queue_struct *q,
 						two->path);
 
 				checkout_entry(ceBefore, &state, NULL, NULL);
-				respect_skip_worktree = 0;
 			}
 		}
 
