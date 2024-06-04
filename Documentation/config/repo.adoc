@@ -3,6 +3,11 @@ repo.structure.*::
 	`git repo structure` command.
 +
 --
+	nameRev::
+		A boolean controlling whether revision names for ranked
+		objects are resolved and reported. Defaults to `true`.
+		The `--[no-]name-rev` option in linkgit:git-repo[1]
+		overrides this setting.
 	top::
 		This integer value implies `--top=<N>`, specifying the
 		number of largest paths to report in each detail table.

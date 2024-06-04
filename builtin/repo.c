@@ -1688,6 +1688,7 @@ cleanup:
 }
 
 struct repo_structure_opts {
+	int name_rev;
 	int top_nr;
 	int commit_parents;
 	int commit_sizes;
@@ -1715,6 +1716,10 @@ static int repo_structure_config_cb(const char *var, const char *value,
 		limit = &opts->tree_sizes;
 	else if (!strcmp(var, "repo.structure.showblobsizes"))
 		limit = &opts->blob_sizes;
+	else if (!strcmp(var, "repo.structure.namerev")) {
+		opts->name_rev = git_config_bool(var, value);
+		return 0;
+	}
 
 	if (limit) {
 		*limit = git_config_int(var, value, cctx->kvi);
@@ -1735,7 +1740,7 @@ static int cmd_repo_structure(int argc, const char **argv, const char *prefix,
 	};
 	enum output_format format = FORMAT_TABLE;
 	struct repo_structure stats = { 0 };
-	struct repo_structure_opts opts = { 0 };
+	struct repo_structure_opts opts = { .name_rev = 1 };
 	struct rev_info revs;
 	int show_progress = -1;
 	struct string_list ref_filters = STRING_LIST_INIT_DUP;
@@ -1748,6 +1753,8 @@ static int cmd_repo_structure(int argc, const char **argv, const char *prefix,
 			       PARSE_OPT_NONEG | PARSE_OPT_NOARG,
 			       parse_format_cb),
 		OPT_BOOL(0, "progress", &show_progress, N_("show progress")),
+		OPT_BOOL(0, "name-rev", &opts.name_rev,
+			 N_("resolve revision names for reported commits")),
 		OPT_STRING_LIST(0, "ref-filter", &ref_filters, N_("pattern"),
 				N_("only count refs matching <pattern>; "
 				   "repeat to union multiple patterns")),
@@ -1805,7 +1812,8 @@ static int cmd_repo_structure(int argc, const char **argv, const char *prefix,
 				   show_progress);
 	structure_count_objects(&stats.objects, &revs, repo, opts.top_nr,
 				show_progress);
-	structure_lookup_name_revs(&stats.objects, repo, show_progress);
+	if (opts.name_rev)
+		structure_lookup_name_revs(&stats.objects, repo, show_progress);
 
 	switch (format) {
 	case FORMAT_TABLE:
