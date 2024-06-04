@@ -94,6 +94,14 @@ Loose and packed counts are zero for reference backends other than `files`.
 		`--ref-filter='refs/remotes/origin/*'` for a single
 		remote's branches.
 
+	`--name-rev`;;
+	`--no-name-rev`;;
+		Resolve revision names for the commits associated with
+		ranked objects. Enabled by default. `--no-name-rev` skips
+		the lookup and omits `name_rev` from every output format.
+		The default can be set with `repo.structure.nameRev`;
+		explicit command-line options override this setting.
+
 	`--top=<n>`;;
 		Also report the _n_ largest paths in the repository,
 		separately for trees and blobs and separately ranked by
