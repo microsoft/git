@@ -35,6 +35,10 @@ OPTIONS
 --json::
 	Print results in JSON rather than in a human-friendly format.
 
+--[no-]name-rev::
+	Print `git name-rev` output for each commit, tree, and blob.
+	Defaults to true.
+
 Ref Selection
 ~~~~~~~~~~~~~
 

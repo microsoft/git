@@ -57,6 +57,7 @@ struct survey_opts {
 	int verbose;
 	int show_progress;
 	int show_json;
+	int show_name_rev;
 
 	int show_largest_commits_by_nr_parents;
 	int show_largest_commits_by_size_bytes;
@@ -75,6 +76,7 @@ static struct survey_opts survey_opts = {
 	.verbose = 0,
 	.show_progress = -1, /* defaults to isatty(2) */
 	.show_json = 0, /* defaults to pretty */
+	.show_name_rev = 1,
 
 	/*
 	 * Show the largest `n` objects for some scaling dimension.
@@ -157,6 +159,7 @@ static struct option survey_options[] = {
 	OPT__VERBOSE(&survey_opts.verbose, N_("verbose output")),
 	OPT_BOOL(0, "progress", &survey_opts.show_progress, N_("show progress")),
 	OPT_BOOL(0, "json",     &survey_opts.show_json, N_("report stats in JSON")),
+	OPT_BOOL(0, "name-rev", &survey_opts.show_name_rev, N_("run name-rev on each reported commit")),
 
 	OPT_BOOL_F(0, "all-refs", &survey_opts.refs.want_all_refs, N_("include all refs"),          PARSE_OPT_NONEG),
 
@@ -190,6 +193,10 @@ static int survey_load_config_cb(const char *var, const char *value,
 	}
 	if (!strcmp(var, "survey.json")) {
 		survey_opts.show_json = git_config_bool(var, value);
+		return 0;
+	}
+	if (!strcmp(var, "survey.namerev")) {
+		survey_opts.show_name_rev = git_config_bool(var, value);
 		return 0;
 	}
 
@@ -1188,6 +1195,13 @@ static void do_calc_stats_refs(struct repository *r, struct ref_array *ref_array
 
 static void do_lookup_name_rev(void)
 {
+	/*
+	 * `git name-rev` can be very expensive when there are lots of
+	 * refs, so make it optional.
+	 */
+	if (!survey_opts.show_name_rev)
+		return;
+
 	if (survey_opts.show_progress) {
 		survey_progress_total = 0;
 		survey_progress = start_progress(_("Resolving name-revs..."), 0);
@@ -1235,9 +1249,11 @@ static void survey_phase_refs(struct repository *r)
 	do_calc_stats_refs(r, &ref_array);
 	trace2_region_leave("survey", "phase/calcstats", the_repository);
 
-	trace2_region_enter("survey", "phase/namerev", the_repository);
-	do_lookup_name_rev();
-	trace2_region_enter("survey", "phase/namerev", the_repository);
+	if (survey_opts.show_name_rev) {
+		trace2_region_enter("survey", "phase/namerev", the_repository);
+		do_lookup_name_rev();
+		trace2_region_enter("survey", "phase/namerev", the_repository);
+	}
 
 	ref_array_clear(&ref_array);
 }
@@ -1475,7 +1491,9 @@ static void write_large_item_vec_json(struct json_writer *jw,
 				if (!is_null_oid(&pk->containing_commit_oid))
 					jw_object_string(jw, "commit_oid",
 							 oid_to_hex(&pk->containing_commit_oid));
-				if (pk->name_rev->len)
+				if (survey_opts.show_name_rev &&
+				    pk->name_rev &&
+				    pk->name_rev->len)
 					jw_object_string(jw, "name_rev",
 							 pk->name_rev->buf);
 			}
@@ -1862,7 +1880,8 @@ static void fmt_large_item_hdr(struct strbuf *buf,
 	strbuf_addf(buf, "%-*s | %14s", column0, "OID", item_hdr_label);
 	if (name_length)
 		strbuf_addf(buf, " | %-*s", name_length, "Name");
-	strbuf_addf(buf, " | %-*s", name_rev_length, "Name Rev");
+	if (name_rev_length)
+		strbuf_addf(buf, " | %-*s", name_rev_length, "Commit / Name Rev");
 
 	strbuf_addch(buf, '\n');
 }
@@ -1884,8 +1903,10 @@ static void fmt_large_item_hr(struct strbuf *buf,
 		strbuf_addstr(buf, "-+-");
 		strbuf_addchars(buf, '-', name_length);
 	}
-	strbuf_addstr(buf, "-+-");
-	strbuf_addchars(buf, '-', name_rev_length);
+	if (name_rev_length) {
+		strbuf_addstr(buf, "-+-");
+		strbuf_addchars(buf, '-', name_rev_length);
+	}
 
 	strbuf_addch(buf, '\n');
 }
@@ -1907,7 +1928,11 @@ static void fmt_large_item_row(struct strbuf *buf,
 	if (name_length)
 		strbuf_addf(buf, " | %-*s", name_length,
 			    (pitem->name ? pitem->name->buf: ""));
-	strbuf_addf(buf, " | %-*s", name_rev_length, pitem->name_rev->buf);
+	if (name_rev_length)
+		strbuf_addf(buf, " | %-*s", name_rev_length,
+			    ((pitem->name_rev)
+			     ? pitem->name_rev->buf
+			     : oid_to_hex(&pitem->containing_commit_oid)));
 
 	strbuf_addch(buf, '\n');
 }
@@ -1917,11 +1942,11 @@ static void fmt_large_item_vec(struct strbuf *buf,
 			       struct large_item_vec *pvec)
 {
 	int name_length = 0;
-	int name_rev_length = 10;
+	int name_rev_length = 0;
 	int k;
 
 	if (pvec->type != OBJ_COMMIT) {
-		/* Add "Name" column for trees and blobs. */
+		/* Add "Name" column for trees and blobs. This is relative pathname. */
 		for (k = 0; k < pvec->nr_items; k++)
 			if (pvec->items[k].name && pvec->items[k].name->len > name_length)
 				name_length = pvec->items[k].name->len;
@@ -1930,10 +1955,16 @@ static void fmt_large_item_vec(struct strbuf *buf,
 				name_length = 4;
 	}
 
-	for (k = 0; k < pvec->nr_items; k++) {
-		struct large_item *pk = &pvec->items[k];
-		if (pk->name_rev->len > name_rev_length)
-			name_rev_length = pk->name_rev->len;
+	if (survey_opts.show_name_rev) {
+		name_rev_length = 17; /* strlen("Commit / Name Rev") */
+		for (k = 0; k < pvec->nr_items; k++) {
+			struct large_item *pk = &pvec->items[k];
+			if (pk->name_rev && pk->name_rev->len > name_rev_length)
+				name_rev_length = pk->name_rev->len;
+		}
+	} else if (pvec->type != OBJ_COMMIT) {
+		/* for trees and blobs, just show containing commit OID */
+		name_rev_length = the_hash_algo->hexsz;
 	}
 
 	strbuf_addch(buf, '\n');
