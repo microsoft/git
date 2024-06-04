@@ -763,6 +763,76 @@ test_expect_success 'ranked revision names are batched and use all refs' '
 	)
 '
 
+test_expect_success 'revision-name lookup can be disabled by option or config' '
+	test_when_finished "rm -rf repo" &&
+	git init --initial-branch=main repo &&
+	(
+		cd repo &&
+		test_commit --no-tag one file &&
+		oid=$(git rev-parse HEAD) &&
+		name_rev_report () {
+			git "$@" --commit-parents=2 --commit-sizes=2 \
+				--tree-entries=2 --tree-sizes=2 --blob-sizes=2
+		} &&
+		name_rev_report repo structure --format=lines >enabled &&
+		test_grep "\.name_rev=" enabled &&
+		sed "/\.name_rev=/d" enabled >disabled &&
+		child_pattern="child_start.*\"name-rev\"" &&
+		for spec in \
+			"default enabled" \
+			"default enabled --name-rev" \
+			"default disabled --no-name-rev" \
+			"true enabled" \
+			"false disabled" \
+			"bare enabled" \
+			"true disabled --no-name-rev" \
+			"false enabled --name-rev" \
+			"true disabled --name-rev --no-name-rev" \
+			"false enabled --no-name-rev --name-rev"
+		do
+			set -- $spec &&
+			config=$1 expected=$2 &&
+			shift 2 &&
+			set -- repo structure "$@" &&
+			case "$config" in
+			default) ;;
+			bare) set -- -c repo.structure.nameRev "$@" ;;
+			*) set -- -c repo.structure.nameRev=$config "$@" ;;
+			esac &&
+			>trace &&
+			test_env GIT_TRACE2_EVENT="$PWD/trace" \
+				git "$@" --format=lines --commit-parents=2 \
+				--commit-sizes=2 --tree-entries=2 \
+				--tree-sizes=2 --blob-sizes=2 >actual 2>err &&
+			test_cmp "$expected" actual &&
+			test_must_be_empty err &&
+			case "$expected" in
+			enabled)
+				grep "$child_pattern" trace >children &&
+				test_line_count = 1 children
+				;;
+			disabled)
+				test_grep ! "\"name-rev\"" trace
+				;;
+			esac || return 1
+		done &&
+
+		name_rev_report repo structure --no-name-rev \
+			--format=nul >nul &&
+		tr "\012\000" "=\012" <nul >actual &&
+		test_cmp disabled actual &&
+		name_rev_report repo structure --no-name-rev \
+			--progress >table 2>err &&
+		test_grep -F "(commit $oid)" table &&
+		test_grep ! -F "(main)" table &&
+		test_grep ! "Resolving revision names" err &&
+
+		test_must_fail git -c repo.structure.nameRev=invalid \
+			repo structure --commit-parents=1 2>err &&
+		test_grep "bad boolean config value" err
+	)
+'
+
 test_expect_success 'ranked revision names quote text but preserve NUL data' '
 	test_when_finished "rm -rf repo" &&
 	name=$(printf "q\042\303\251") &&
