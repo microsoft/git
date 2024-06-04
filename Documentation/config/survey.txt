@@ -1,3 +1,8 @@
+survey.namerev::
+	Boolean to show/hide `git name-rev` information for
+	each reported commit and the containing commit of each
+	reported tree and blob.
+
 survey.progress::
 	Boolean to show/hide progress information.  Defaults to
 	true when interactive (stderr is bound to a TTY).
