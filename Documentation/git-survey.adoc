@@ -82,12 +82,22 @@ For path detail tables, `git repo structure` defaults to `--top=0`; use
 always supplies `--top` (10 unless overridden on its command line), so
 `repo.structure.top` does not change `git survey`'s limit.
 
-The `git survey` shim ignores all `survey.*` configuration settings.
-When invoking `git repo structure` directly, use `repo.structure.top`
-in place of `survey.top`; this setting does not affect `git survey`.
-Use `--progress` or `--no-progress` instead of `survey.progress`;
-there is no `repo.structure.progress` setting. `survey.verbose` has
-no replacement, and the shim ignores `--verbose` with a warning.
+`--commit-parents=<n>`, `--commit-sizes=<n>`, `--tree-entries=<n>`,
+`--tree-sizes=<n>`, `--blob-sizes=<n>`, and `--[no-]name-rev` retain their
+names in `git repo structure`, but are not accepted by the shim. Each
+object-list limit defaults to 0.
+
+Name lookup for ranked commits is now enabled by default. Use
+`git repo structure --no-name-rev` or set `repo.structure.nameRev=false`
+to opt out; the configuration also applies through `git survey`.
+
+All `survey.*` settings are ignored. For `top`, `nameRev`,
+`showCommitParents`, `showCommitSizes`, `showTreeEntries`, `showTreeSizes`,
+and `showBlobSizes`, replace the `survey.` prefix with `repo.structure.`
+when invoking `git repo structure` directly. Use `--progress` or
+`--no-progress` instead of `survey.progress`; no `repo.structure.progress`
+exists. `survey.verbose` has no replacement; the shim ignores `--verbose`
+with a warning.
 
 OUTPUT
 ------
