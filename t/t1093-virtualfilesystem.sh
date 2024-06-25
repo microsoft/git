@@ -69,6 +69,8 @@ test_expect_success 'verify status is clean' '
 	git status > actual &&
 	cat > expected <<-\EOF &&
 		On branch main
+		You are in a partially-hydrated checkout with 75% of tracked files present.
+
 		nothing to commit, working tree clean
 	EOF
 	test_cmp expected actual

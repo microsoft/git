@@ -20,7 +20,7 @@ jobs:
       fail-fast: false
       matrix:
         # Order by runtime (in descending order)
-        os: [windows-2019, macos-11, ubuntu-20.04, ubuntu-22.04]
+        os: [windows-2019, macos-13, ubuntu-20.04, ubuntu-22.04]
         # Scalar.NET used to be tested using `features: [false, experimental]`
         # But currently, Scalar/C ignores `feature.scalar` altogether, so let's
         # save some electrons and run only one of them...
