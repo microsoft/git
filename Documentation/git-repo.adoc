@@ -61,15 +61,26 @@ supported:
 	following kinds of information are reported:
 +
 * Reference counts categorized by type
+* Symbolic reference counts
+* Loose and packed reference counts (with the `files` reference backend)
+* Maximum and total reference-name lengths for local and remote references
 * Reachable object counts categorized by type
 * Total inflated size of reachable objects by type
 * Total disk size of reachable objects by type
 * Largest reachable objects in the repository by type
+* Histograms of commit, tree, and blob sizes, tree entry counts, and
+  commit parent counts
 * Optionally, the top-_N_ largest paths by count, on-disk size, and
   inflated size (see `--top` below)
 +
 By default every reference enumerated by `for-each-ref` contributes to
 the counts and object walk. Use `--ref-filter` to narrow the scope.
++
+Symbolic references also contribute to their usual reference-type counts.
+Reference-name lengths are measured in bytes, including the full `refs/`
+prefix. Remote references are those under `refs/remotes/`; all other
+references, including tags, are considered local for these measurements.
+Loose and packed counts are zero for reference backends other than `files`.
 
 	`--ref-filter=<pattern>`;;
 		Only count references whose full name matches one of the
@@ -83,6 +94,14 @@ the counts and object walk. Use `--ref-filter` to narrow the scope.
 		`--ref-filter='refs/remotes/origin/*'` for a single
 		remote's branches.
 
+	`--name-rev`;;
+	`--no-name-rev`;;
+		Resolve revision names for the commits associated with
+		ranked objects. Enabled by default. `--no-name-rev` skips
+		the lookup and omits `name_rev` from every output format.
+		The default can be set with `repo.structure.nameRev`;
+		explicit command-line options override this setting.
+
 	`--top=<n>`;;
 		Also report the _n_ largest paths in the repository,
 		separately for trees and blobs and separately ranked by
@@ -91,6 +110,33 @@ the counts and object walk. Use `--ref-filter` to narrow the scope.
 		can also be set via the `repo.structure.top` configuration
 		variable; an explicit `--top=<n>` on the command line
 		overrides the configured value.
+
+	`--commit-parents=<n>`;;
+		Report the _n_ commits with the most parents.
+
+	`--commit-sizes=<n>`;;
+		Report the _n_ largest commits by inflated size in bytes,
+		usually those with the largest commit messages.
+
+	`--tree-entries=<n>`;;
+		Report the _n_ trees with the most entries (files and
+		subdirectories).
+
+	`--tree-sizes=<n>`;;
+		Report the _n_ largest trees by inflated size in bytes.
+		This ranking can differ from the entry-count ranking
+		when entry names have very different lengths.
+
+	`--blob-sizes=<n>`;;
+		Report the _n_ largest blobs by inflated size in bytes.
++
+These five object-list limits are independent of each other and of `--top`,
+which ranks paths rather than individual objects. Each limit must be
+non-negative and defaults to `0`, which disables that list. Configuration
+variables under `repo.structure.show*` provide defaults (see "CONFIGURATION"
+below); an explicit command-line limit overrides the corresponding default.
+Lists show the measured values and OIDs in descending order, with at most
+_n_ entries, and honor `--ref-filter`.
 +
 The output format can be chosen through the flag `--format`. Three formats are
 supported:
@@ -114,6 +160,58 @@ supported:
 	quoted.
 +
 `-z` is an alias for `--format=nul`.
+
+STRUCTURE HISTOGRAMS
+--------------------
+Size histograms group commits, trees, and blobs by inflated size in bytes:
+`0..15`, `16..255`, `256..4095`, and so on. Tree entry histograms use the
+ranges `0..3`, `4..15`, `16..63`, and so on. Each bucket reports the number
+of objects and their total inflated and on-disk sizes. Empty buckets are
+omitted.
+
+The commit parent histogram reports exact parent counts from 0 through 30.
+Its final bucket, shown as `31+` in tables, includes all commits with at
+least 31 parents.
+
+In `lines` and `nul` output, size histogram keys have the form
+`objects.<type>.histogram.size.<bucket>.<metric>`, where `<type>` is
+`commits`, `trees`, or `blobs`, and `<metric>` is `count`, `inflated_size`,
+or `disk_size`. Tree entry histograms use
+`objects.trees.histogram.entries.<bucket>.<metric>`. Bucket numbers start
+at zero for the first range listed above. Parent counts use
+`objects.commits.histogram.parents.<parents>.count`, with `31` identifying
+the final bucket. All histograms honor `--ref-filter`.
+
+STRUCTURE OBJECT LISTS
+----------------------
+In `lines` and `nul` output, the optional object lists use keys of the form
+`objects.<type>.largest.<dimension>.<rank>.<field>`. Ranks start at 1.
+For commits, the dimensions are `by_parents` and `by_size`; for trees they
+are `by_entries` and `by_size`; blobs support `by_size`. Each ranked object
+has an `oid` field. Its value field is named `parents` for `by_parents`,
+`entries` for `by_entries`, or `inflated_size` for `by_size`. Parent counts
+in these lists are not capped by the histogram's final bucket.
+
+Tree and blob entries also have a `path` field containing the first path
+associated with that object by the path walk. This is a suggested location,
+not necessarily a path in `HEAD`: an unchanged object may occur at multiple
+paths. An empty path denotes a root tree. Table and `lines` output quote
+unusual paths according to `core.quotePath`; `nul` output preserves the
+path bytes without quoting.
+
+Entries also have a `commit_oid` field when an associated commit is known.
+Currently this is available only for commit objects, where it equals
+`oid`. Table output shows this ID as `(commit <oid>)`.
+
+The `name_rev` field contains the result of passing `commit_oid` to
+`git name-rev --name-only --annotate-stdin`. This uses all refs for naming,
+even when `--ref-filter` limits the objects counted. An object ID is kept
+unchanged if no name is found. Names appear in parentheses in tables and
+use the same quoting rules as paths in all output formats.
+
+No name lookup is performed for entries without a `commit_oid`. If lookup
+fails, a warning is printed and `name_rev` is omitted; the other statistics
+are still reported.
 
 INFO KEYS
 ---------
@@ -166,6 +264,10 @@ using the `nul` format:
 ------------
 git repo info --format=nul layout.bare layout.shallow
 ------------
+
+CONFIGURATION
+-------------
+include::config/repo.adoc[]
 
 SEE ALSO
 --------
