@@ -15,10 +15,13 @@
 #include "ref-filter.h"
 #include "refs.h"
 #include "revision.h"
+#include "run-command.h"
 #include "setup.h"
 #include "strbuf.h"
 #include "string-list.h"
+#include "strvec.h"
 #include "shallow.h"
+#include "trace2.h"
 #include "tree.h"
 #include "tree-walk.h"
 #include "utf8.h"
@@ -307,6 +310,19 @@ struct object_data {
 	size_t value;
 };
 
+struct top_object {
+	struct object_data object;
+	char *path;
+	struct object_id containing_commit_oid;
+	char *name_rev;
+};
+
+struct top_objects {
+	size_t nr;
+	size_t alloc;
+	struct top_object *data;
+};
+
 struct largest_objects {
 	struct object_data tag_size;
 	struct object_data commit_size;
@@ -357,6 +373,13 @@ struct ref_stats {
 	size_t tags;
 	size_t annotated_tags;
 	size_t others;
+	size_t symbolic;
+	size_t loose;
+	size_t packed;
+	size_t max_local_refname_length;
+	size_t total_local_refname_length;
+	size_t max_remote_refname_length;
+	size_t total_remote_refname_length;
 };
 
 struct object_values {
@@ -366,6 +389,19 @@ struct object_values {
 	size_t blobs;
 };
 
+/* Log16 size buckets and log4 entry buckets cover the full size_t range. */
+#define HBIN_SHIFT 4
+#define HBIN_LEN (sizeof(size_t) * CHAR_BIT / HBIN_SHIFT)
+#define QBIN_SHIFT 2
+#define QBIN_LEN (sizeof(size_t) * CHAR_BIT / QBIN_SHIFT)
+#define PBIN_VEC_LEN 32
+
+struct object_histogram_bin {
+	size_t count;
+	size_t inflated_size;
+	size_t disk_size;
+};
+
 struct object_stats {
 	struct object_values type_counts;
 	struct object_values inflated_sizes;
@@ -373,6 +409,16 @@ struct object_stats {
 	struct largest_objects largest;
 	struct top_paths top_trees;
 	struct top_paths top_blobs;
+	struct object_histogram_bin commit_sizes[HBIN_LEN];
+	struct object_histogram_bin tree_sizes[HBIN_LEN];
+	struct object_histogram_bin blob_sizes[HBIN_LEN];
+	struct object_histogram_bin tree_entries[QBIN_LEN];
+	size_t commit_parents[PBIN_VEC_LEN];
+	struct top_objects top_commit_parents;
+	struct top_objects top_commit_sizes;
+	struct top_objects top_tree_entries;
+	struct top_objects top_tree_sizes;
+	struct top_objects top_blob_sizes;
 };
 
 struct repo_structure {
@@ -547,6 +593,21 @@ static void stats_table_setup_structure(struct stats_table *table,
 			       "      * %s", _("Annotated"));
 	stats_table_count_addf(table, refs->remotes, "    * %s", _("Remotes"));
 	stats_table_count_addf(table, refs->others, "    * %s", _("Others"));
+	stats_table_count_addf(table, refs->symbolic,
+			       "  * %s", _("Symbolic refs"));
+	stats_table_count_addf(table, refs->loose, "  * %s", _("Loose refs"));
+	stats_table_count_addf(table, refs->packed, "  * %s", _("Packed refs"));
+	stats_table_addf(table, "  * %s", _("Refname length"));
+	stats_table_addf(table, "    * %s", _("Local"));
+	stats_table_count_addf(table, refs->max_local_refname_length,
+			       "      * %s", _("Maximum"));
+	stats_table_count_addf(table, refs->total_local_refname_length,
+			       "      * %s", _("Total"));
+	stats_table_addf(table, "    * %s", _("Remote"));
+	stats_table_count_addf(table, refs->max_remote_refname_length,
+			       "      * %s", _("Maximum"));
+	stats_table_count_addf(table, refs->total_remote_refname_length,
+			       "      * %s", _("Total"));
 
 	object_count_total = get_total_object_values(&objects->type_counts);
 	stats_table_addf(table, "");
@@ -654,17 +715,21 @@ static void stats_table_setup_top_paths(struct stats_table *table,
 
 #define INDEX_WIDTH 4
 
-static void stats_table_print_structure(const struct stats_table *table)
+static void stats_table_print(const struct stats_table *table,
+			      const char *name_col_title)
 {
-	const char *name_col_title = _("Repository structure");
 	const char *value_col_title = _("Value");
 	int title_name_width = utf8_strwidth(name_col_title);
 	int title_value_width = utf8_strwidth(value_col_title);
 	int name_col_width = table->name_col_width;
 	int value_col_width = table->value_col_width;
 	int unit_col_width = table->unit_col_width;
+	int index_width = INDEX_WIDTH;
 	struct string_list_item *item;
 	struct strbuf buf = STRBUF_INIT;
+
+	for (size_t n = table->annotations.nr; n >= 10; n /= 10)
+		index_width++;
 
 	if (title_name_width > name_col_width)
 		name_col_width = title_name_width;
@@ -672,7 +737,7 @@ static void stats_table_print_structure(const struct stats_table *table)
 		value_col_width = title_value_width - unit_col_width;
 
 	strbuf_addstr(&buf, "| ");
-	strbuf_utf8_align(&buf, ALIGN_LEFT, name_col_width + INDEX_WIDTH,
+	strbuf_utf8_align(&buf, ALIGN_LEFT, name_col_width + index_width,
 			  name_col_title);
 	strbuf_addstr(&buf, " | ");
 	strbuf_utf8_align(&buf, ALIGN_LEFT,
@@ -681,7 +746,7 @@ static void stats_table_print_structure(const struct stats_table *table)
 	printf("%s\n", buf.buf);
 
 	printf("| ");
-	for (int i = 0; i < name_col_width + INDEX_WIDTH; i++)
+	for (int i = 0; i < name_col_width + index_width; i++)
 		putchar('-');
 	printf(" | ");
 	for (int i = 0; i < value_col_width + unit_col_width + 1; i++)
@@ -703,11 +768,16 @@ static void stats_table_print_structure(const struct stats_table *table)
 		strbuf_addstr(&buf, "| ");
 		strbuf_utf8_align(&buf, ALIGN_LEFT, name_col_width, item->string);
 
-		if (entry && entry->oid)
+		if (entry && entry->oid) {
+			size_t len = buf.len;
+
 			strbuf_addf(&buf, " [%" PRIuMAX "]",
 				    (uintmax_t)entry->index);
-		else
-			strbuf_addchars(&buf, ' ', INDEX_WIDTH);
+			strbuf_addchars(&buf, ' ',
+					index_width - (buf.len - len));
+		} else {
+			strbuf_addchars(&buf, ' ', index_width);
+		}
 
 		strbuf_addstr(&buf, " | ");
 		strbuf_utf8_align(&buf, ALIGN_RIGHT, value_col_width, value);
@@ -739,6 +809,135 @@ static void stats_table_clear(struct stats_table *table)
 
 	string_list_clear(&table->rows, 1);
 	string_list_clear(&table->annotations, 1);
+}
+
+static void histogram_table_print(const char *title,
+				  const struct object_histogram_bin *bins,
+				  size_t nr, unsigned int shift)
+{
+	struct stats_table table = {
+		.rows = STRING_LIST_INIT_DUP,
+		.annotations = STRING_LIST_INIT_DUP,
+	};
+
+	for (size_t i = 0; i < nr; i++) {
+		size_t lower, upper;
+
+		if (!bins[i].count)
+			continue;
+
+		lower = i ? (size_t)1 << (i * shift) : 0;
+		upper = SIZE_MAX >> (sizeof(size_t) * CHAR_BIT -
+				    (i + 1) * shift);
+		stats_table_addf(&table, "* %" PRIuMAX "..%" PRIuMAX,
+				 (uintmax_t)lower, (uintmax_t)upper);
+		stats_table_count_addf(&table, bins[i].count,
+				       "  * %s", _("Count"));
+		stats_table_size_addf(&table, bins[i].inflated_size,
+				      "  * %s", _("Inflated size"));
+		stats_table_size_addf(&table, bins[i].disk_size,
+				      "  * %s", _("Disk size"));
+	}
+
+	if (table.rows.nr) {
+		putchar('\n');
+		stats_table_print(&table, title);
+	}
+	stats_table_clear(&table);
+}
+
+static void structure_histograms_table_print(struct object_stats *stats)
+{
+	struct stats_table table = {
+		.rows = STRING_LIST_INIT_DUP,
+		.annotations = STRING_LIST_INIT_DUP,
+	};
+
+	for (size_t i = 0; i < ARRAY_SIZE(stats->commit_parents); i++) {
+		if (!stats->commit_parents[i])
+			continue;
+		stats_table_count_addf(&table, stats->commit_parents[i],
+				       "%" PRIuMAX "%s", (uintmax_t)i,
+				       i == PBIN_VEC_LEN - 1 ? "+" : "");
+	}
+
+	if (table.rows.nr) {
+		putchar('\n');
+		stats_table_print(&table, _("Commit parent histogram"));
+	}
+	stats_table_clear(&table);
+
+	histogram_table_print(_("Commit size histogram"), stats->commit_sizes,
+			      ARRAY_SIZE(stats->commit_sizes), HBIN_SHIFT);
+	histogram_table_print(_("Tree entry histogram"), stats->tree_entries,
+			      ARRAY_SIZE(stats->tree_entries), QBIN_SHIFT);
+	histogram_table_print(_("Tree size histogram"), stats->tree_sizes,
+			      ARRAY_SIZE(stats->tree_sizes), HBIN_SHIFT);
+	histogram_table_print(_("Blob size histogram"), stats->blob_sizes,
+			      ARRAY_SIZE(stats->blob_sizes), HBIN_SHIFT);
+}
+
+static void top_objects_table_print(const char *title, struct top_objects *top,
+				    int by_size)
+{
+	struct stats_table table = {
+		.rows = STRING_LIST_INIT_DUP,
+		.annotations = STRING_LIST_INIT_DUP,
+	};
+	struct strbuf label = STRBUF_INIT;
+
+	for (size_t i = 0; i < top->nr; i++) {
+		struct object_data *item = &top->data[i].object;
+		const char *path = top->data[i].path;
+		const char *name_rev = top->data[i].name_rev;
+		const struct object_id *commit_oid =
+			&top->data[i].containing_commit_oid;
+
+		strbuf_reset(&label);
+		strbuf_addf(&label, "%" PRIuMAX, (uintmax_t)(i + 1));
+		if (path && *path) {
+			strbuf_addstr(&label, ": ");
+			quote_c_style(path, &label, NULL, 0);
+		}
+		if (!is_null_oid(commit_oid))
+			strbuf_addf(&label, _(" (commit %s)"),
+				    oid_to_hex(commit_oid));
+		if (name_rev) {
+			strbuf_addstr(&label, " (");
+			quote_c_style(name_rev, &label, NULL, 0);
+			strbuf_addch(&label, ')');
+		}
+
+		if (by_size)
+			stats_table_object_size_addf(&table, &item->oid,
+						     item->value,
+						     "%s", label.buf);
+		else
+			stats_table_object_count_addf(&table, &item->oid,
+						      item->value,
+						      "%s", label.buf);
+	}
+
+	if (table.rows.nr) {
+		putchar('\n');
+		stats_table_print(&table, title);
+	}
+	strbuf_release(&label);
+	stats_table_clear(&table);
+}
+
+static void structure_top_objects_table_print(struct object_stats *stats)
+{
+	top_objects_table_print(_("Largest commits by parent count"),
+				&stats->top_commit_parents, 0);
+	top_objects_table_print(_("Largest commits by size"),
+				&stats->top_commit_sizes, 1);
+	top_objects_table_print(_("Largest trees by entry count"),
+				&stats->top_tree_entries, 0);
+	top_objects_table_print(_("Largest trees by size"),
+				&stats->top_tree_sizes, 1);
+	top_objects_table_print(_("Largest blobs by size"),
+				&stats->top_blob_sizes, 1);
 }
 
 static inline void print_keyvalue(const char *key, char key_delim, size_t value,
@@ -804,6 +1003,57 @@ static void top_paths_keyvalue_print(const char *prefix,
 	}
 }
 
+static void histogram_keyvalue_print(const char *prefix,
+				     const struct object_histogram_bin *bins,
+				     size_t nr, char key_delim,
+				     char value_delim)
+{
+	for (size_t i = 0; i < nr; i++) {
+		if (!bins[i].count)
+			continue;
+
+		printf("%s.%" PRIuMAX ".", prefix, (uintmax_t)i);
+		print_keyvalue("count", key_delim, bins[i].count, value_delim);
+		printf("%s.%" PRIuMAX ".", prefix, (uintmax_t)i);
+		print_keyvalue("inflated_size", key_delim,
+			       bins[i].inflated_size, value_delim);
+		printf("%s.%" PRIuMAX ".", prefix, (uintmax_t)i);
+		print_keyvalue("disk_size", key_delim,
+			       bins[i].disk_size, value_delim);
+	}
+}
+
+static void top_objects_keyvalue_print(const char *prefix, const char *metric,
+				       const struct top_objects *top,
+				       char key_delim, char value_delim)
+{
+	for (size_t i = 0; i < top->nr; i++) {
+		const struct top_object *item = &top->data[i];
+
+		printf("%s.%" PRIuMAX ".", prefix, (uintmax_t)(i + 1));
+		print_keyvalue(metric, key_delim, item->object.value,
+			       value_delim);
+		printf("%s.%" PRIuMAX ".oid%c%s%c", prefix,
+		       (uintmax_t)(i + 1), key_delim,
+		       oid_to_hex(&item->object.oid), value_delim);
+		if (item->path) {
+			printf("%s.%" PRIuMAX ".", prefix, (uintmax_t)(i + 1));
+			print_keyvalue_path("path", key_delim, item->path,
+					    value_delim);
+		}
+		if (!is_null_oid(&item->containing_commit_oid))
+			printf("%s.%" PRIuMAX ".commit_oid%c%s%c",
+			       prefix, (uintmax_t)(i + 1), key_delim,
+			       oid_to_hex(&item->containing_commit_oid),
+			       value_delim);
+		if (item->name_rev) {
+			printf("%s.%" PRIuMAX ".", prefix, (uintmax_t)(i + 1));
+			print_keyvalue_path("name_rev", key_delim,
+					    item->name_rev, value_delim);
+		}
+	}
+}
+
 static void structure_keyvalue_print(struct repo_structure *stats,
 				     char key_delim, char value_delim)
 {
@@ -817,6 +1067,20 @@ static void structure_keyvalue_print(struct repo_structure *stats,
 		       stats->refs.remotes, value_delim);
 	print_keyvalue("references.others.count", key_delim,
 		       stats->refs.others, value_delim);
+	print_keyvalue("references.symbolic.count", key_delim,
+		       stats->refs.symbolic, value_delim);
+	print_keyvalue("references.loose.count", key_delim,
+		       stats->refs.loose, value_delim);
+	print_keyvalue("references.packed.count", key_delim,
+		       stats->refs.packed, value_delim);
+	print_keyvalue("references.local.max_length", key_delim,
+		       stats->refs.max_local_refname_length, value_delim);
+	print_keyvalue("references.local.total_length", key_delim,
+		       stats->refs.total_local_refname_length, value_delim);
+	print_keyvalue("references.remotes.max_length", key_delim,
+		       stats->refs.max_remote_refname_length, value_delim);
+	print_keyvalue("references.remotes.total_length", key_delim,
+		       stats->refs.total_remote_refname_length, value_delim);
 
 	print_keyvalue("objects.commits.count", key_delim,
 		       stats->objects.type_counts.commits, value_delim);
@@ -864,6 +1128,52 @@ static void structure_keyvalue_print(struct repo_structure *stats,
 	top_paths_keyvalue_print("objects.blobs.top", &stats->objects.top_blobs,
 				 key_delim, value_delim);
 
+	for (size_t i = 0; i < ARRAY_SIZE(stats->objects.commit_parents); i++) {
+		if (!stats->objects.commit_parents[i])
+			continue;
+		printf("objects.commits.histogram.parents.%" PRIuMAX ".",
+		       (uintmax_t)i);
+		print_keyvalue("count", key_delim,
+			       stats->objects.commit_parents[i], value_delim);
+	}
+
+	histogram_keyvalue_print("objects.commits.histogram.size",
+				 stats->objects.commit_sizes,
+				 ARRAY_SIZE(stats->objects.commit_sizes),
+				 key_delim, value_delim);
+	histogram_keyvalue_print("objects.trees.histogram.entries",
+				 stats->objects.tree_entries,
+				 ARRAY_SIZE(stats->objects.tree_entries),
+				 key_delim, value_delim);
+	histogram_keyvalue_print("objects.trees.histogram.size",
+				 stats->objects.tree_sizes,
+				 ARRAY_SIZE(stats->objects.tree_sizes),
+				 key_delim, value_delim);
+	histogram_keyvalue_print("objects.blobs.histogram.size",
+				 stats->objects.blob_sizes,
+				 ARRAY_SIZE(stats->objects.blob_sizes),
+				 key_delim, value_delim);
+
+	top_objects_keyvalue_print("objects.commits.largest.by_parents",
+				   "parents",
+				   &stats->objects.top_commit_parents,
+				   key_delim, value_delim);
+	top_objects_keyvalue_print("objects.commits.largest.by_size",
+				   "inflated_size",
+				   &stats->objects.top_commit_sizes,
+				   key_delim, value_delim);
+	top_objects_keyvalue_print("objects.trees.largest.by_entries",
+				   "entries", &stats->objects.top_tree_entries,
+				   key_delim, value_delim);
+	top_objects_keyvalue_print("objects.trees.largest.by_size",
+				   "inflated_size",
+				   &stats->objects.top_tree_sizes,
+				   key_delim, value_delim);
+	top_objects_keyvalue_print("objects.blobs.largest.by_size",
+				   "inflated_size",
+				   &stats->objects.top_blob_sizes,
+				   key_delim, value_delim);
+
 	fflush(stdout);
 }
 
@@ -898,12 +1208,14 @@ static int count_references(const struct reference *ref, void *cb_data)
 {
 	struct count_references_data *data = cb_data;
 	struct ref_stats *stats = data->stats;
-	size_t ref_count;
+	size_t ref_count, refname_length;
+	unsigned int ref_kind;
 
 	if (!ref_matches_any_filter(ref->name, data->filters))
 		return 0;
 
-	switch (ref_kind_from_refname(ref->name)) {
+	ref_kind = ref_kind_from_refname(ref->name);
+	switch (ref_kind) {
 	case FILTER_REFS_BRANCHES:
 		stats->branches++;
 		break;
@@ -921,6 +1233,29 @@ static int count_references(const struct reference *ref, void *cb_data)
 		break;
 	default:
 		BUG("unexpected reference type");
+	}
+
+	if (ref->flags & REF_ISSYMREF)
+		stats->symbolic++;
+
+	if (data->repo->ref_storage_format == REF_STORAGE_FORMAT_FILES) {
+		/* A symref can inherit REF_ISPACKED from its target. */
+		if ((ref->flags & REF_ISPACKED) &&
+		    !(ref->flags & REF_ISSYMREF))
+			stats->packed++;
+		else
+			stats->loose++;
+	}
+
+	refname_length = strlen(ref->name);
+	if (ref_kind == FILTER_REFS_REMOTES) {
+		stats->total_remote_refname_length += refname_length;
+		if (refname_length > stats->max_remote_refname_length)
+			stats->max_remote_refname_length = refname_length;
+	} else {
+		stats->total_local_refname_length += refname_length;
+		if (refname_length > stats->max_local_refname_length)
+			stats->max_local_refname_length = refname_length;
 	}
 
 	/*
@@ -1051,6 +1386,52 @@ static void check_largest(struct object_data *data, struct object_id *oid,
 	}
 }
 
+static void init_top_objects(struct top_objects *top, int limit,
+			     const char *option)
+{
+	if (limit < 0)
+		die(_("--%s=<n> must be non-negative"), option);
+	top->alloc = limit;
+	if (limit)
+		ALLOC_ARRAY(top->data, top->alloc);
+}
+
+static void clear_top_objects(struct top_objects *top)
+{
+	for (size_t i = 0; i < top->nr; i++) {
+		free(top->data[i].path);
+		free(top->data[i].name_rev);
+	}
+	free(top->data);
+}
+
+static void maybe_insert_top_object(struct top_objects *top,
+				    const struct object_id *oid, size_t value,
+				    const char *path,
+				    const struct object_id *commit_oid)
+{
+	size_t pos = top->nr;
+
+	while (pos > 0 && value >= top->data[pos - 1].object.value)
+		pos--;
+	if (pos >= top->alloc)
+		return;
+	if (top->nr == top->alloc)
+		free(top->data[top->nr - 1].path);
+	else
+		top->nr++;
+	for (size_t i = top->nr - 1; i > pos; i--)
+		top->data[i] = top->data[i - 1];
+
+	oidcpy(&top->data[pos].object.oid, oid);
+	top->data[pos].object.value = value;
+	top->data[pos].path = xstrdup_or_null(path);
+	oidcpy(&top->data[pos].containing_commit_oid,
+	       commit_oid ? commit_oid : null_oid(the_repository->hash_algo));
+	/* Revision names are resolved only after ranking is complete. */
+	top->data[pos].name_rev = NULL;
+}
+
 static size_t count_tree_entries(struct object *obj)
 {
 	struct tree *t = object_as_type(obj, OBJ_TREE, 0);
@@ -1065,6 +1446,19 @@ static size_t count_tree_entries(struct object *obj)
 	return count;
 }
 
+static void increment_histogram(struct object_histogram_bin *bins,
+				unsigned int shift, size_t value,
+				size_t inflated, off_t disk)
+{
+	size_t bin = 0;
+
+	while (value >>= shift)
+		bin++;
+	bins[bin].count++;
+	bins[bin].inflated_size += inflated;
+	bins[bin].disk_size += disk;
+}
+
 static int count_objects(const char *path, struct oid_array *oids,
 			 enum object_type type, void *cb_data)
 {
@@ -1075,7 +1469,7 @@ static int count_objects(const char *path, struct oid_array *oids,
 
 	for (size_t i = 0; i < oids->nr; i++) {
 		struct object_info oi = OBJECT_INFO_INIT;
-		size_t inflated;
+		size_t inflated, count;
 		struct commit *commit;
 		struct object *obj;
 		void *content;
@@ -1108,22 +1502,45 @@ static int count_objects(const char *path, struct oid_array *oids,
 			break;
 		case OBJ_COMMIT:
 			commit = object_as_type(obj, OBJ_COMMIT, 0);
+			count = commit_list_count(commit->parents);
 			stats->type_counts.commits++;
 			stats->inflated_sizes.commits += inflated;
 			stats->disk_sizes.commits += disk;
 			check_largest(&stats->largest.commit_size, &oids->oid[i],
 				      inflated);
 			check_largest(&stats->largest.parent_count, &oids->oid[i],
-				      commit_list_count(commit->parents));
+				      count);
+			maybe_insert_top_object(&stats->top_commit_parents,
+						&oids->oid[i], count, NULL,
+						&oids->oid[i]);
+			maybe_insert_top_object(&stats->top_commit_sizes,
+						&oids->oid[i], inflated, NULL,
+						&oids->oid[i]);
+			if (count >= PBIN_VEC_LEN)
+				count = PBIN_VEC_LEN - 1;
+			stats->commit_parents[count]++;
+			increment_histogram(stats->commit_sizes, HBIN_SHIFT,
+					    inflated, inflated, disk);
 			break;
 		case OBJ_TREE:
+			count = count_tree_entries(obj);
 			stats->type_counts.trees++;
 			stats->inflated_sizes.trees += inflated;
 			stats->disk_sizes.trees += disk;
 			check_largest(&stats->largest.tree_size, &oids->oid[i],
 				      inflated);
 			check_largest(&stats->largest.tree_entries, &oids->oid[i],
-				      count_tree_entries(obj));
+				      count);
+			maybe_insert_top_object(&stats->top_tree_entries,
+						&oids->oid[i], count,
+						path, NULL);
+			maybe_insert_top_object(&stats->top_tree_sizes,
+						&oids->oid[i], inflated,
+						path, NULL);
+			increment_histogram(stats->tree_entries, QBIN_SHIFT,
+					    count, inflated, disk);
+			increment_histogram(stats->tree_sizes, HBIN_SHIFT,
+					    inflated, inflated, disk);
 			break;
 		case OBJ_BLOB:
 			stats->type_counts.blobs++;
@@ -1131,6 +1548,11 @@ static int count_objects(const char *path, struct oid_array *oids,
 			stats->disk_sizes.blobs += disk;
 			check_largest(&stats->largest.blob_size, &oids->oid[i],
 				      inflated);
+			maybe_insert_top_object(&stats->top_blob_sizes,
+						&oids->oid[i], inflated,
+						path, NULL);
+			increment_histogram(stats->blob_sizes, HBIN_SHIFT,
+					    inflated, inflated, disk);
 			break;
 		default:
 			BUG("invalid object type");
@@ -1186,16 +1608,123 @@ static void structure_count_objects(struct object_stats *stats,
 	stop_progress(&data.progress);
 }
 
+static void structure_lookup_name_revs(struct object_stats *stats,
+				       struct repository *repo,
+				       int show_progress)
+{
+	struct top_objects *lists[] = {
+		&stats->top_commit_parents,
+		&stats->top_commit_sizes,
+		&stats->top_tree_entries,
+		&stats->top_tree_sizes,
+		&stats->top_blob_sizes,
+	};
+	struct child_process cp = CHILD_PROCESS_INIT;
+	struct strbuf in = STRBUF_INIT, out = STRBUF_INIT;
+	struct string_list names = STRING_LIST_INIT_NODUP;
+	struct progress *progress = NULL;
+	size_t nr = 0, k = 0;
+	int failed = 1;
+
+	for (size_t i = 0; i < ARRAY_SIZE(lists); i++) {
+		for (size_t j = 0; j < lists[i]->nr; j++) {
+			struct top_object *item = &lists[i]->data[j];
+
+			if (is_null_oid(&item->containing_commit_oid))
+				continue;
+			strbuf_addf(&in, "%s\n",
+				    oid_to_hex(&item->containing_commit_oid));
+			nr++;
+		}
+	}
+	if (!nr)
+		return;
+
+	trace2_region_enter("repo", "name-rev", repo);
+	if (show_progress)
+		progress = start_progress(repo,
+					  _("Resolving revision names"), nr);
+
+	cp.git_cmd = 1;
+	strvec_pushl(&cp.args, "name-rev", "--name-only",
+		     "--annotate-stdin", NULL);
+	if (pipe_command(&cp, in.buf, in.len, &out, 0, NULL, 0)) {
+		warning(_("could not resolve revision names"));
+		goto cleanup;
+	}
+	if (!out.len || out.buf[out.len - 1] != '\n' ||
+	    memchr(out.buf, '\0', out.len))
+		goto invalid_output;
+	strbuf_trim_trailing_newline(&out);
+	string_list_split_in_place_f(&names, out.buf, "\n", -1,
+				     STRING_LIST_SPLIT_TRIM);
+	if (names.nr != nr)
+		goto invalid_output;
+	for (size_t i = 0; i < names.nr; i++)
+		if (!*names.items[i].string)
+			goto invalid_output;
+
+	for (size_t i = 0; i < ARRAY_SIZE(lists); i++) {
+		for (size_t j = 0; j < lists[i]->nr; j++) {
+			struct top_object *item = &lists[i]->data[j];
+
+			if (is_null_oid(&item->containing_commit_oid))
+				continue;
+			item->name_rev = xstrdup(names.items[k++].string);
+			display_progress(progress, k);
+		}
+	}
+	failed = 0;
+	goto cleanup;
+
+invalid_output:
+	warning(_("unexpected output from 'git name-rev'"));
+cleanup:
+	stop_progress_msg(&progress, failed ? _("failed") : _("done"));
+	trace2_region_leave("repo", "name-rev", repo);
+	string_list_clear(&names, 0);
+	strbuf_release(&in);
+	strbuf_release(&out);
+}
+
+struct repo_structure_opts {
+	int name_rev;
+	int top_nr;
+	int commit_parents;
+	int commit_sizes;
+	int tree_entries;
+	int tree_sizes;
+	int blob_sizes;
+};
+
 static int repo_structure_config_cb(const char *var, const char *value,
 				    const struct config_context *cctx,
 				    void *cb)
 {
-	int *top_nr = cb;
+	struct repo_structure_opts *opts = cb;
+	int *limit = NULL;
 
-	if (!strcmp(var, "repo.structure.top")) {
-		*top_nr = git_config_int(var, value, cctx->kvi);
-		if (*top_nr < 0)
-			die(_("repo.structure.top must be non-negative"));
+	if (!strcmp(var, "repo.structure.top"))
+		limit = &opts->top_nr;
+	else if (!strcmp(var, "repo.structure.showcommitparents"))
+		limit = &opts->commit_parents;
+	else if (!strcmp(var, "repo.structure.showcommitsizes"))
+		limit = &opts->commit_sizes;
+	else if (!strcmp(var, "repo.structure.showtreeentries"))
+		limit = &opts->tree_entries;
+	else if (!strcmp(var, "repo.structure.showtreesizes"))
+		limit = &opts->tree_sizes;
+	else if (!strcmp(var, "repo.structure.showblobsizes"))
+		limit = &opts->blob_sizes;
+	else if (!strcmp(var, "repo.structure.namerev")) {
+		opts->name_rev = git_config_bool(var, value);
+		return 0;
+	}
+
+	if (limit) {
+		*limit = git_config_int(var, value, cctx->kvi);
+		if (*limit < 0)
+			die(_("%s must be non-negative"), var);
 		return 0;
 	}
 
@@ -1211,9 +1740,9 @@ static int cmd_repo_structure(int argc, const char **argv, const char *prefix,
 	};
 	enum output_format format = FORMAT_TABLE;
 	struct repo_structure stats = { 0 };
+	struct repo_structure_opts opts = { .name_rev = 1 };
 	struct rev_info revs;
 	int show_progress = -1;
-	int top_nr = 0;
 	struct string_list ref_filters = STRING_LIST_INIT_DUP;
 	struct option options[] = {
 		OPT_CALLBACK_F(0, "format", &format, N_("format"),
@@ -1224,43 +1753,75 @@ static int cmd_repo_structure(int argc, const char **argv, const char *prefix,
 			       PARSE_OPT_NONEG | PARSE_OPT_NOARG,
 			       parse_format_cb),
 		OPT_BOOL(0, "progress", &show_progress, N_("show progress")),
+		OPT_BOOL(0, "name-rev", &opts.name_rev,
+			 N_("resolve revision names for reported commits")),
 		OPT_STRING_LIST(0, "ref-filter", &ref_filters, N_("pattern"),
 				N_("only count refs matching <pattern>; "
 				   "repeat to union multiple patterns")),
-		OPT_INTEGER(0, "top", &top_nr,
+		OPT_INTEGER(0, "top", &opts.top_nr,
 			    N_("report the top <n> largest paths "
 			       "per category")),
+		OPT_INTEGER_F(0, "commit-parents", &opts.commit_parents,
+			      N_("show <n> commits with the most parents"),
+			      PARSE_OPT_NONEG),
+		OPT_INTEGER_F(0, "commit-sizes", &opts.commit_sizes,
+			      N_("show <n> largest commits by size in bytes"),
+			      PARSE_OPT_NONEG),
+		OPT_INTEGER_F(0, "tree-entries", &opts.tree_entries,
+			      N_("show <n> trees with the most entries"),
+			      PARSE_OPT_NONEG),
+		OPT_INTEGER_F(0, "tree-sizes", &opts.tree_sizes,
+			      N_("show <n> largest trees by size in bytes"),
+			      PARSE_OPT_NONEG),
+		OPT_INTEGER_F(0, "blob-sizes", &opts.blob_sizes,
+			      N_("show <n> largest blobs by size in bytes"),
+			      PARSE_OPT_NONEG),
 		OPT_END()
 	};
 
-	repo_config(repo, repo_structure_config_cb, &top_nr);
+	repo_config(repo, repo_structure_config_cb, &opts);
 
 	argc = parse_options(argc, argv, prefix, options, repo_structure_usage, 0);
 	if (argc)
 		usage(_("too many arguments"));
-	if (top_nr < 0)
+	if (opts.top_nr < 0)
 		die(_("--top=<n> must be non-negative"));
+
+	init_top_objects(&stats.objects.top_commit_parents,
+			 opts.commit_parents, "commit-parents");
+	init_top_objects(&stats.objects.top_commit_sizes,
+			 opts.commit_sizes, "commit-sizes");
+	init_top_objects(&stats.objects.top_tree_entries,
+			 opts.tree_entries, "tree-entries");
+	init_top_objects(&stats.objects.top_tree_sizes,
+			 opts.tree_sizes, "tree-sizes");
+	init_top_objects(&stats.objects.top_blob_sizes,
+			 opts.blob_sizes, "blob-sizes");
 
 	repo_init_revisions(repo, &revs, prefix);
 
 	if (show_progress < 0)
 		show_progress = isatty(2);
 
-	if (top_nr) {
-		init_top_paths(&stats.objects.top_trees, top_nr);
-		init_top_paths(&stats.objects.top_blobs, top_nr);
+	if (opts.top_nr) {
+		init_top_paths(&stats.objects.top_trees, opts.top_nr);
+		init_top_paths(&stats.objects.top_blobs, opts.top_nr);
 	}
 
 	structure_count_references(&stats.refs, &revs, repo, &ref_filters,
 				   show_progress);
-	structure_count_objects(&stats.objects, &revs, repo, top_nr,
+	structure_count_objects(&stats.objects, &revs, repo, opts.top_nr,
 				show_progress);
+	if (opts.name_rev)
+		structure_lookup_name_revs(&stats.objects, repo, show_progress);
 
 	switch (format) {
 	case FORMAT_TABLE:
 		stats_table_setup_structure(&table, &stats);
 		stats_table_setup_top_paths(&table, &stats.objects);
-		stats_table_print_structure(&table);
+		stats_table_print(&table, _("Repository structure"));
+		structure_histograms_table_print(&stats.objects);
+		structure_top_objects_table_print(&stats.objects);
 		break;
 	case FORMAT_NEWLINE_TERMINATED:
 		structure_keyvalue_print(&stats, '=', '\n');
@@ -1274,10 +1835,15 @@ static int cmd_repo_structure(int argc, const char **argv, const char *prefix,
 
 	stats_table_clear(&table);
 	string_list_clear(&ref_filters, 0);
-	if (top_nr) {
+	if (opts.top_nr) {
 		clear_top_paths(&stats.objects.top_trees);
 		clear_top_paths(&stats.objects.top_blobs);
 	}
+	clear_top_objects(&stats.objects.top_commit_parents);
+	clear_top_objects(&stats.objects.top_commit_sizes);
+	clear_top_objects(&stats.objects.top_tree_entries);
+	clear_top_objects(&stats.objects.top_tree_sizes);
+	clear_top_objects(&stats.objects.top_blob_sizes);
 	release_revisions(&revs);
 
 	return 0;
