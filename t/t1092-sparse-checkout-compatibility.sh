@@ -160,7 +160,10 @@ init_repos () {
 	git -C sparse-checkout sparse-checkout set deep &&
 	git -C sparse-index sparse-checkout init --cone --sparse-index &&
 	test_cmp_config -C sparse-index true index.sparse &&
-	git -C sparse-index sparse-checkout set deep
+	git -C sparse-index sparse-checkout set deep &&
+
+	# Disable this message to keep stderr the same.
+	git -C sparse-index config advice.sparseIndexExpanded false
 }
 
 init_repos_as_submodules () {
@@ -536,6 +539,8 @@ test_expect_success 'diff --cached' '
 
 test_expect_success 'diff partially-staged' '
 	init_repos &&
+
+	git -C full-checkout config advice.sparseIndexExpanded false &&
 
 	write_script edit-contents <<-\EOF &&
 	echo text >>$1
@@ -2430,6 +2435,17 @@ test_expect_success 'sparse-index is not expanded: check-attr' '
 	git -C sparse-index add --sparse folder1/.gitattributes &&
 	ensure_not_expanded check-attr -a --cached -- deep/a &&
 	ensure_not_expanded check-attr -a --cached -- folder1/a
+'
+
+test_expect_success 'advice.sparseIndexExpanded' '
+	init_repos &&
+
+	git -C sparse-index config --unset advice.sparseIndexExpanded &&
+	git -C sparse-index sparse-checkout set deep/deeper1 &&
+	mkdir -p sparse-index/deep/deeper2/deepest &&
+	touch sparse-index/deep/deeper2/deepest/bogus &&
+	git -C sparse-index status 2>err &&
+	grep "The sparse index is expanding to a full index" err
 '
 
 test_done
