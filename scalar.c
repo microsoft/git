@@ -1109,7 +1109,8 @@ static int cmd_reconfigure(int argc, const char **argv)
 		old_repo = the_repository;
 		the_repository = &r;
 
-		if (set_recommended_config(1) >= 0)
+		if (set_recommended_config(1) >= 0 &&
+		    toggle_maintenance(1) >= 0)
 			succeeded = 1;
 
 		the_repository = old_repo;
