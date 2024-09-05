@@ -684,25 +684,25 @@ jobs:
         needs.windows_artifacts.result == 'success')
     steps:
       - name: Download Windows portable installer
-        uses: actions/download-artifact@v3
+        uses: actions/download-artifact@v4
         with:
           name: win-portable-x86_64
           path: win-portable-x86_64
 
       - name: Download Windows x86_64 installer
-        uses: actions/download-artifact@v3
+        uses: actions/download-artifact@v4
         with:
           name: win-installer-x86_64
           path: win-installer-x86_64
 
       - name: Download macOS artifacts
-        uses: actions/download-artifact@v3
+        uses: actions/download-artifact@v4
         with:
           name: macos-artifacts
           path: macos-artifacts
 
       - name: Download Debian package
-        uses: actions/download-artifact@v3
+        uses: actions/download-artifact@v4
         with:
           name: linux-artifacts
           path: deb-package
