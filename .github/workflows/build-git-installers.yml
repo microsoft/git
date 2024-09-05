@@ -588,7 +588,7 @@ jobs:
           debsigs --sign=origin --verify --check microsoft-git_"$version".deb
 
       - name: Upload artifacts
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: linux-artifacts
           path: |
