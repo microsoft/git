@@ -486,7 +486,7 @@ jobs:
           sudo apt-get install -y -q --no-install-recommends gettext libcurl4-gnutls-dev libpcre3-dev asciidoc xmlto
 
       - name: Clone git
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
         with:
           path: git
 
