@@ -154,7 +154,8 @@ static int checkout_all(const char *prefix, int prefix_length)
 			 * first entry inside the expanded sparse directory).
 			 */
 			if (ignore_skip_worktree) {
-				ensure_full_index(the_repository->index);
+				ensure_full_index_with_reason(the_repository->index,
+							      "checkout-index");
 				ce = the_repository->index->cache[i];
 			}
 		}

@@ -307,7 +307,8 @@ int cmd_rm(int argc, const char **argv, const char *prefix)
 	seen = xcalloc(pathspec.nr, 1);
 
 	if (pathspec_needs_expanded_index(the_repository->index, &pathspec))
-		ensure_full_index(the_repository->index);
+		ensure_full_index_with_reason(the_repository->index,
+					      "rm pathspec");
 
 	for (i = 0; i < the_repository->index->cache_nr; i++) {
 		const struct cache_entry *ce = the_repository->index->cache[i];

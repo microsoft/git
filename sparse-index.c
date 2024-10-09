@@ -456,6 +456,24 @@ void ensure_full_index(struct index_state *istate)
 	expand_index(istate, NULL);
 }
 
+void ensure_full_index_with_reason(struct index_state *istate,
+				   const char *fmt, ...)
+{
+	va_list ap;
+	struct strbuf why = STRBUF_INIT;
+	if (!istate)
+		BUG("ensure_full_index_with_reason() must get an index!");
+	if (istate->sparse_index == INDEX_EXPANDED)
+		return;
+
+	va_start(ap, fmt);
+	strbuf_vaddf(&why, fmt, ap);
+	trace2_data_string("sparse-index", istate->repo, "expansion-reason", why.buf);
+	va_end(ap);
+	strbuf_release(&why);
+	ensure_full_index(istate);
+}
+
 void ensure_correct_sparsity(struct index_state *istate)
 {
 	/*
@@ -465,7 +483,8 @@ void ensure_correct_sparsity(struct index_state *istate)
 	if (is_sparse_index_allowed(istate, 0))
 		convert_to_sparse(istate, 0);
 	else
-		ensure_full_index(istate);
+		ensure_full_index_with_reason(istate,
+					      "sparse index not allowed");
 }
 
 struct path_found_data {
@@ -613,6 +632,8 @@ static int clear_skip_worktree_from_present_files_sparse(struct index_state *ist
 			if (path_found(ce->name, &data)) {
 				if (S_ISSPARSEDIR(ce->ce_mode)) {
 					to_restart = 1;
+					trace2_data_string("sparse-index", istate->repo,
+							   "skip-worktree sparsedir", ce->name);
 					break;
 				}
 				ce->ce_flags &= ~CE_SKIP_WORKTREE;
@@ -668,7 +689,8 @@ void clear_skip_worktree_from_present_files(struct index_state *istate)
 		return;
 
 	if (clear_skip_worktree_from_present_files_sparse(istate)) {
-		ensure_full_index(istate);
+		ensure_full_index_with_reason(istate,
+			"failed to clear skip-worktree while sparse");
 		clear_skip_worktree_from_present_files_full(istate);
 	}
 }
@@ -731,7 +753,9 @@ void expand_to_path(struct index_state *istate,
 			 * in the index, perhaps it exists within this
 			 * sparse-directory.  Expand accordingly.
 			 */
-			ensure_full_index(istate);
+			const char *fmt = "found index entry for '%s'";
+			ensure_full_index_with_reason(istate, fmt,
+						      path_mutable.buf);
 			break;
 		}
 

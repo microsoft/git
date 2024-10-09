@@ -410,7 +410,7 @@ static void show_files(struct repository *repo, struct dir_struct *dir)
 		return;
 
 	if (!show_sparse_dirs)
-		ensure_full_index(repo->index);
+		ensure_full_index_with_reason(repo->index, "ls-files");
 
 	for (i = 0; i < repo->index->cache_nr; i++) {
 		const struct cache_entry *ce = repo->index->cache[i];

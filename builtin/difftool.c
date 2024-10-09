@@ -586,7 +586,7 @@ static int run_dir_diff(const char *extcmd, int symlinks, const char *prefix,
 	ret = run_command(&cmd);
 
 	/* TODO: audit for interaction with sparse-index. */
-	ensure_full_index(&wtindex);
+	ensure_full_index_unaudited(&wtindex);
 
 	/*
 	 * If the diff includes working copy files and those

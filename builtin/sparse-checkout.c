@@ -204,7 +204,8 @@ static void clean_tracked_sparse_directories(struct repository *r)
 	strbuf_release(&path);
 
 	if (was_full)
-		ensure_full_index(r->index);
+		ensure_full_index_with_reason(r->index,
+				"sparse-checkout:was full");
 }
 
 static int update_working_directory(struct pattern_list *pl)
@@ -435,7 +436,8 @@ static int update_modes(int *cone_mode, int *sparse_index)
 		the_repository->index->updated_workdir = 1;
 
 		if (!*sparse_index)
-			ensure_full_index(the_repository->index);
+			ensure_full_index_with_reason(the_repository->index,
+				"sparse-checkout:disabling sparse index");
 	}
 
 	return 0;

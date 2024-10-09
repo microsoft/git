@@ -539,7 +539,7 @@ static struct string_list *get_unmerged(struct index_state *istate)
 	string_list_init_dup(unmerged);
 
 	/* TODO: audit for interaction with sparse-index. */
-	ensure_full_index(istate);
+	ensure_full_index_unaudited(istate);
 	for (i = 0; i < istate->cache_nr; i++) {
 		struct string_list_item *item;
 		struct stage_data *e;
