@@ -2726,4 +2726,20 @@ test_expect_success 'sparse-index is not expanded: restore --source --staged' '
 	ensure_not_expanded restore --source update-folder1 --staged .
 '
 
+test_expect_success 'ensure_full_index_with_reason' '
+	init_repos &&
+
+	GIT_TRACE2_EVENT="$(pwd)/ls-files-trace" \
+		git -C sparse-index ls-files --no-sparse HEAD &&
+	test_trace2_data "sparse-index" "expansion-reason" "ls-files" <ls-files-trace &&
+
+	mkdir -p sparse-index/folder2 &&
+	echo >sparse-index/folder2/a &&
+	GIT_TRACE2_EVENT="$(pwd)/status-trace" \
+		git -C sparse-index status &&
+	test_trace2_data "sparse-index" "skip-worktree sparsedir" "folder2/" <status-trace &&
+	test_trace2_data "sparse-index" "expansion-reason" \
+		"failed to clear skip-worktree while sparse" <status-trace
+'
+
 test_done
