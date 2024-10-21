@@ -193,7 +193,7 @@ static int set_recommended_config(int reconfigure)
 		{ "core.autoCRLF", "false" },
 		{ "core.safeCRLF", "false" },
 		{ "fetch.showForcedUpdates", "false" },
-		{ "push.usePathWalk", "true" },
+		{ "pack.usePathWalk", "true" },
 		{ "core.configWriteLockTimeoutMS", "150" },
 		{ NULL, NULL },
 	};
