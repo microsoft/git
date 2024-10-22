@@ -18,6 +18,7 @@
 #include "trace2.h"
 #include "tree.h"
 #include "tree-walk.h"
+#include "list-objects.h"
 
 struct type_and_oid_list
 {
@@ -233,6 +234,26 @@ static void clear_strmap(struct strmap *map)
 	strmap_init(map);
 }
 
+static struct repository *edge_repo;
+static struct type_and_oid_list *edge_tree_list;
+
+static void show_edge(struct commit *commit)
+{
+	struct tree *t = repo_get_commit_tree(edge_repo, commit);
+
+	if (!t)
+		return;
+
+	if (commit->object.flags & UNINTERESTING)
+		t->object.flags |= UNINTERESTING;
+
+	if (t->object.flags & SEEN)
+		return;
+	t->object.flags |= SEEN;
+
+	oid_array_append(&edge_tree_list->oids, &t->object.oid);
+}
+
 /**
  * Given the configuration of 'info', walk the commits based on 'info->revs' and
  * call 'info->path_fn' on each discovered path.
@@ -242,7 +263,7 @@ static void clear_strmap(struct strmap *map)
 int walk_objects_by_path(struct path_walk_info *info)
 {
 	const char *root_path = "";
-	int ret = 0, has_uninteresting = 0;
+	int ret = 0;
 	size_t commits_nr = 0, paths_nr = 0;
 	struct commit *c;
 	struct type_and_oid_list *root_tree_list;
@@ -254,7 +275,6 @@ int walk_objects_by_path(struct path_walk_info *info)
 		.path_stack = STRING_LIST_INIT_DUP,
 		.paths_to_lists = STRMAP_INIT
 	};
-	struct oidset root_tree_set = OIDSET_INIT;
 
 	trace2_region_enter("path-walk", "commit-walk", info->revs->repo);
 
@@ -279,6 +299,18 @@ int walk_objects_by_path(struct path_walk_info *info)
 
 	if (prepare_revision_walk(info->revs))
 		die(_("failed to setup revision walk"));
+
+	/*
+	 * Do an initial walk of tip commits in info->revs->commits and
+	 * info->revs->cmdline.rev to match the standard edge-walk behavior.
+	 *
+	 * This is particularly important when 'edge_aggressive' is set.
+	 */
+	info->revs->edge_hint_aggressive = info->edge_aggressive;
+
+	edge_repo = info->revs->repo;
+	edge_tree_list = root_tree_list;
+	mark_edges_uninteresting(info->revs, show_edge, info->prune_all_uninteresting);
 
 	info->revs->blob_objects = info->revs->tree_objects = 0;
 
@@ -366,16 +398,9 @@ int walk_objects_by_path(struct path_walk_info *info)
 			if (t->object.flags & SEEN)
 				continue;
 			t->object.flags |= SEEN;
-
-			if (!oidset_insert(&root_tree_set, oid))
-				oid_array_append(&root_tree_list->oids, oid);
+			oid_array_append(&root_tree_list->oids, oid);
 		} else {
 			warning("could not find tree %s", oid_to_hex(oid));
-		}
-
-		if (t && (c->object.flags & UNINTERESTING)) {
-			t->object.flags |= UNINTERESTING;
-			has_uninteresting = 1;
 		}
 	}
 
@@ -388,21 +413,6 @@ int walk_objects_by_path(struct path_walk_info *info)
 				    info->path_fn_data);
 	oid_array_clear(&commit_list->oids);
 	free(commit_list);
-
-	/*
-	 * Before performing a DFS of our paths and emitting them as interesting,
-	 * do a full walk of the trees to distribute the UNINTERESTING bit. Use
-	 * the sparse algorithm if prune_all_uninteresting was set.
-	 */
-	if (has_uninteresting) {
-		trace2_region_enter("path-walk", "uninteresting-walk", info->revs->repo);
-		if (info->prune_all_uninteresting)
-			mark_trees_uninteresting_sparse(ctx.repo, &root_tree_set);
-		else
-			mark_trees_uninteresting_dense(ctx.repo, &root_tree_set);
-		trace2_region_leave("path-walk", "uninteresting-walk", info->revs->repo);
-	}
-	oidset_clear(&root_tree_set);
 
 	string_list_append(&ctx.path_stack, root_path);
 
