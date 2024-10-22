@@ -527,6 +527,7 @@ test_expect_success 'fetch lazy-fetches only to resolve deltas' '
 	# used as delta bases!
 	GIT_TRACE_PACKET="$(pwd)/trace" \
 	GIT_TEST_FULL_NAME_HASH=0 \
+	GIT_TEST_PACK_PATH_WALK=0 \
 		git -C client \
 		fetch "file://$(pwd)/server" main &&
 
@@ -557,6 +558,7 @@ test_expect_success 'fetch lazy-fetches only to resolve deltas, protocol v2' '
 	# used as delta bases!
 	GIT_TRACE_PACKET="$(pwd)/trace" \
 	GIT_TEST_FULL_NAME_HASH=0 \
+	GIT_TEST_PACK_PATH_WALK=0 \
 		git -C client \
 		fetch "file://$(pwd)/server" main &&
 
