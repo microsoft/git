@@ -123,4 +123,17 @@ EOF
 	git cat-file blob $(echo 1|git hash-object --stdin) >/dev/null
 	)
 '
+
+test_expect_success 'push new commit from shallow clone has correct object count' '
+	git init origin &&
+	test_commit -C origin a &&
+	test_commit -C origin b &&
+
+	git clone --depth=1 "file://$(pwd)/origin" client &&
+	git -C client checkout -b topic &&
+	git -C client commit --allow-empty -m "empty" &&
+	GIT_PROGRESS_DELAY=0 git -C client push --progress origin topic 2>err &&
+	test_grep "Enumerating objects: 1, done." err
+'
+
 test_done
