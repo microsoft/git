@@ -721,7 +721,7 @@ jobs:
             | sed -e 's/^"//' -e 's/"$//' | base64 -d >msft-git-public.asc
           mv msft-git-public.asc deb-package
 
-      - uses: actions/github-script@v6
+      - uses: actions/github-script@v7
         with:
           script: |
             const fs = require('fs');
