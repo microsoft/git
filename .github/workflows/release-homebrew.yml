@@ -40,7 +40,7 @@ jobs:
         sed s/^/result=/ <token >>$GITHUB_OUTPUT &&
         rm token
     - name: Update scalar Cask
-      uses: mjcheetham/update-homebrew@v1.3
+      uses: mjcheetham/update-homebrew@v1.4
       with:
         token: ${{ steps.token.outputs.result }}
         tap: microsoft/git
