@@ -39,7 +39,7 @@ jobs:
 
     steps:
       - name: Check out Git's source code
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: Setup build tools on Windows
         if: runner.os == 'Windows'
@@ -118,7 +118,7 @@ jobs:
           case "$(scalar version 2>&1)" in *.vfs.*) echo Good;; *) exit 1;; esac
 
       - name: Check out Scalar's source code
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
         with:
           fetch-depth: 0 # Indicate full history so Nerdbank.GitVersioning works.
           path: scalar
@@ -126,7 +126,7 @@ jobs:
           ref: ${{ env.SCALAR_REF }}
 
       - name: Setup .NET Core
-        uses: actions/setup-dotnet@v3
+        uses: actions/setup-dotnet@v4
         with:
           dotnet-version: '3.1.x'
 

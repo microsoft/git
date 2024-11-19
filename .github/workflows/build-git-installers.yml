@@ -547,7 +547,7 @@ jobs:
           mv "$PKGNAME.deb" "$GITHUB_WORKSPACE"
 
       - name: Log into Azure
-        uses: azure/login@v1
+        uses: azure/login@v2
         with:
           client-id: ${{ secrets.AZURE_CLIENT_ID }}
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
@@ -708,7 +708,7 @@ jobs:
           path: deb-package
 
       - name: Log into Azure
-        uses: azure/login@v1
+        uses: azure/login@v2
         with:
           client-id: ${{ secrets.AZURE_CLIENT_ID }}
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
@@ -721,7 +721,7 @@ jobs:
             | sed -e 's/^"//' -e 's/"$//' | base64 -d >msft-git-public.asc
           mv msft-git-public.asc deb-package
 
-      - uses: actions/github-script@v6
+      - uses: actions/github-script@v7
         with:
           script: |
             const fs = require('fs');
