@@ -846,6 +846,8 @@ static int odb_source_files_generate_pack(struct odb_source *source UNUSED,
 		strvec_push(&cp->args, "--missing=allow-promisor");
 	if (opts->disable_bitmaps)
 		strvec_push(&cp->args, "--no-use-bitmap-index");
+	if (opts->no_reuse_delta)
+		strvec_push(&cp->args, "--no-reuse-delta");
 	switch (opts->progress) {
 	case ODB_GENERATE_PACK_PROGRESS_NONE:
 		strvec_push(&cp->args, "--quiet");
