@@ -76,6 +76,7 @@ static int pack_objects(struct repository *r,
 		opts.progress = ODB_GENERATE_PACK_PROGRESS_VERBOSE;
 	opts.shallow = is_repository_shallow(r);
 	opts.disable_bitmaps = args->disable_bitmaps;
+	opts.no_reuse_delta = args->no_reuse_delta;
 
 	/*
 	 * The pack is either written directly to the remote's descriptor, or,

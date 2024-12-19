@@ -797,6 +797,9 @@ struct odb_generate_pack_options {
 
 	/* Do not use bitmap indices when computing reachability. */
 	unsigned disable_bitmaps:1;
+
+	/* Do not reuse deltas. */
+	unsigned no_reuse_delta:1;
 };
 
 #define ODB_GENERATE_PACK_OPTIONS_INIT { \
