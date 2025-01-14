@@ -69,6 +69,7 @@ task:
 * `prefetch`: hourly.
 * `loose-objects`: daily.
 * `incremental-repack`: daily.
+* `cache-local-objects`: weekly.
 --
 +
 `git maintenance register` will also disable foreground maintenance by
@@ -157,6 +158,13 @@ pack-refs::
 	collects them into a single file. This speeds up operations that
 	need to iterate across many references. See linkgit:git-pack-refs[1]
 	for more information.
+
+cache-local-objects::
+	The `cache-local-objects` task only operates on Scalar or VFS for Git
+	repositories (cloned with either `scalar clone` or `gvfs clone`) that
+	have the `gvfs.sharedCache` configuration setting present. This task
+	migrates pack files and loose objects from the repository's object
+	directory in to the shared volume cache.
 
 OPTIONS
 -------
