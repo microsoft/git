@@ -490,16 +490,30 @@ jobs:
   # End build and sign Mac OSX installers
 
   # Build and sign Debian package
-  create-linux-artifacts:
+  create-linux-unsigned-artifacts:
     runs-on: ubuntu-latest
+    container:
+      image: ubuntu:16.04 # expanded security maintenance until 04/02/2026, according to https://endoflife.date/ubuntu
+      volumes:
+        # override /__e/node20 because GitHub Actions uses a version that requires too-recent glibc, see "Install dependencies" below
+        - /tmp:/__e/node20
     needs: prereqs
-    environment: release
     steps:
-      - name: Install git dependencies
+      - name: Install dependencies
         run: |
           set -ex
-          sudo apt-get update -q
-          sudo apt-get install -y -q --no-install-recommends gettext libcurl4-gnutls-dev libpcre3-dev asciidoc xmlto
+          apt-get update -q
+          apt-get install -y -q --no-install-recommends \
+            build-essential \
+            tcl tk gettext asciidoc xmlto \
+            libcurl4-gnutls-dev libpcre2-dev zlib1g-dev libexpat-dev \
+            curl ca-certificates
+
+          # Install a Node.js version that works in older Ubuntu containers (read: does not require very recent glibc)
+          NODE_VERSION=v20.18.1 &&
+          NODE_URL=https://unofficial-builds.nodejs.org/download/release/$NODE_VERSION/node-$NODE_VERSION-linux-x64-glibc-217.tar.gz &&
+          curl -Lo /tmp/node.tar.gz $NODE_URL &&
+          tar -C /__e/node20 -x --strip-components=1 -f /tmp/node.tar.gz
 
       - name: Clone git
         uses: actions/checkout@v4
@@ -562,6 +576,18 @@ jobs:
           # Move Debian package for later artifact upload
           mv "$PKGNAME.deb" "$GITHUB_WORKSPACE"
 
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-unsigned-artifacts
+          path: |
+            *.deb
+
+  create-linux-artifacts:
+    runs-on: ubuntu-latest
+    needs: [prereqs, create-linux-unsigned-artifacts]
+    environment: release
+    steps:
       - name: Log into Azure
         uses: azure/login@v2
         with:
@@ -596,6 +622,11 @@ jobs:
           echo "allow-preset-passphrase" > ~/.gnupg/gpg-agent.conf
           gpg-connect-agent RELOADAGENT /bye
           /usr/lib/gnupg2/gpg-preset-passphrase --preset "$keygrip" <<<"$passphrase"
+
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: linux-unsigned-artifacts
 
       - name: Sign Debian package
         run: |
