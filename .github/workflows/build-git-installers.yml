@@ -603,7 +603,7 @@ jobs:
           GPG_KEYGRIP_SECRET_NAME: ${{ secrets.GPG_KEYGRIP_SECRET_NAME }}
         run: |
           # Install debsigs
-          sudo apt install debsigs
+          sudo apt-get install -y debsigs
 
           # Download GPG key, passphrase, and keygrip from Azure Key Vault
           key=$(az keyvault secret show --name $GPG_KEY_SECRET_NAME --vault-name $AZURE_VAULT --query "value")
