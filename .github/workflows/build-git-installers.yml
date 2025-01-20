@@ -607,14 +607,9 @@ jobs:
           sudo apt-get install -y debsigs
 
           # Download GPG key, passphrase, and keygrip from Azure Key Vault
-          key=$(az keyvault secret show --name $GPG_KEY_SECRET_NAME --vault-name $AZURE_VAULT --query "value")
-          passphrase=$(az keyvault secret show --name $GPG_PASSPHRASE_SECRET_NAME --vault-name $AZURE_VAULT --query "value")
-          keygrip=$(az keyvault secret show --name $GPG_KEYGRIP_SECRET_NAME --vault-name $AZURE_VAULT --query "value")
-
-          # Remove quotes from downloaded values
-          key=$(sed -e 's/^"//' -e 's/"$//' <<<"$key")
-          passphrase=$(sed -e 's/^"//' -e 's/"$//' <<<"$passphrase")
-          keygrip=$(sed -e 's/^"//' -e 's/"$//' <<<"$keygrip")
+          key="$(az keyvault secret show --name "$GPG_KEY_SECRET_NAME" --vault-name "$AZURE_VAULT" --query "value" --output tsv)"
+          passphrase="$(az keyvault secret show --name "$GPG_PASSPHRASE_SECRET_NAME" --vault-name "$AZURE_VAULT" --query "value" --output tsv)"
+          keygrip="$(az keyvault secret show --name "$GPG_KEYGRIP_SECRET_NAME" --vault-name "$AZURE_VAULT" --query "value" --output tsv)"
 
           # Import GPG key
           echo "$key" | base64 -d | gpg --import --no-tty --batch --yes
