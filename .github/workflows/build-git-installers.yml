@@ -547,6 +547,7 @@ jobs:
 
           DESTDIR="$PKGDIR" make -C git -j5 V=1 DEVELOPER=1 \
             USE_LIBPCRE=1 \
+            USE_CURL_FOR_IMAP_SEND=1 NO_OPENSSL=1 \
             NO_CROSS_DIRECTORY_HARDLINKS=1 \
             ASCIIDOC8=1 ASCIIDOC_NO_ROFF=1 \
             ASCIIDOC='TZ=UTC asciidoc' \
