@@ -12,7 +12,6 @@ jobs:
   # Check prerequisites for the workflow
   prereqs:
     runs-on: ubuntu-latest
-    environment: release
     outputs:
       tag_name: ${{ steps.tag.outputs.name }}           # The full name of the tag, e.g. v2.32.0.vfs.0.0
       tag_version: ${{ steps.tag.outputs.version }}     # The version number (without preceding "v"), e.g. 2.32.0.vfs.0.0
@@ -491,16 +490,30 @@ jobs:
   # End build and sign Mac OSX installers
 
   # Build and sign Debian package
-  create-linux-artifacts:
+  create-linux-unsigned-artifacts:
     runs-on: ubuntu-latest
+    container:
+      image: ubuntu:16.04 # expanded security maintenance until 04/02/2026, according to https://endoflife.date/ubuntu
+      volumes:
+        # override /__e/node20 because GitHub Actions uses a version that requires too-recent glibc, see "Install dependencies" below
+        - /tmp:/__e/node20
     needs: prereqs
-    environment: release
     steps:
-      - name: Install git dependencies
+      - name: Install dependencies
         run: |
           set -ex
-          sudo apt-get update -q
-          sudo apt-get install -y -q --no-install-recommends gettext libcurl4-gnutls-dev libpcre3-dev asciidoc xmlto
+          apt-get update -q
+          apt-get install -y -q --no-install-recommends \
+            build-essential \
+            tcl tk gettext asciidoc xmlto \
+            libcurl4-gnutls-dev libpcre2-dev zlib1g-dev libexpat-dev \
+            curl ca-certificates
+
+          # Install a Node.js version that works in older Ubuntu containers (read: does not require very recent glibc)
+          NODE_VERSION=v20.18.1 &&
+          NODE_URL=https://unofficial-builds.nodejs.org/download/release/$NODE_VERSION/node-$NODE_VERSION-linux-x64-glibc-217.tar.gz &&
+          curl -Lo /tmp/node.tar.gz $NODE_URL &&
+          tar -C /__e/node20 -x --strip-components=1 -f /tmp/node.tar.gz
 
       - name: Clone git
         uses: actions/checkout@v4
@@ -534,6 +547,7 @@ jobs:
 
           DESTDIR="$PKGDIR" make -C git -j5 V=1 DEVELOPER=1 \
             USE_LIBPCRE=1 \
+            USE_CURL_FOR_IMAP_SEND=1 NO_OPENSSL=1 \
             NO_CROSS_DIRECTORY_HARDLINKS=1 \
             ASCIIDOC8=1 ASCIIDOC_NO_ROFF=1 \
             ASCIIDOC='TZ=UTC asciidoc' \
@@ -563,6 +577,18 @@ jobs:
           # Move Debian package for later artifact upload
           mv "$PKGNAME.deb" "$GITHUB_WORKSPACE"
 
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-unsigned-artifacts
+          path: |
+            *.deb
+
+  create-linux-artifacts:
+    runs-on: ubuntu-latest
+    needs: [prereqs, create-linux-unsigned-artifacts]
+    environment: release
+    steps:
       - name: Log into Azure
         uses: azure/login@v2
         with:
@@ -578,17 +604,12 @@ jobs:
           GPG_KEYGRIP_SECRET_NAME: ${{ secrets.GPG_KEYGRIP_SECRET_NAME }}
         run: |
           # Install debsigs
-          sudo apt install debsigs
+          sudo apt-get install -y debsigs
 
           # Download GPG key, passphrase, and keygrip from Azure Key Vault
-          key=$(az keyvault secret show --name $GPG_KEY_SECRET_NAME --vault-name $AZURE_VAULT --query "value")
-          passphrase=$(az keyvault secret show --name $GPG_PASSPHRASE_SECRET_NAME --vault-name $AZURE_VAULT --query "value")
-          keygrip=$(az keyvault secret show --name $GPG_KEYGRIP_SECRET_NAME --vault-name $AZURE_VAULT --query "value")
-
-          # Remove quotes from downloaded values
-          key=$(sed -e 's/^"//' -e 's/"$//' <<<"$key")
-          passphrase=$(sed -e 's/^"//' -e 's/"$//' <<<"$passphrase")
-          keygrip=$(sed -e 's/^"//' -e 's/"$//' <<<"$keygrip")
+          key="$(az keyvault secret show --name "$GPG_KEY_SECRET_NAME" --vault-name "$AZURE_VAULT" --query "value" --output tsv)"
+          passphrase="$(az keyvault secret show --name "$GPG_PASSPHRASE_SECRET_NAME" --vault-name "$AZURE_VAULT" --query "value" --output tsv)"
+          keygrip="$(az keyvault secret show --name "$GPG_KEYGRIP_SECRET_NAME" --vault-name "$AZURE_VAULT" --query "value" --output tsv)"
 
           # Import GPG key
           echo "$key" | base64 -d | gpg --import --no-tty --batch --yes
@@ -597,6 +618,11 @@ jobs:
           echo "allow-preset-passphrase" > ~/.gnupg/gpg-agent.conf
           gpg-connect-agent RELOADAGENT /bye
           /usr/lib/gnupg2/gpg-preset-passphrase --preset "$keygrip" <<<"$passphrase"
+
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: linux-unsigned-artifacts
 
       - name: Sign Debian package
         run: |
