@@ -1154,7 +1154,7 @@ static int write_loose_object_to_stdin(const struct object_id *oid,
 	return ++(d->count) > d->batch_size;
 }
 
-static const char *object_dir = NULL;
+static const char *shared_object_dir = NULL;
 
 static int pack_loose(struct maintenance_run_opts *opts)
 {
@@ -1162,9 +1162,11 @@ static int pack_loose(struct maintenance_run_opts *opts)
 	int result = 0;
 	struct write_loose_object_data data;
 	struct child_process pack_proc = CHILD_PROCESS_INIT;
+	const char *object_dir = r->objects->odb->path;
 
-	if (!object_dir)
-		object_dir = r->objects->odb->path;
+	/* If set, use the shared object directory. */
+	if (shared_object_dir)
+		object_dir = shared_object_dir;
 
 	/*
 	 * Do not start pack-objects process
@@ -1634,8 +1636,8 @@ static int maintenance_run(int argc, const char **argv, const char *prefix,
 	 */
 	if (!git_config_get_value("gvfs.sharedcache", &tmp_obj_dir) &&
 	    tmp_obj_dir) {
-		object_dir = xstrdup(tmp_obj_dir);
-		setenv(DB_ENVIRONMENT, object_dir, 1);
+		shared_object_dir = xstrdup(tmp_obj_dir);
+		setenv(DB_ENVIRONMENT, shared_object_dir, 1);
 	}
 
 	ret = maintenance_run_tasks(&opts, &cfg);
