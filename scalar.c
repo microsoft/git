@@ -1254,6 +1254,7 @@ static int cmd_run(int argc, const char **argv)
 		{ "fetch", "prefetch" },
 		{ "loose-objects", "loose-objects" },
 		{ "pack-files", "incremental-repack" },
+		{ "cache-local-objects", "cache-local-objects" },
 		{ NULL, NULL }
 	};
 	struct strbuf buf = STRBUF_INIT;
