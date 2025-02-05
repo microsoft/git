@@ -203,7 +203,7 @@ jobs:
 
       - name: Archive Trace2 Logs
         if: ( success() || failure() ) && ( steps.trace2_zip_unix.conclusion == 'success' || steps.trace2_zip_windows.conclusion == 'success' )
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: ${{ env.TRACE2_BASENAME }}.zip
           path: scalar/${{ env.TRACE2_BASENAME }}.zip
