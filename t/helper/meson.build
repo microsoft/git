@@ -86,6 +86,13 @@ test_tool = executable('test-tool',
 bin_wrappers += test_tool
 test_dependencies += test_tool
 
+test_gvfs_protocol = executable('test-gvfs-protocol',
+  sources: 'test-gvfs-protocol.c',
+  dependencies: [libgit, common_main],
+)
+bin_wrappers += test_gvfs_protocol
+test_dependencies += test_gvfs_protocol
+
 test_fake_ssh = executable('test-fake-ssh',
   sources: 'test-fake-ssh.c',
   dependencies: [libgit, common_main],

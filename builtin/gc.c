@@ -13,11 +13,13 @@
 #define USE_THE_REPOSITORY_VARIABLE
 #define DISABLE_SIGN_COMPARE_WARNINGS
 
+#include "git-compat-util.h"
 #include "builtin.h"
 #include "abspath.h"
 #include "date.h"
 #include "environment.h"
 #include "hex.h"
+#include "gvfs.h"
 #include "config.h"
 #include "tempfile.h"
 #include "lockfile.h"
@@ -43,6 +45,8 @@
 #include "hook.h"
 #include "setup.h"
 #include "trace2.h"
+#include "copy.h"
+#include "dir.h"
 
 #define FAILED_RUN "failed to run %s"
 
@@ -749,6 +753,9 @@ struct repository *repo UNUSED)
 	if (quiet)
 		strvec_push(&repack, "-q");
 
+	if ((!opts.auto_flag || (opts.auto_flag && cfg.gc_auto_threshold > 0)) && gvfs_config_is_set(GVFS_BLOCK_COMMANDS))
+		die(_("'git gc' is not supported on a GVFS repo"));
+
 	if (opts.auto_flag) {
 		if (cfg.detach_auto && opts.detach < 0)
 			opts.detach = 1;
@@ -1150,18 +1157,25 @@ static int write_loose_object_to_stdin(const struct object_id *oid,
 	return ++(d->count) > d->batch_size;
 }
 
+static const char *shared_object_dir = NULL;
+
 static int pack_loose(struct maintenance_run_opts *opts)
 {
 	struct repository *r = the_repository;
 	int result = 0;
 	struct write_loose_object_data data;
 	struct child_process pack_proc = CHILD_PROCESS_INIT;
+	const char *object_dir = r->objects->odb->path;
+
+	/* If set, use the shared object directory. */
+	if (shared_object_dir)
+		object_dir = shared_object_dir;
 
 	/*
 	 * Do not start pack-objects process
 	 * if there are no loose objects.
 	 */
-	if (!for_each_loose_file_in_objdir(r->objects->odb->path,
+	if (!for_each_loose_file_in_objdir(object_dir,
 					   bail_on_loose,
 					   NULL, NULL, NULL))
 		return 0;
@@ -1171,7 +1185,7 @@ static int pack_loose(struct maintenance_run_opts *opts)
 	strvec_push(&pack_proc.args, "pack-objects");
 	if (opts->quiet)
 		strvec_push(&pack_proc.args, "--quiet");
-	strvec_pushf(&pack_proc.args, "%s/pack/loose", r->objects->odb->path);
+	strvec_pushf(&pack_proc.args, "%s/pack/loose", object_dir);
 
 	pack_proc.in = -1;
 
@@ -1190,7 +1204,7 @@ static int pack_loose(struct maintenance_run_opts *opts)
 	data.count = 0;
 	data.batch_size = 50000;
 
-	for_each_loose_file_in_objdir(r->objects->odb->path,
+	for_each_loose_file_in_objdir(object_dir,
 				      write_loose_object_to_stdin,
 				      NULL,
 				      NULL,
@@ -1349,6 +1363,186 @@ static int maintenance_task_incremental_repack(struct maintenance_run_opts *opts
 	return 0;
 }
 
+static void link_or_copy_or_die(const char *src, const char *dst)
+{
+	if (!link(src, dst))
+		return;
+
+	/* Use copy operation if src and dst are on different file systems. */
+	if (errno != EXDEV)
+		warning_errno(_("failed to link '%s' to '%s'"), src, dst);
+
+	if (copy_file(dst, src, 0444))
+		die_errno(_("failed to copy '%s' to '%s'"), src, dst);
+}
+
+static void rename_or_copy_or_die(const char *src, const char *dst)
+{
+	if (!rename(src, dst))
+		return;
+
+	/* Use copy and delete if src and dst are on different file systems. */
+	if (errno != EXDEV)
+		warning_errno(_("failed to move '%s' to '%s'"), src, dst);
+
+	if (copy_file(dst, src, 0444))
+		die_errno(_("failed to copy '%s' to '%s'"), src, dst);
+
+	if (unlink(src))
+		die_errno(_("failed to delete '%s'"), src);
+}
+
+static void migrate_pack(const char *srcdir, const char *dstdir,
+			 const char *pack_filename)
+{
+	size_t basenamelen, srclen, dstlen;
+	struct strbuf src = STRBUF_INIT, dst = STRBUF_INIT;
+	struct {
+		const char *ext;
+		unsigned move:1;
+	} files[] = {
+		{".pack", 0},
+		{".keep", 0},
+		{".rev", 0},
+		{".idx", 1}, /* The index file must be atomically moved last. */
+	};
+
+	trace2_region_enter("maintenance", "migrate_pack", the_repository);
+
+	basenamelen = strlen(pack_filename) - 5; /* .pack */
+	strbuf_addstr(&src, srcdir);
+	strbuf_addch(&src, '/');
+	strbuf_add(&src, pack_filename, basenamelen);
+	strbuf_addstr(&src, ".idx");
+
+	/* A pack without an index file is not yet ready to be migrated. */
+	if (!file_exists(src.buf))
+		goto cleanup;
+
+	strbuf_setlen(&src, src.len - 4 /* .idx */);
+	strbuf_addstr(&dst, dstdir);
+	strbuf_addch(&dst, '/');
+	strbuf_add(&dst, pack_filename, basenamelen);
+
+	srclen = src.len;
+	dstlen = dst.len;
+
+	/* Move or copy files from the source directory to the destination. */
+	for (size_t i = 0; i < ARRAY_SIZE(files); i++) {
+		strbuf_setlen(&src, srclen);
+		strbuf_addstr(&src, files[i].ext);
+
+		if (!file_exists(src.buf))
+			continue;
+
+		strbuf_setlen(&dst, dstlen);
+		strbuf_addstr(&dst, files[i].ext);
+
+		if (files[i].move)
+			rename_or_copy_or_die(src.buf, dst.buf);
+		else
+			link_or_copy_or_die(src.buf, dst.buf);
+	}
+
+	/*
+	 * Now the pack and all associated files exist at the destination we can
+	 * now clean up the files in the source directory.
+	 */
+	for (size_t i = 0; i < ARRAY_SIZE(files); i++) {
+		/* Files that were moved rather than copied have no clean up. */
+		if (files[i].move)
+			continue;
+
+		strbuf_setlen(&src, srclen);
+		strbuf_addstr(&src, files[i].ext);
+
+		/* Files that never existed in originally have no clean up.*/
+		if (!file_exists(src.buf))
+			continue;
+
+		if (unlink(src.buf))
+			warning_errno(_("failed to delete '%s'"), src.buf);
+	}
+
+cleanup:
+	strbuf_release(&src);
+	strbuf_release(&dst);
+
+	trace2_region_leave("maintenance", "migrate_pack", the_repository);
+}
+
+static void move_pack_to_shared_cache(const char *full_path, size_t full_path_len,
+				      const char *file_name, void *data)
+{
+	char *srcdir;
+	const char *dstdir = (const char *)data;
+
+	/* We only care about the actual pack files here.
+	 * The associated .idx, .keep, .rev files will be copied in tandem
+	 * with the pack file, with the index file being moved last.
+	 * The original locations of the non-index files will only deleted
+	 * once all other files have been copied/moved.
+	 */
+	if (!ends_with(file_name, ".pack"))
+		return;
+
+	srcdir = xstrndup(full_path, full_path_len - strlen(file_name) - 1);
+
+	migrate_pack(srcdir, dstdir, file_name);
+
+	free(srcdir);
+}
+
+static int move_loose_object_to_shared_cache(const struct object_id *oid,
+					     const char *path,
+					     UNUSED void *data)
+{
+	struct stat st;
+	struct strbuf dst = STRBUF_INIT;
+	char *hex = oid_to_hex(oid);
+
+	strbuf_addf(&dst, "%s/%.2s/", shared_object_dir, hex);
+
+	if (stat(dst.buf, &st)) {
+		if (mkdir(dst.buf, 0777))
+			die_errno(_("failed to create directory '%s'"), dst.buf);
+	} else if (!S_ISDIR(st.st_mode))
+		die(_("expected '%s' to be a directory"), dst.buf);
+
+	strbuf_addstr(&dst, hex+2);
+	rename_or_copy_or_die(path, dst.buf);
+
+	strbuf_release(&dst);
+	return 0;
+}
+
+static int maintenance_task_cache_local_objs(UNUSED struct maintenance_run_opts *opts,
+					     UNUSED struct gc_config *cfg)
+{
+	struct strbuf dstdir = STRBUF_INIT;
+	struct repository *r = the_repository;
+
+	/* This task is only applicable with a VFS/Scalar shared cache. */
+	if (!shared_object_dir)
+		return 0;
+
+	/* If the dest is the same as the local odb path then we do nothing. */
+	if (!fspathcmp(r->objects->odb->path, shared_object_dir))
+		goto cleanup;
+
+	strbuf_addf(&dstdir, "%s/pack", shared_object_dir);
+
+	for_each_file_in_pack_dir(r->objects->odb->path, move_pack_to_shared_cache,
+				  dstdir.buf);
+
+	for_each_loose_object(move_loose_object_to_shared_cache, NULL,
+			      FOR_EACH_OBJECT_LOCAL_ONLY);
+
+cleanup:
+	strbuf_release(&dstdir);
+	return 0;
+}
+
 typedef int maintenance_task_fn(struct maintenance_run_opts *opts,
 				struct gc_config *cfg);
 
@@ -1378,6 +1572,7 @@ enum maintenance_task_label {
 	TASK_GC,
 	TASK_COMMIT_GRAPH,
 	TASK_PACK_REFS,
+	TASK_CACHE_LOCAL_OBJS,
 
 	/* Leave as final value */
 	TASK__COUNT
@@ -1413,6 +1608,10 @@ static struct maintenance_task tasks[] = {
 		"pack-refs",
 		maintenance_task_pack_refs,
 		pack_refs_condition,
+	},
+	[TASK_CACHE_LOCAL_OBJS] = {
+		"cache-local-objects",
+		maintenance_task_cache_local_objs,
 	},
 };
 
@@ -1508,6 +1707,8 @@ static void initialize_maintenance_strategy(void)
 		tasks[TASK_LOOSE_OBJECTS].schedule = SCHEDULE_DAILY;
 		tasks[TASK_PACK_REFS].enabled = 1;
 		tasks[TASK_PACK_REFS].schedule = SCHEDULE_WEEKLY;
+		tasks[TASK_CACHE_LOCAL_OBJS].enabled = 1;
+		tasks[TASK_CACHE_LOCAL_OBJS].schedule = SCHEDULE_WEEKLY;
 	}
 }
 
@@ -1580,6 +1781,7 @@ static int maintenance_run(int argc, const char **argv, const char *prefix,
 	int i;
 	struct maintenance_run_opts opts = MAINTENANCE_RUN_OPTS_INIT;
 	struct gc_config cfg = GC_CONFIG_INIT;
+	const char *tmp_obj_dir = NULL;
 	struct option builtin_maintenance_run_options[] = {
 		OPT_BOOL(0, "auto", &opts.auto_flag,
 			 N_("run tasks based on the state of the repository")),
@@ -1616,6 +1818,17 @@ static int maintenance_run(int argc, const char **argv, const char *prefix,
 	if (argc != 0)
 		usage_with_options(builtin_maintenance_run_usage,
 				   builtin_maintenance_run_options);
+
+	/*
+	 * To enable the VFS for Git/Scalar shared object cache, use
+	 * the gvfs.sharedcache config option to redirect the
+	 * maintenance to that location.
+	 */
+	if (!git_config_get_value("gvfs.sharedcache", &tmp_obj_dir) &&
+	    tmp_obj_dir) {
+		shared_object_dir = xstrdup(tmp_obj_dir);
+		setenv(DB_ENVIRONMENT, shared_object_dir, 1);
+	}
 
 	ret = maintenance_run_tasks(&opts, &cfg);
 	gc_config_release(&cfg);

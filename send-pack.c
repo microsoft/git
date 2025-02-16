@@ -6,6 +6,7 @@
 #include "date.h"
 #include "gettext.h"
 #include "hex.h"
+#include "gvfs.h"
 #include "object-store-ll.h"
 #include "pkt-line.h"
 #include "sideband.h"
@@ -46,7 +47,7 @@ int option_parse_push_signed(const struct option *opt,
 
 static void feed_object(const struct object_id *oid, FILE *fh, int negative)
 {
-	if (negative &&
+	if (negative && !gvfs_config_is_set(GVFS_MISSING_OK) &&
 	    !repo_has_object_file_with_flags(the_repository, oid,
 					     OBJECT_INFO_SKIP_FETCH_OBJECT |
 					     OBJECT_INFO_QUICK))
@@ -91,6 +92,8 @@ static int pack_objects(int fd, struct ref *refs, struct oid_array *advertised,
 		strvec_push(&po.args, "--shallow");
 	if (args->disable_bitmaps)
 		strvec_push(&po.args, "--no-use-bitmap-index");
+	if (args->no_reuse_delta)
+		strvec_push(&po.args, "--no-reuse-delta");
 	po.in = -1;
 	po.out = args->stateless_rpc ? -1 : fd;
 	po.git_cmd = 1;
