@@ -729,7 +729,7 @@ static struct cmd_struct commands[] = {
 #ifndef WITH_BREAKING_CHANGES
 	{ "whatchanged", cmd_whatchanged, RUN_SETUP },
 #endif
-	{ "worktree", cmd_worktree, RUN_SETUP | BLOCK_ON_GVFS_REPO },
+	{ "worktree", cmd_worktree, RUN_SETUP | BLOCK_ON_VFS_ENABLED },
 	{ "write-tree", cmd_write_tree, RUN_SETUP },
 };
 
