@@ -32,6 +32,7 @@
 #define DELAY_PAGER_CONFIG	(1<<4)
 #define NO_PARSEOPT		(1<<5) /* parse-options is not used */
 #define BLOCK_ON_GVFS_REPO	(1<<6) /* command not allowed in GVFS repos */
+#define BLOCK_ON_VFS_ENABLED	(1<<7) /* command not allowed when virtual file system is used */
 
 struct cmd_struct {
 	const char *cmd;
@@ -541,6 +542,9 @@ static int run_builtin(struct cmd_struct *p, int argc, const char **argv, struct
 
 	if (!help && p->option & BLOCK_ON_GVFS_REPO && gvfs_config_is_set(GVFS_BLOCK_COMMANDS))
 		die("'git %s' is not supported on a GVFS repo", p->cmd);
+
+	if (!help && p->option & BLOCK_ON_VFS_ENABLED && gvfs_config_is_set(GVFS_USE_VIRTUAL_FILESYSTEM))
+		die("'git %s' is not supported when using the virtual file system", p->cmd);
 
 	if (run_pre_command_hook(the_repository, argv))
 		die("pre-command hook aborted command");
