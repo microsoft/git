@@ -677,7 +677,7 @@ static int init_shared_object_cache(const char *url,
 {
 	struct strbuf buf = STRBUF_INIT;
 	int res = 0;
-	char *cache_key = NULL, *shared_cache_path = NULL;
+	char *cache_key = NULL, *shared_cache_path = NULL, *alternates = NULL;
 
 	if (!(cache_key = get_cache_key(url))) {
 		res = error(_("could not determine cache key for '%s'"), url);
@@ -699,13 +699,14 @@ static int init_shared_object_cache(const char *url,
 		goto cleanup;
 	}
 
-	write_file(repo_git_path(the_repository, "objects/info/alternates"),
-		   "%s\n", shared_cache_path);
+	alternates = repo_git_path(the_repository, "objects/info/alternates");
+	write_file(alternates, "%s\n", shared_cache_path);
 
 	cleanup:
 	strbuf_release(&buf);
 	free(shared_cache_path);
 	free(cache_key);
+	free(alternates);
 	return res;
 }
 
