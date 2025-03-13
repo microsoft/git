@@ -5,13 +5,15 @@ on:
 
   workflow_dispatch:
     inputs:
-      release:
-        description: 'Release Id'
+      tag:
+        description: 'Tag name to release'
         required: true
-        default: 'latest'
 
 permissions:
   id-token: write # required for Azure login via OIDC
+
+env:
+  TAG_NAME: ${{ github.event.inputs.tag }}
 
 jobs:
   release:
@@ -27,24 +29,47 @@ jobs:
 
       - name: Publish manifest with winget-create
         run: |
-          # Get correct release asset
-          $github = Get-Content '${{ github.event_path }}' | ConvertFrom-Json
-          $asset_x64 = $github.release.assets | Where-Object -Property name -match '64-bit.exe$'
-          $asset_arm64 = $github.release.assets | Where-Object -Property name -match 'arm64.exe$'
+          # Enabling stop on error and tracing
+          Set-PSDebug -Trace 2
+          $ErrorActionPreference = "Stop"
+          $PSNativeCommandErrorActionPreference = "Stop"
+
+          if ($env:TAG_NAME -eq "") {
+            $env:TAG_NAME =  $github.release.tag_name
+
+            # Get latest release
+            $github = Get-Content '${{ github.event_path }}' | ConvertFrom-Json
+
+            # Get download URLs
+            $asset_x64 = $github.release.assets | Where-Object -Property name -match '64-bit.exe$'
+            $asset_arm64 = $github.release.assets | Where-Object -Property name -match 'arm64.exe$'
+            $asset_x64_url = $asset_x64.browser_download_url
+            $asset_arm64_url = $asset_arm64.browser_download_url
+          } else {
+            # Get release object by its tag
+            $env:GH_TOKEN = ${{ toJson(secrets.GITHUB_TOKEN) }}
+            $github = (gh release view -R microsoft/git $env:TAG_NAME --json tagName,assets --jq '{tag_name: .tagName, assets: .assets}') | ConvertFrom-Json
+
+            # Get download URLs
+            $asset_x64 = $github.assets | Where-Object -Property name -match '64-bit.exe$'
+            $asset_arm64 = $github.assets | Where-Object -Property name -match 'arm64.exe$'
+            $asset_x64_url = $asset_x64.url
+            $asset_arm64_url = $asset_arm64.url
+          }
 
           # Remove 'v' and 'vfs' from the version
-          $github.release.tag_name -match '\d.*'
-          $version = $Matches[0] -replace ".vfs",""
+          $env:TAG_NAME -match 'v(.*?)vfs\.(.*)'
+          $version = $Matches[1] + $Matches[2]
 
           # Download wingetcreate and create manifests
           Invoke-WebRequest https://aka.ms/wingetcreate/latest -OutFile wingetcreate.exe
           .\wingetcreate.exe update Microsoft.Git `
               -v $version `
               -o manifests `
-              -u "$($asset_x64.browser_download_url)|x64|machine" `
-                 "$($asset_x64.browser_download_url)|x64|user" `
-                 "$($asset_arm64.browser_download_url)|arm64|machine" `
-                 "$($asset_arm64.browser_download_url)|arm64|user"
+              -u "$($asset_x64_url)|x64|machine" `
+                 "$($asset_x64_url)|x64|user" `
+                 "$($asset_arm64_url)|arm64|machine" `
+                 "$($asset_arm64_url)|arm64|user"
 
           # Manually substitute the name of the default branch in the License
           # and Copyright URLs since the tooling cannot do that for us.
@@ -52,7 +77,11 @@ jobs:
           $manifestPath = dir -Path ./manifests -Filter Microsoft.Git.locale.en-US.yaml -Recurse | %{$_.FullName}
           sed -i "s/vfs-[.0-9]*/vfs-$shortenedVersion/g" "$manifestPath"
 
-          # Submit manifests
+          # Download the token from Azure Key Vault and mask it in the logs
+          az keyvault secret download --name ${{ secrets.WINGET_TOKEN_SECRET_NAME }} --vault-name ${{ secrets.AZURE_VAULT }} --file token.txt
+          Write-Host -NoNewLine "::add-mask::$(Get-Content token.txt)"
+
+          # Submit the manifest to the winget-pkgs repository
           $manifestDirectory = Split-Path "$manifestPath"
-          .\wingetcreate.exe submit -t "(az keyvault secret show --name ${{ secrets.WINGET_TOKEN_SECRET_NAME }} --vault-name ${{ secrets.AZURE_VAULT }} --query "value" --output tsv)" $manifestDirectory
+          .\wingetcreate.exe submit -t "$(Get-Content token.txt)" $manifestDirectory
         shell: powershell
