@@ -79,6 +79,8 @@
 #	else
 #		define p_snprintf snprintf
 #	endif
+
+#	define localtime_r(timer, buf) (localtime_s(buf, timer) == 0 ? buf : NULL)
 #else
 #	include <sys/wait.h> /* waitpid(2) */
 #	include <unistd.h>
