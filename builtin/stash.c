@@ -348,7 +348,7 @@ static int reset_tree(struct object_id *i_tree, int update, int reset)
 	memset(&opts, 0, sizeof(opts));
 
 	tree = repo_parse_tree_indirect(the_repository, i_tree);
-	if (repo_parse_tree(the_repository, tree))
+	if (!tree || repo_parse_tree(the_repository, tree))
 		return -1;
 
 	init_tree_desc(t, &tree->object.oid, tree->buffer, tree->size);
@@ -1461,6 +1461,11 @@ static int do_create_stash(const struct pathspec *ps, struct strbuf *stash_msg_b
 		goto done;
 	} else {
 		head_commit = lookup_commit(the_repository, &info->b_commit);
+		if (!head_commit) {
+			ret = error(_("could not look up commit '%s'"),
+				    oid_to_hex (&info->b_commit));
+			goto done;
+		}
 	}
 
 	if (!check_changes(ps, include_untracked, &untracked_files)) {
