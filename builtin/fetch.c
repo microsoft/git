@@ -2748,6 +2748,11 @@ int cmd_fetch(int argc,
 			die(_("must supply remote when using --negotiate-only"));
 		gtransport = prepare_transport(remote, 1, &filter_options);
 		if (gtransport->smart_options) {
+			/*
+			 * Intentionally assign the address of a local variable
+			 * to a non-local struct's field.
+			 * codeql[cpp/stack-address-escape]
+			 */
 			gtransport->smart_options->acked_commits = &acked_commits;
 		} else {
 			warning(_("protocol does not support --negotiate-only, exiting"));
