@@ -2561,6 +2561,7 @@ int write_commit_graph(struct odb_source *source,
 		struct commit_graph *g = ctx.r->objects->commit_graph;
 
 		while (g) {
+			/* Intentional: codeql[cpp/stack-address-escape] */
 			g->topo_levels = &topo_levels;
 			g = g->base_graph;
 		}
