@@ -558,7 +558,7 @@ clar_parse_args(int argc, char **argv)
 
 		default:
 			clar_abort("Unexpected commandline argument '%s'.\n",
-				   argument[1]);
+				   argument);
 		}
 	}
 }
