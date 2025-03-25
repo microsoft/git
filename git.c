@@ -543,6 +543,7 @@ static int run_post_command_hook(struct repository *r)
 	ret = run_hooks_opt(r, "post-command", &opt);
 
 	strvec_clear(&sargv);
+	strvec_clear(&opt.args);
 	setenv("COMMAND_HOOK_LOCK", "false", 1);
 	return ret;
 }
