@@ -30,6 +30,8 @@
 #define GVFS_BLOCK_FILTERS_AND_EOL_CONVERSIONS      (1 << 6)
 #define GVFS_PREFETCH_DURING_FETCH		    (1 << 7)
 
+#define GVFS_ANY_MASK                               0xFFFFFFFF
+
 void gvfs_load_config_value(const char *value);
 int gvfs_config_is_set(int mask);
 
