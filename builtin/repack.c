@@ -24,6 +24,7 @@
 #include "pack-bitmap.h"
 #include "refs.h"
 #include "list-objects-filter-options.h"
+#include "gvfs.h"
 
 #define ALL_INTO_ONE 1
 #define LOOSEN_UNREACHABLE 2
@@ -1243,7 +1244,7 @@ static const char *find_pack_prefix(const char *packdir, const char *packtmp)
 int cmd_repack(int argc,
 	       const char **argv,
 	       const char *prefix,
-	       struct repository *repo UNUSED)
+	       struct repository *repo)
 {
 	struct child_process cmd = CHILD_PROCESS_INIT;
 	struct string_list_item *item;
@@ -1255,6 +1256,7 @@ int cmd_repack(int argc,
 	int show_progress;
 	char **midx_pack_names = NULL;
 	size_t midx_pack_names_nr = 0;
+	const char *tmp_obj_dir = NULL;
 
 	/* variables to be filled by option parsing */
 	int delete_redundant = 0;
@@ -1383,6 +1385,10 @@ int cmd_repack(int argc,
 		warning(_("disabling bitmap writing, as some objects are not being packed"));
 		write_bitmaps = 0;
 	}
+
+	if (gvfs_config_is_set(repo, GVFS_ANY_MASK) &&
+	    !repo_config_get_value(repo, "gvfs.sharedcache", &tmp_obj_dir))
+		warning(_("shared object cache is configured but will not be repacked"));
 
 	if (write_midx && write_bitmaps) {
 		struct strbuf path = STRBUF_INIT;
