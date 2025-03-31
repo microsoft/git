@@ -24,6 +24,7 @@
 #include "pack-bitmap.h"
 #include "refs.h"
 #include "list-objects-filter-options.h"
+#include "gvfs.h"
 
 #define ALL_INTO_ONE 1
 #define LOOSEN_UNREACHABLE 2
@@ -1177,6 +1178,7 @@ int cmd_repack(int argc,
 	struct tempfile *refs_snapshot = NULL;
 	int i, ext, ret;
 	int show_progress;
+	const char *tmp_obj_dir = NULL;
 
 	/* variables to be filled by option parsing */
 	int delete_redundant = 0;
@@ -1300,6 +1302,10 @@ int cmd_repack(int argc,
 		warning(_("disabling bitmap writing, as some objects are not being packed"));
 		write_bitmaps = 0;
 	}
+
+	if (gvfs_config_is_set(GVFS_ANY_MASK) &&
+	    !git_config_get_value("gvfs.sharedcache", &tmp_obj_dir))
+		warning(_("shared object cache is configured but will not be repacked"));
 
 	if (write_midx && write_bitmaps) {
 		struct strbuf path = STRBUF_INIT;
