@@ -19,6 +19,7 @@
 #include "hex.h"
 #include "wt-status.h"
 #include "read-cache-ll.h"
+#include "gvfs.h"
 
 #define ALL_INTO_ONE 1
 #define LOOSEN_UNREACHABLE 2
@@ -169,6 +170,7 @@ int cmd_repack(int argc,
 	struct tempfile *refs_snapshot = NULL;
 	int i, ret;
 	int show_progress;
+	const char *tmp_obj_dir = NULL;
 
 	/* variables to be filled by option parsing */
 	struct repack_config_ctx config_ctx;
@@ -429,6 +431,10 @@ int cmd_repack(int argc,
 		warning(_("disabling bitmap writing, as some objects are not being packed"));
 		write_bitmaps = 0;
 	}
+
+	if (gvfs_config_is_set(repo, GVFS_ANY_MASK) &&
+	    !repo_config_get_value(repo, "gvfs.sharedcache", &tmp_obj_dir))
+		warning(_("shared object cache is configured but will not be repacked"));
 
 	if (config_ctx.midx_split_factor < 2)
 		die(_("invalid value for %s: %d"), "--midx-split-factor",
