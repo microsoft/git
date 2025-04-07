@@ -3,7 +3,7 @@ survey.*::
 	command. The intention is that this command could be run in the
 	background with these options.
 +
---
+----
 	verbose::
 		This boolean value implies the `--[no-]verbose` option.
 	progress::
@@ -11,4 +11,4 @@ survey.*::
 	top::
 		This integer value implies `--top=<N>`, specifying the
 		number of entries in the detail tables.
---
+----
