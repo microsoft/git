@@ -105,4 +105,30 @@ test_expect_success 'index-pack works with thin pack A->B->C with B on disk' '
 	)
 '
 
+test_expect_failure 'index-pack works with thin pack A->B->C with B on disk' '
+	git init server &&
+	(
+		cd server &&
+		test_commit_bulk 4
+	) &&
+
+	A=$(git -C server rev-parse HEAD^{tree}) &&
+	B=$(git -C server rev-parse HEAD~1^{tree}) &&
+	C=$(git -C server rev-parse HEAD~2^{tree}) &&
+	git -C server reset --hard HEAD~1 &&
+
+	cat >in <<-EOF &&
+	REF_DELTA $A $B
+	REF_DELTA $B $C
+	EOF
+
+	test-tool -C server pack-deltas 2 <in >thin.pack &&
+
+	git clone "file://$(pwd)/server" client &&
+	(
+		cd client &&
+		git index-pack --fix-thin --stdin <../thin.pack
+	)
+'
+
 test_done
