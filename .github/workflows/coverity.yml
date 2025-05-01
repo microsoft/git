@@ -28,7 +28,6 @@ defaults:
 
 jobs:
   coverity:
-    if: contains(fromJSON(vars.ENABLE_COVERITY_SCAN_FOR_BRANCHES || '[""]'), github.ref_name)
     strategy:
       matrix:
         os: ${{ fromJSON(vars.ENABLE_COVERITY_SCAN_ON_OS || '["ubuntu-latest"]') }}
