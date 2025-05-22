@@ -83,6 +83,7 @@ static struct string_list mailmap = STRING_LIST_INIT_NODUP;
 
 static unsigned blame_move_score;
 static unsigned blame_copy_score;
+static int rename_detection_mode = -1; /* -1: default, 0: disabled, >0: enabled with score */
 
 /* Remember to update object flag allocation in object.h */
 #define METAINFO_SHOWN		(1u<<12)
@@ -743,6 +744,26 @@ static int git_blame_config(const char *var, const char *value,
 		mark_ignored_lines = git_config_bool(var, value);
 		return 0;
 	}
+	if (!strcmp(var, "blame.renames")) {
+		if (!value)
+			return config_error_nonbool(var);
+		if (!strcmp(value, "true") || !strcmp(value, "1")) {
+			rename_detection_mode = DIFF_DETECT_RENAME;
+		} else if (!strcmp(value, "false") || !strcmp(value, "0")) {
+			rename_detection_mode = 0;
+		} else if (!strcmp(value, "copy")) {
+			rename_detection_mode = DIFF_DETECT_COPY;
+		} else {
+			int score = git_config_int(var, value, NULL);
+			if (score < 0 || score > 100)
+				return error(_("invalid value for %s"), var);
+			if (score == 100)
+				rename_detection_mode = 100; /* exact rename only */
+			else
+				rename_detection_mode = score;
+		}
+		return 0;
+	}
 	if (!strcmp(var, "color.blame.repeatedlines")) {
 		if (color_parse_mem(value, strlen(value), repeated_meta_color))
 			warning(_("invalid value for '%s': '%s'"),
@@ -779,6 +800,36 @@ static int git_blame_config(const char *var, const char *value,
 	return git_default_config(var, value, ctx, cb);
 }
 
+static int find_rename_callback(const struct option *option, const char *arg, int unset)
+{
+	int *rename_detection = option->value;
+
+	BUG_ON_OPT_NEG(unset);
+
+	/* --find-renames without a score */
+	*rename_detection = DIFF_DETECT_RENAME;
+
+	if (arg) {
+		int value;
+		const char *percent;
+
+		/* Handle -M<n> or --find-renames=<n> */
+		value = strtol(arg, (char **) &percent, 10);
+		if (percent == arg)
+			return error(_("invalid similarity threshold '%s'"), arg);
+		if (value < 0 || 100 < value)
+			return error(_("similarity threshold must be between 0 and 100"));
+		/* A threshold of 0 is equivalent to no rename detection */
+		if (value == 0)
+			*rename_detection = 0;
+		else if (value == 100)
+			*rename_detection = 100; /* exact rename only */
+		else
+			*rename_detection = value;
+	}
+	return 0;
+}
+
 static int blame_copy_callback(const struct option *option, const char *arg, int unset)
 {
 	int *opt = option->value;
@@ -800,19 +851,6 @@ static int blame_copy_callback(const struct option *option, const char *arg, int
 
 	if (arg)
 		blame_copy_score = parse_score(arg);
-	return 0;
-}
-
-static int blame_move_callback(const struct option *option, const char *arg, int unset)
-{
-	int *opt = option->value;
-
-	BUG_ON_OPT_NEG(unset);
-
-	*opt |= PICKAXE_BLAME_MOVE;
-
-	if (arg)
-		blame_move_score = parse_score(arg);
 	return 0;
 }
 
@@ -915,7 +953,7 @@ int cmd_blame(int argc,
 		OPT_STRING('S', NULL, &revs_file, N_("file"), N_("use revisions from <file> instead of calling git-rev-list")),
 		OPT_STRING(0, "contents", &contents_from, N_("file"), N_("use <file>'s contents as the final image")),
 		OPT_CALLBACK_F('C', NULL, &opt, N_("score"), N_("find line copies within and across files"), PARSE_OPT_OPTARG, blame_copy_callback),
-		OPT_CALLBACK_F('M', NULL, &opt, N_("score"), N_("find line movements within and across files"), PARSE_OPT_OPTARG, blame_move_callback),
+		OPT_CALLBACK_F('M', "find-renames", &rename_detection_mode, N_("score"), N_("find renames, optionally set similarity index"), PARSE_OPT_OPTARG, find_rename_callback),
 		OPT_STRING_LIST('L', NULL, &range_list, N_("range"),
 				N_("process only line range <start>,<end> or function :<funcname>")),
 		OPT__ABBREV(&abbrev),

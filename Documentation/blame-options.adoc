@@ -83,6 +83,7 @@ include::line-range-format.adoc[]
 	or `--incremental`.
 
 -M[<num>]::
+--find-renames[=<num>]::
 	Detect moved or copied lines within a file. When a commit
 	moves or copies a block of lines (e.g. the original file
 	has A and then B, and the commit changes it to B and then
@@ -96,7 +97,19 @@ include::line-range-format.adoc[]
 <num> is optional but it is the lower bound on the number of
 alphanumeric characters that Git must detect as moving/copying
 within a file for it to associate those lines with the parent
-commit. The default value is 20.
+commit. If <num> is specified, it also affects the automatic
+detection of whole-file renames. The value can be from 0 to 100
+and represents a similarity index. A value of 0 disables rename
+detection entirely, 100 requires exact matches, and values in
+between control how similar the file content needs to be to be
+considered a rename. The default value is 50.
++
+The `-M` option can also be used to influence rename detection
+behavior when following the origin of lines across repository
+history. By default, rename detection is enabled at a 50%
+similarity threshold, which can lead to performance issues in
+large repositories. This option (or the `blame.renames` config)
+can be used to disable or adjust the rename detection.
 
 -C[<num>]::
 	In addition to `-M`, detect lines moved or copied from other

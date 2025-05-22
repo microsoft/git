@@ -1423,10 +1423,17 @@ static struct blame_origin *find_rename(struct repository *r,
 	struct blame_origin *porigin = NULL;
 	struct diff_options diff_opts;
 	int i;
+	extern int rename_detection_mode;
 
 	repo_diff_setup(r, &diff_opts);
 	diff_opts.flags.recursive = 1;
-	diff_opts.detect_rename = DIFF_DETECT_RENAME;
+	/* 
+	 * Use rename_detection_mode if specified, otherwise default to DIFF_DETECT_RENAME
+	 * For mode values > 0 and < 100, use it as similarity threshold
+	 */
+	diff_opts.detect_rename = (rename_detection_mode == 0) ? 0 : 
+	                           (rename_detection_mode > 0) ? 
+	                           rename_detection_mode : DIFF_DETECT_RENAME;
 	diff_opts.output_format = DIFF_FORMAT_NO_OUTPUT;
 	diff_opts.single_follow = origin->path;
 	diff_setup_done(&diff_opts);

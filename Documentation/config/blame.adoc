@@ -35,3 +35,14 @@ blame.markUnblamableLines::
 blame.markIgnoredLines::
 	Mark lines that were changed by an ignored revision that we attributed to
 	another commit with a '?' in the output of linkgit:git-blame[1].
+
+blame.renames::
+	Controls rename detection when following the history of lines in
+	linkgit:git-blame[1]. It can be set to `true` (default), `false`,
+	`copy`, or an integer value specifying the minimum similarity index
+	(from 0 to 100). When set to `false`, no rename detection is performed.
+	When set to `true`, it behaves the same as the default similarity index
+	of 50%. When set to `copy`, both rename and copy detection is performed.
+	An integer value specifies the minimum similarity index, with 0 meaning
+	"no rename detection" and 100 meaning "only exact renames". The `-M`
+	option overrides this setting.
