@@ -1321,7 +1321,8 @@ static void add_bloom_key(struct blame_bloom_data *bd,
 static struct blame_origin *find_origin(struct repository *r,
 					struct commit *parent,
 					struct blame_origin *origin,
-					struct blame_bloom_data *bd)
+					struct blame_bloom_data *bd,
+					struct blame_scoreboard *unused_sb)
 {
 	struct blame_origin *porigin;
 	struct diff_options diff_opts;
@@ -1418,12 +1419,13 @@ static struct blame_origin *find_origin(struct repository *r,
 static struct blame_origin *find_rename(struct repository *r,
 					struct commit *parent,
 					struct blame_origin *origin,
-					struct blame_bloom_data *bd)
+					struct blame_bloom_data *bd,
+					struct blame_scoreboard *scoreboard)
 {
 	struct blame_origin *porigin = NULL;
 	struct diff_options diff_opts;
 	int i;
-	extern int rename_detection_mode;
+	int detection_mode = scoreboard->rename_detection_mode;
 
 	repo_diff_setup(r, &diff_opts);
 	diff_opts.flags.recursive = 1;
@@ -1431,9 +1433,9 @@ static struct blame_origin *find_rename(struct repository *r,
 	 * Use rename_detection_mode if specified, otherwise default to DIFF_DETECT_RENAME
 	 * For mode values > 0 and < 100, use it as similarity threshold
 	 */
-	diff_opts.detect_rename = (rename_detection_mode == 0) ? 0 : 
-	                           (rename_detection_mode > 0) ? 
-	                           rename_detection_mode : DIFF_DETECT_RENAME;
+	diff_opts.detect_rename = (detection_mode == 0) ? 0 : 
+	                           (detection_mode > 0) ? 
+	                           detection_mode : DIFF_DETECT_RENAME;
 	diff_opts.output_format = DIFF_FORMAT_NO_OUTPUT;
 	diff_opts.single_follow = origin->path;
 	diff_setup_done(&diff_opts);
@@ -2414,7 +2416,8 @@ static void distribute_blame(struct blame_scoreboard *sb, struct blame_entry *bl
 typedef struct blame_origin *(*blame_find_alg)(struct repository *,
 					       struct commit *,
 					       struct blame_origin *,
-					       struct blame_bloom_data *);
+					       struct blame_bloom_data *,
+					       struct blame_scoreboard *);
 
 static void pass_blame(struct blame_scoreboard *sb, struct blame_origin *origin, int opt)
 {
@@ -2452,7 +2455,7 @@ static void pass_blame(struct blame_scoreboard *sb, struct blame_origin *origin,
 				continue;
 			if (repo_parse_commit(the_repository, p))
 				continue;
-			porigin = find(sb->repo, p, origin, sb->bloom_data);
+			porigin = find(sb->repo, p, origin, sb->bloom_data, sb);
 			if (!porigin)
 				continue;
 			if (oideq(&porigin->blob_oid, &origin->blob_oid)) {
@@ -2766,6 +2769,7 @@ void init_scoreboard(struct blame_scoreboard *sb)
 	memset(sb, 0, sizeof(struct blame_scoreboard));
 	sb->move_score = BLAME_DEFAULT_MOVE_SCORE;
 	sb->copy_score = BLAME_DEFAULT_COPY_SCORE;
+	sb->rename_detection_mode = -1; /* -1: default, 0: disabled, >0: enabled with score */
 }
 
 void setup_scoreboard(struct blame_scoreboard *sb,

@@ -149,6 +149,7 @@ struct blame_scoreboard {
 	int xdl_opts;
 	int no_whole_file_rename;
 	int debug;
+	int rename_detection_mode;
 
 	/* callbacks */
 	void(*on_sanity_fail)(struct blame_scoreboard *, int);
