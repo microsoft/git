@@ -2597,6 +2597,8 @@ void assign_blame(struct blame_scoreboard *sb, int opt)
 	struct rev_info *revs = sb->revs;
 	struct commit *commit = prio_queue_get(&sb->commits);
 
+	fprintf(stderr, "DEBUG assign_blame rename_detection_mode=%d\n", sb->rename_detection_mode);
+
 	while (commit) {
 		struct blame_entry *ent;
 		struct blame_origin *suspect = get_blame_suspects(commit);
@@ -2780,6 +2782,7 @@ void setup_scoreboard(struct blame_scoreboard *sb,
 	struct blame_origin *o;
 	struct commit *final_commit = NULL;
 	enum object_type type;
+	int saved_mode = sb->rename_detection_mode;
 
 	init_blame_suspects(&blame_suspects);
 
@@ -2788,6 +2791,9 @@ void setup_scoreboard(struct blame_scoreboard *sb,
 
 	if (!sb->repo)
 		BUG("repo is NULL");
+	
+	/* Restore the rename_detection_mode since init_scoreboard would reset it */
+	sb->rename_detection_mode = saved_mode;
 
 	if (!sb->reverse) {
 		sb->final = find_single_final(sb->revs, &final_commit_name);

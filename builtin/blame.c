@@ -1177,10 +1177,12 @@ parse_done:
 	sb.reverse = reverse;
 	sb.repo = the_repository;
 	sb.path = path;
+	fprintf(stderr, "DEBUG before setup_scoreboard rename_detection_mode=%d\n", sb.rename_detection_mode);
 	build_ignorelist(&sb, &ignore_revs_file_list, &ignore_rev_list);
 	string_list_clear(&ignore_revs_file_list, 0);
 	string_list_clear(&ignore_rev_list, 0);
 	setup_scoreboard(&sb, &o);
+	fprintf(stderr, "DEBUG after setup_scoreboard rename_detection_mode=%d\n", sb.rename_detection_mode);
 
 	/*
 	 * Changed-path Bloom filters are disabled when looking
