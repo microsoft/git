@@ -1429,10 +1429,11 @@ static struct blame_origin *find_rename(struct repository *r,
 
 	repo_diff_setup(r, &diff_opts);
 	diff_opts.flags.recursive = 1;
-	/* 
+	/*
 	 * Use rename_detection_mode if specified, otherwise default to DIFF_DETECT_RENAME
 	 * For mode values > 0 and < 100, use it as similarity threshold
 	 */
+	fprintf(stderr, "DEBUG find_rename detection_mode=%d\n", detection_mode);
 	diff_opts.detect_rename = (detection_mode == 0) ? 0 : 
 	                           (detection_mode > 0) ? 
 	                           detection_mode : DIFF_DETECT_RENAME;

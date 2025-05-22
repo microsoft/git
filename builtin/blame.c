@@ -810,7 +810,8 @@ static int find_rename_callback(const struct option *option, const char *arg, in
 {
 	struct blame_scoreboard *sb = option->value;
 
-	BUG_ON_OPT_NEG(unset);
+	if (unset)
+		return 0;
 
 	/* --find-renames without a score */
 	sb->rename_detection_mode = DIFF_DETECT_RENAME;
@@ -833,6 +834,17 @@ static int find_rename_callback(const struct option *option, const char *arg, in
 		else
 			sb->rename_detection_mode = value;
 	}
+	return 0;
+}
+
+static int disable_rename_detection(const struct option *option, const char *arg, int unset)
+{
+	struct blame_scoreboard *sb = option->value;
+	if (unset)
+		return 0; /* --no-no-find-renames is a no-op */
+	BUG_ON_OPT_ARG(arg);
+	fprintf(stderr, "SETTING rename_detection_mode to 0\n");
+	sb->rename_detection_mode = 0;
 	return 0;
 }
 
@@ -960,7 +972,7 @@ int cmd_blame(int argc,
 		OPT_STRING(0, "contents", &contents_from, N_("file"), N_("use <file>'s contents as the final image")),
 		OPT_CALLBACK_F('C', NULL, &opt, N_("score"), N_("find line copies within and across files"), PARSE_OPT_OPTARG, blame_copy_callback),
 		OPT_CALLBACK_F('M', "find-renames", &sb, N_("score"), N_("find renames, optionally set similarity index"), PARSE_OPT_OPTARG, find_rename_callback),
-		OPT_SET_INT(0, "no-find-renames", &sb.rename_detection_mode, N_("disable rename detection"), 0),
+		{ OPTION_CALLBACK, 0, "no-find-renames", &sb, NULL, N_("disable rename detection"), 0, disable_rename_detection },
 		OPT_STRING_LIST('L', NULL, &range_list, N_("range"),
 				N_("process only line range <start>,<end> or function :<funcname>")),
 		OPT__ABBREV(&abbrev),
