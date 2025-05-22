@@ -214,6 +214,33 @@ static int set_recommended_config(int reconfigure)
 	}
 
 	/*
+	 * Set HTTP/1.1 for Azure DevOps URLs
+	 * We check for dev.azure.com/ and .visualstudio.com/ patterns
+	 * which are sufficient to identify ADO URLs (including formats like
+	 * https://orgname@dev.azure.com/...)
+	 */
+	if (!git_config_get_string("remote.origin.url", &value)) {
+		if (starts_with(value, "https://dev.azure.com/") ||
+		    strstr(value, "@dev.azure.com/") ||
+		    strstr(value, ".visualstudio.com/")) {
+			struct strbuf key = STRBUF_INIT;
+			strbuf_addf(&key, "http.%s.version", value);
+			FREE_AND_NULL(value);
+
+			if (reconfigure || git_config_get_string(key.buf, &value)) {
+				trace2_data_string("scalar", the_repository, key.buf, "created");
+				if (git_config_set_gently(key.buf, "HTTP/1.1") < 0) {
+					strbuf_release(&key);
+					return error(_("could not configure %s=%s"),
+						     key.buf, "HTTP/1.1");
+				}
+			}
+			strbuf_release(&key);
+		}
+		FREE_AND_NULL(value);
+	}
+
+	/*
 	 * The `log.excludeDecoration` setting is special because it allows
 	 * for multiple values.
 	 */
@@ -848,7 +875,7 @@ static int cmd_clone(int argc, const char **argv)
 	/* Is --[no-]gvfs-protocol unspecified? Infer from url. */
 	if (gvfs_protocol < 0) {
 		if (cache_server_url ||
-		    strstr(url, "dev.azure.com") ||
+		    strstr(url, "dev.azure.com/") ||
 		    strstr(url, "visualstudio.com"))
 			gvfs_protocol = 1;
 		else
@@ -865,7 +892,7 @@ static int cmd_clone(int argc, const char **argv)
 			cache_server_url = default_cache_server_url;
 		if (set_config("core.useGVFSHelper=true") ||
 		    set_config("core.gvfs=150") ||
-		    set_config("http.version=HTTP/1.1")) {
+		    set_config("http.%s.version=HTTP/1.1", url)) {
 			res = error(_("could not turn on GVFS helper"));
 			goto cleanup;
 		}
