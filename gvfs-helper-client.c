@@ -335,6 +335,38 @@ static void gh_client__choose_odb(void)
 	}
 }
 
+static void stop_gh_server_subprocesses(void)
+{
+	struct gh_server__process *entry, **entries;
+	struct hashmap_iter iter;
+	size_t i = 0, size;
+
+	if (!gh_server__subprocess_map_initialized)
+		return;
+
+	/*
+	 * Since `subprocess_stop()` modifies the hashmap by removing the
+	 * respective subprocess, we cannot use `hashmap_for_each_entry()`
+	 * directly, but have to copy the entries to an array first.
+	 */
+	size = hashmap_get_size(&gh_server__subprocess_map);
+	ALLOC_ARRAY(entries, size);
+	hashmap_for_each_entry(&gh_server__subprocess_map,
+			       &iter, entry, subprocess)
+		entries[i++] = entry;
+	if (i != size)
+		BUG("gh_server__subprocess_map: size mismatch: "
+		    "%"PRIuMAX" != %"PRIuMAX,
+		      i, size);
+	while(i--)
+		subprocess_stop(&gh_server__subprocess_map,
+				&entries[i]->subprocess);
+	FREE_AND_NULL(entries);
+
+	hashmap_clear(&gh_server__subprocess_map);
+	gh_server__subprocess_map_initialized = 0;
+}
+
 static struct gh_server__process *gh_client__find_long_running_process(
 	unsigned int cap_needed)
 {
@@ -373,6 +405,7 @@ static struct gh_server__process *gh_client__find_long_running_process(
 		gh_server__subprocess_map_initialized = 1;
 		hashmap_init(&gh_server__subprocess_map,
 			     (hashmap_cmp_fn)cmd2process_cmp, NULL, 0);
+		atexit(stop_gh_server_subprocesses);
 		entry = NULL;
 	} else
 		entry = (struct gh_server__process *)subprocess_find_entry(
