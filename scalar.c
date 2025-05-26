@@ -467,7 +467,7 @@ static int supports_gvfs_protocol(const char *url, char **cache_server_url)
 		return 0;
 
 	cp.git_cmd = 1;
-	strvec_pushl(&cp.args, "gvfs-helper", "--remote", url, "config", NULL);
+	strvec_pushl(&cp.args, "gvfs-helper", "-c", "http.version=HTTP/1.1", "--remote", url, "config", NULL);
 	if (!pipe_command(&cp, NULL, 0, &out, 512, NULL, 0)) {
 		long l = 0;
 		struct json_iterator it =
