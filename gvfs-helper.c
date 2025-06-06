@@ -2910,7 +2910,7 @@ static void do_req(const char *url_base,
 	slot = get_active_slot();
 	slot->results = &results;
 
-	curl_easy_setopt(slot->curl, CURLOPT_NOBODY, 0); /* not a HEAD request */
+	curl_easy_setopt(slot->curl, CURLOPT_NOBODY, 0L); /* not a HEAD request */
 	curl_easy_setopt(slot->curl, CURLOPT_URL, rest_url.buf);
 	curl_easy_setopt(slot->curl, CURLOPT_HTTPHEADER, params->headers);
 	if (curl_version_info(CURLVERSION_NOW)->version_num < 0x074b00)
@@ -2928,14 +2928,14 @@ static void do_req(const char *url_base,
 		curl_easy_setopt(slot->curl, CURLOPT_FAILONERROR, (long)0);
 
 	if (params->b_is_post) {
-		curl_easy_setopt(slot->curl, CURLOPT_POST, 1);
+		curl_easy_setopt(slot->curl, CURLOPT_POST, 1L);
 		curl_easy_setopt(slot->curl, CURLOPT_ENCODING, NULL);
 		curl_easy_setopt(slot->curl, CURLOPT_POSTFIELDS,
 				 params->post_payload->buf);
 		curl_easy_setopt(slot->curl, CURLOPT_POSTFIELDSIZE,
 				 (long)params->post_payload->len);
 	} else {
-		curl_easy_setopt(slot->curl, CURLOPT_POST, 0);
+		curl_easy_setopt(slot->curl, CURLOPT_POST, 0L);
 	}
 
 	if (params->b_write_to_file) {
@@ -2961,9 +2961,9 @@ static void do_req(const char *url_base,
 		curl_easy_setopt(slot->curl, CURLOPT_XFERINFOFUNCTION,
 				 gh__curl_progress_cb);
 		curl_easy_setopt(slot->curl, CURLOPT_XFERINFODATA, params);
-		curl_easy_setopt(slot->curl, CURLOPT_NOPROGRESS, 0);
+		curl_easy_setopt(slot->curl, CURLOPT_NOPROGRESS, 0L);
 	} else {
-		curl_easy_setopt(slot->curl, CURLOPT_NOPROGRESS, 1);
+		curl_easy_setopt(slot->curl, CURLOPT_NOPROGRESS, 1L);
 	}
 
 	gh__run_one_slot(slot, params, status);
