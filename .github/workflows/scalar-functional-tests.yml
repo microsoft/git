@@ -126,7 +126,7 @@ jobs:
       - name: Setup .NET Core
         uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: '3.1.x'
+          dotnet-version: '3.1.426'
 
       - name: Install dependencies
         run: dotnet restore
