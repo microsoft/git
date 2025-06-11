@@ -1808,6 +1808,11 @@ static int git_default_gvfs_config(const char *var, const char *value)
 		return 0;
 	}
 
+	if (!strcmp(var, "gvfs.trustidxfiles")) {
+		gvfs_trust_idx_files = git_config_bool(var, value);
+		return 0;
+	}
+
 	return 0;
 }
 

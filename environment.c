@@ -101,6 +101,7 @@ int protect_ntfs = PROTECT_NTFS_DEFAULT;
 int core_use_gvfs_helper;
 char *gvfs_cache_server_url;
 struct strbuf gvfs_shared_cache_pathname = STRBUF_INIT;
+int gvfs_trust_idx_files = -1; /* default to unset */
 
 /*
  * The character that begins a commented line in user-editable file

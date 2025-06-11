@@ -2199,31 +2199,56 @@ static void extract_packfile_from_multipack(
 
 	oid_to_hex_r(hex_checksum, &packfile_checksum);
 
-	/*
-	 * Always compute the .idx file from the .pack file.
-	 */
-	strbuf_addbuf(&temp_path_idx, &temp_path_pack);
-	strbuf_strip_suffix(&temp_path_idx, ".pack");
-	strbuf_addstr(&temp_path_idx, ".idx");
-
-	my_run_index_pack(params, status,
-			  &temp_path_pack, &temp_path_idx,
-			  NULL);
-	if (status->ec != GH__ERROR_CODE__OK)
-		goto done;
-
-	if (!b_no_idx_in_multipack) {
+	if (b_no_idx_in_multipack || gvfs_trust_idx_files <= 0) {
 		/*
-		 * Server sent the .idx immediately after the .pack in the
-		 * data stream.  Skip over it.
+		 * If the multipack does not contain an index, or we are
+		 * not trusting the received index, we will compute it
+		 * locally.
 		 */
-		if (lseek(fd_multipack, ph.idx_len, SEEK_CUR) < 0) {
+		strbuf_addbuf(&temp_path_idx, &temp_path_pack);
+		strbuf_strip_suffix(&temp_path_idx, ".pack");
+		strbuf_addstr(&temp_path_idx, ".idx");
+
+		my_run_index_pack(params, status,
+			&temp_path_pack, &temp_path_idx,
+			NULL);
+		if (status->ec != GH__ERROR_CODE__OK)
+			goto done;
+
+		if (!b_no_idx_in_multipack) {
+			/*
+			* Server sent the .idx immediately after the .pack in the
+			* data stream.  Skip over it.
+			*/
+			if (lseek(fd_multipack, ph.idx_len, SEEK_CUR) < 0) {
+				strbuf_addf(&status->error_message,
+						"could not skip index[%d] in multipack",
+						k);
+				status->ec = GH__ERROR_CODE__COULD_NOT_INSTALL_PREFETCH;
+				goto done;
+			}
+		}
+	} else {
+		/*
+		 * If the multipack contains an index and we trust it,
+		 * then we will use it.
+		 */
+		my_create_tempfile(status, 0, "pack", &tempfile_pack, NULL, NULL);
+		if (!tempfile_pack)
+			goto done;
+
+		result = my_copy_fd_len(fd_multipack,
+				     get_tempfile_fd(tempfile_pack),
+				     ph.idx_len);
+
+		if (result < 0) {
 			strbuf_addf(&status->error_message,
-				    "could not skip index[%d] in multipack",
-				    k);
-			status->ec = GH__ERROR_CODE__COULD_NOT_INSTALL_PREFETCH;
+					"could not extract packfile index [%d] from multipack",
+					k);
 			goto done;
 		}
+		strbuf_addstr(&temp_path_idx, get_tempfile_path(tempfile_pack));
+	    close_tempfile_gently(tempfile_pack);
 	}
 
 	strbuf_addf(&buf_timestamp, "%u", (unsigned int)ph.timestamp);

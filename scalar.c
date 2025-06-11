@@ -7,6 +7,7 @@
 #include "git-compat-util.h"
 #include "abspath.h"
 #include "gettext.h"
+#include "environment.h"
 #include "hex.h"
 #include "parse-options.h"
 #include "config.h"
@@ -748,6 +749,7 @@ static int cmd_clone(int argc, const char **argv)
 	const char *cache_server_url = NULL, *local_cache_root = NULL;
 	char *default_cache_server_url = NULL, *local_cache_root_abs = NULL;
 	int gvfs_protocol = -1;
+	int trust_idx = -1;
 
 	struct option clone_options[] = {
 		OPT_STRING('b', "branch", &branch, N_("<branch>"),
@@ -763,6 +765,8 @@ static int cmd_clone(int argc, const char **argv)
 			 N_("specify if tags should be fetched during clone")),
 		OPT_BOOL(0, "gvfs-protocol", &gvfs_protocol,
 			 N_("force enable (or disable) the GVFS Protocol")),
+		OPT_BOOL(0, "trust-idx", &trust_idx,
+			 N_("force enable (or disable) trusting idx files received via GVFS Protocol")),
 		OPT_STRING(0, "cache-server-url", &cache_server_url,
 			   N_("<url>"),
 			   N_("the url or friendly name of the cache server")),
@@ -908,6 +912,28 @@ static int cmd_clone(int argc, const char **argv)
 		die(_("failed to contact server via GVFS Protocol"));
 
 	if (gvfs_protocol) {
+		if (trust_idx == 0) {
+			/* User explicitly set not to trust idx for this enlistment*/
+			if (set_config("gvfs.trustidxfiles=false")) {
+				res = error(_("could not configure not trusting idx files"));
+				goto cleanup;
+			}
+		} else if (trust_idx > 0 /* User specified --trust-idx */
+			|| (gvfs_trust_idx_files < 0  /* global config not set */
+				&& (strstr(url, "dev.azure.com/")
+					|| strstr(url, "visualstudio.com")) /* Well-known url */
+				)
+			) {
+			/*
+			* If global config for gvfs.trustidxfiles is not set, then we
+			* default to trusting idx files for well-known urls
+			*/
+			if (set_config("gvfs.trustidxfiles=true")) {
+				res = error(_("could not configure trusting idx files"));
+				goto cleanup;
+			};
+		}
+
 		if ((res = init_shared_object_cache(url, local_cache_root)))
 			goto cleanup;
 		if (!cache_server_url)
