@@ -65,7 +65,7 @@ jobs:
             artifact: pkg-x86_64
             toolchain: x86_64
             mingwprefix: mingw64
-            runner: windows-2019
+            runner: windows-2022
           - name: aarch64
             artifact: pkg-aarch64
             toolchain: clang-aarch64
@@ -192,7 +192,7 @@ jobs:
             artifact: pkg-x86_64
             toolchain: x86_64
             mingwprefix: mingw64
-            runner: windows-2019
+            runner: windows-2022
           - name: aarch64
             artifact: pkg-aarch64
             toolchain: clang-aarch64
@@ -381,7 +381,7 @@ jobs:
 
   # Build and sign Mac OSX installers & upload artifacts
   create-macos-artifacts:
-    runs-on: macos-latest-xl-arm64
+    runs-on: macos-latest
     needs: prereqs
     env:
       VERSION: "${{ needs.prereqs.outputs.tag_version }}"
@@ -720,7 +720,7 @@ jobs:
           - os: ubuntu-latest
             artifact: linux-artifacts
             command: git
-          - os: macos-latest-xl-arm64
+          - os: macos-latest
             artifact: macos-artifacts
             command: git
           - os: macos-latest
