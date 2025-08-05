@@ -20,6 +20,7 @@
 #include "setup.h"
 #include "sparse-index.h"
 #include "worktree.h"
+#include "color.h"
 
 static const char *empty_base = "";
 
@@ -935,7 +936,7 @@ static int sparse_checkout_reapply(int argc, const char **argv,
 }
 
 static char const * const builtin_sparse_checkout_clean_usage[] = {
-	"git sparse-checkout clean [-n|--dry-run]",
+	"(EXPERIMENTAL!) git sparse-checkout clean [-n|--dry-run]",
 	NULL
 };
 
@@ -979,6 +980,11 @@ static int sparse_checkout_clean(int argc, const char **argv,
 		OPT__VERBOSE(&verbose, N_("report each affected file, not just directories")),
 		OPT_END(),
 	};
+
+	if (isatty(2))
+		color_fprintf_ln(stderr,
+				 want_color_fd(2, GIT_COLOR_AUTO) ? GIT_COLOR_YELLOW : "",
+				 "(THIS IS EXPERIMENTAL, THE CLI MAY CHANGE IN THE FUTURE!)");
 
 	setup_work_tree();
 	if (!core_apply_sparse_checkout)
