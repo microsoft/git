@@ -725,6 +725,9 @@ int read_object_process(struct repository *r, const struct object_id *oid)
 	const char *cmd = find_hook(r, "read-object");
 	uint64_t start;
 
+	if (!cmd)
+		die(_("could not find the `read-object` hook"));
+
 	start = getnanotime();
 
 	trace2_region_enter("subprocess", "read_object",r);
@@ -1136,6 +1139,9 @@ void *odb_read_object(struct object_database *odb,
 	struct object_info oi = OBJECT_INFO_INIT;
 	unsigned flags = OBJECT_INFO_DIE_IF_CORRUPT | OBJECT_INFO_LOOKUP_REPLACE;
 	void *data;
+
+	if (gvfs_config_is_set(odb->repo, GVFS_MISSING_OK))
+		flags &= ~OBJECT_INFO_DIE_IF_CORRUPT;
 
 	oi.typep = type;
 	oi.sizep = size;
