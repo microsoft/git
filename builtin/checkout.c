@@ -641,6 +641,10 @@ static int checkout_paths(const struct checkout_opts *opts,
 		checkout_index = opts->checkout_index;
 
 	if (checkout_index) {
+		/* Some scenarios may update skipworktree bits, such as 
+		 * `restore --staged` after `cherry-pick -n` or `reset --soft`
+		 */
+		the_repository->index->updated_skipworktree = 1;
 		if (write_locked_index(the_repository->index, &lock_file, COMMIT_LOCK))
 			die(_("unable to write new index file"));
 	} else {
