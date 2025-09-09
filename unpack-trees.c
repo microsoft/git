@@ -1852,6 +1852,25 @@ static void mark_new_skip_worktree(struct pattern_list *pl,
 	enable_fscache(istate->cache_nr);
 	clear_ce_flags(istate, select_flag, skip_wt_flag, pl, show_progress);
 	disable_fscache();
+
+	/*
+	 * 3. If clear_skip_worktree_for_added_entries is set and we are checking
+	 * for added entries, clear skip_wt_flag from all added entries. This is
+	 * used when running with virtualfilesystem to ensure that added entries are
+	 * also checked out in the working tree - otherwise skip_wt_flag will
+	 * prevent that.
+	 */
+	if ((select_flag & CE_ADDED)
+	    && istate->clear_skip_worktree_for_added_entries) {
+		for (i = 0; i < istate->cache_nr; i++) {
+			struct cache_entry *ce = istate->cache[i];
+			if ((ce->ce_flags & (CE_ADDED | skip_wt_flag))
+			    == (CE_ADDED | skip_wt_flag)) {
+				ce->ce_flags &= ~skip_wt_flag;
+				istate->updated_skipworktree = 1;
+			}
+		}
+	}
 }
 
 static void populate_from_existing_patterns(struct unpack_trees_options *o,
@@ -2004,6 +2023,8 @@ int unpack_trees(unsigned len, struct tree_desc *t, struct unpack_trees_options 
 	    is_sparse_index_allowed(&o->internal.result, 0))
 		o->internal.result.sparse_index = 1;
 
+	o->internal.result.clear_skip_worktree_for_added_entries =
+		o->src_index->clear_skip_worktree_for_added_entries;
 	/*
 	 * Sparse checkout loop #1: set NEW_SKIP_WORKTREE on existing entries
 	 */
