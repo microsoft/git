@@ -753,6 +753,7 @@ static int do_recursive_merge(struct repository *r,
 	int clean, show_output;
 	int i;
 	struct lock_file index_lock = LOCK_INIT;
+	int flags;
 
 	if (repo_hold_locked_index(r, &index_lock, LOCK_REPORT_ON_ERROR) < 0)
 		return -1;
@@ -787,7 +788,18 @@ static int do_recursive_merge(struct repository *r,
 	 * to be replace with the tree the index matched before we
 	 * started doing any picks.
 	 */
+	if (opts->no_commit && core_virtualfilesystem) {
+		/* When using the virtual file system, staged new files
+		 * should clear SKIP_WORKTREE because the virtual file
+		 * system only tracks files that are not modified in index.
+		 * Without this, `restore --staged` will delete the new files
+		 * from disk as well as from index.
+		 */
+		o.repo->index->clear_skip_worktree_for_added_entries = 1;
+	}
 	merge_switch_to_result(&o, head_tree, &result, 1, show_output);
+	o.repo->index->clear_skip_worktree_for_added_entries = 0;
+
 	clean = result.clean;
 	if (clean < 0) {
 		rollback_lock_file(&index_lock);
@@ -795,7 +807,7 @@ static int do_recursive_merge(struct repository *r,
 	}
 
 	if (write_locked_index(r->index, &index_lock,
-			       COMMIT_LOCK | SKIP_IF_UNCHANGED))
+			       COMMIT_LOCK | SKIP_IF_UNCHANGED) < 0)
 		/*
 		 * TRANSLATORS: %s will be "revert", "cherry-pick" or
 		 * "rebase".
