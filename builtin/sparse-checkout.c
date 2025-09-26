@@ -936,7 +936,7 @@ static int sparse_checkout_reapply(int argc, const char **argv,
 }
 
 static char const * const builtin_sparse_checkout_clean_usage[] = {
-	"(EXPERIMENTAL!) git sparse-checkout clean [-n|--dry-run]",
+	"git sparse-checkout clean [-n|--dry-run]",
 	NULL
 };
 
@@ -954,8 +954,6 @@ static void list_every_file_in_dir(const char *msg,
 	struct strbuf path = STRBUF_INIT;
 
 	strbuf_addstr(&path, directory);
-	fprintf(stderr, "list every file in %s\n", directory);
-
 	for_each_file_in_dir(&path, list_file_iterator, msg);
 	strbuf_release(&path);
 }
@@ -972,7 +970,6 @@ static int sparse_checkout_clean(int argc, const char **argv,
 	size_t worktree_len;
 	int force = 0, dry_run = 0, verbose = 0;
 	int require_force = 1;
-	struct unpack_trees_options o = { 0 };
 
 	struct option builtin_sparse_checkout_clean_options[] = {
 		OPT__DRY_RUN(&dry_run, N_("dry run")),
@@ -980,11 +977,6 @@ static int sparse_checkout_clean(int argc, const char **argv,
 		OPT__VERBOSE(&verbose, N_("report each affected file, not just directories")),
 		OPT_END(),
 	};
-
-	if (isatty(2))
-		color_fprintf_ln(stderr,
-				 want_color_fd(2, GIT_COLOR_AUTO) ? GIT_COLOR_YELLOW : "",
-				 "(THIS IS EXPERIMENTAL, THE CLI MAY CHANGE IN THE FUTURE!)");
 
 	setup_work_tree();
 	if (!core_apply_sparse_checkout)
@@ -1005,13 +997,6 @@ static int sparse_checkout_clean(int argc, const char **argv,
 
 	if (repo_read_index(repo) < 0)
 		die(_("failed to read index"));
-
-	o.verbose_update = verbose;
-	o.update = 0; /* skip modifying the worktree here. */
-	o.head_idx = -1;
-	o.src_index = o.dst_index = repo->index;
-	if (update_sparsity(&o, NULL))
-		warning(_("failed to reapply sparse-checkout patterns"));
 
 	if (convert_to_sparse(repo->index, SPARSE_INDEX_MEMORY_ONLY) ||
 	    repo->index->sparse_index == INDEX_EXPANDED)
@@ -1091,7 +1076,7 @@ static int sparse_checkout_disable(int argc, const char **argv,
 	add_pattern("/*", empty_base, 0, &pl, 0);
 
 	prepare_repo_settings(the_repository);
-	the_repository->settings.sparse_index = 0;
+	repo->settings.sparse_index = 0;
 
 	if (update_working_directory(repo, &pl))
 		die(_("error while refreshing working directory"));
