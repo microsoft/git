@@ -1123,10 +1123,7 @@ test_expect_success 'http-error: 503 Service Unavailable (with retry and no-fall
 #################################################################
 
 test_lazy_prereq CURL_7_75_OR_NEWER '
-	case "$(curl version | sed -n "1s/^curl \([^ ]*\).*/\1/p")" in
-	""|[0-6].*|7.[0-9]*.*|7.[1-6][0-9].*|7.7[0-4]*.*) return 1;;
-	*) return 0;;
-	esac
+	git gvfs-helper curl-version ">=" 7.75.0
 '
 
 test_expect_success 'HTTP GET Auth on Origin Server' '

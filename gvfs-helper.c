@@ -254,6 +254,7 @@
 #include "wrapper.h"
 #include "packfile.h"
 #include "date.h"
+#include "versioncmp.h"
 
 #define TR2_CAT "gvfs-helper"
 
@@ -283,6 +284,11 @@ static const char *const prefetch_usage[] = {
 
 static const char *const server_usage[] = {
 	N_("git gvfs-helper [<main_options>] server [<options>]"),
+	NULL
+};
+
+static const char *const curl_version_usage[] = {
+	N_("git gvfs-helper [<main_options>] curl-version [<operator> <version>]"),
 	NULL
 };
 
@@ -4148,6 +4154,37 @@ cleanup:
 	return ec;
 }
 
+static enum gh__error_code do_sub_cmd__curl_version(int argc, const char **argv)
+{
+	static struct option curl_version_options[] = {
+		OPT_END(),
+	};
+	const char *current_version = curl_version_info(CURLVERSION_NOW)->version;
+
+	trace2_cmd_mode("curl-version");
+
+	if (argc > 1 && !strcmp(argv[1], "-h"))
+		usage_with_options(curl_version_usage, curl_version_options);
+
+	argc = parse_options(argc, argv, NULL,
+			     curl_version_options, curl_version_usage, 0);
+
+	if (argc == 0)
+		printf("%s\n", current_version);
+	else if (argc != 2)
+		die("expected [<operator> <version>], but got %d parameters", argc);
+	else {
+		int cmp = versioncmp(current_version, argv[1]);
+
+		return (strchr(argv[0], '=') && !cmp) ||
+			(strchr(argv[0], '>') && cmp > 0) ||
+			(strchr(argv[0], '<') && cmp < 0) ?
+			GH__ERROR_CODE__OK : GH__ERROR_CODE__ERROR;
+	}
+
+	return GH__ERROR_CODE__OK;
+}
+
 static enum gh__error_code do_sub_cmd(int argc, const char **argv)
 {
 	if (!strcmp(argv[0], "get"))
@@ -4171,6 +4208,9 @@ static enum gh__error_code do_sub_cmd(int argc, const char **argv)
 	 */
 	if (!strcmp(argv[0], "server"))
 		return do_sub_cmd__server(argc, argv);
+
+	if (!strcmp(argv[0], "curl-version"))
+		return do_sub_cmd__curl_version(argc, argv);
 
 	return GH__ERROR_CODE__USAGE;
 }
