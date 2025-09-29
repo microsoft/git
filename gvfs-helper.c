@@ -381,6 +381,7 @@ static struct gh__global {
 	int cache_server_is_initialized; /* did sub-command look for one */
 	int main_creds_need_approval; /* try to only approve them once */
 
+	unsigned long connect_timeout_ms;
 } gh__global;
 
 enum gh__server_type {
@@ -2970,6 +2971,10 @@ static void do_req(const char *url_base,
 		curl_easy_setopt(slot->curl, CURLOPT_NOPROGRESS, 1L);
 	}
 
+	if (gh__global.connect_timeout_ms)
+		curl_easy_setopt(slot->curl, CURLOPT_CONNECTTIMEOUT_MS,
+				gh__global.connect_timeout_ms);
+
 	gh__run_one_slot(slot, params, status);
 	strbuf_release(&rest_url);
 }
@@ -3678,6 +3683,9 @@ static enum gh__error_code do_sub_cmd__get(int argc, const char **argv)
 	static struct option get_options[] = {
 		OPT_INTEGER('r', "max-retries", &gh__cmd_opts.max_retries,
 			    N_("retries for transient network errors")),
+		OPT_UNSIGNED(0, "connect-timeout-ms",
+			     &gh__global.connect_timeout_ms,
+			     N_("try to connect only for this many milliseconds")),
 		OPT_END(),
 	};
 

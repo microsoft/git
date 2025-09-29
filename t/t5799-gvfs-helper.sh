@@ -850,8 +850,24 @@ mayhem_observed__close () {
 	fi
 }
 
+test_lazy_prereq CURL_8_16_0 '
+	git gvfs-helper curl-version = 8.16.0 ||
+	test 8.15.0-DEV = "$(git gvfs-helper curl-version)"
+'
+
 test_expect_success 'curl-error: no server' '
 	test_when_finished "per_test_cleanup" &&
+
+	connect_timeout_ms= &&
+	# CURLE_COULDNT_CONNECT 7
+	regex="error: get: (curl:7)" &&
+	if test_have_prereq CURL_8_16_0
+	then
+		connect_timeout_ms=--connect-timeout-ms=200 &&
+		# CURLE_COULDNT_CONNECT 7
+		# CURLE_OPERATION_TIMEDOUT 28
+		regex="error: get: (curl:\(7\|28\))"
+	fi &&
 
 	# Try to do a multi-get without a server.
 	#
@@ -864,10 +880,9 @@ test_expect_success 'curl-error: no server' '
 		--remote=origin \
 		get \
 		--max-retries=2 \
+		$connect_timeout_ms \
 		<"$OIDS_FILE" >OUT.output 2>OUT.stderr &&
-
-	# CURLE_COULDNT_CONNECT 7
-	test_grep "error: get: (curl:7)" OUT.stderr
+	test_grep "$regex" OUT.stderr
 '
 
 test_expect_success 'curl-error: close socket while reading request' '
