@@ -27,7 +27,7 @@ jobs:
       matrix:
         nr: [3]
     steps:
-    - uses: mxschmitt/action-tmate/detached@v3
+    - uses: git-for-windows/setup-git-for-windows-sdk@v1
     - name: debug using tmate (detached)
       shell: bash
       run: |
