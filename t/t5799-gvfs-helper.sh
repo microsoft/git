@@ -368,7 +368,7 @@ verify_objects_in_shared_cache () {
 	# See if any of the objects are missing from repo_t1.
 	#
 	git -C "$REPO_T1" cat-file --batch-check <"$1" >OUT.bc_actual || return 1
-	grep -q " missing" OUT.bc_actual && return 1
+	test_grep " missing" OUT.bc_actual && return 1
 	#
 	# See if any of the objects have different sizes or types than repo_src.
 	#
@@ -540,7 +540,7 @@ test_expect_success 'basic: GET gvfs/config' '
 	# The cache-server URL should be listed in the gvfs/config output.
 	# We confirm this before assuming error-mode will work.
 	#
-	grep -q "$CACHE_URL" OUT.output
+	test_grep "$CACHE_URL" OUT.output
 '
 
 test_expect_success 'basic: GET cache-server multi-get error-mode' '
@@ -799,14 +799,14 @@ test_expect_success 'basic: PREFETCH up-to-date' '
 #################################################################
 
 mayhem_observed__close__connections () {
-	if $(grep -q "transient" OUT.stderr)
+	if grep "transient" OUT.stderr
 	then
 		# Transient errors should retry.
 		# 1 for initial request + 2 retries.
 		#
 		verify_connection_count 3
 		return $?
-	elif $(grep -q "hard_fail" OUT.stderr)
+	elif grep "hard_fail" OUT.stderr
 	then
 		# Hard errors should not retry.
 		#
@@ -837,10 +837,10 @@ mayhem_observed__close () {
 	# going to verify the connection counts based upon what type of error
 	# gvfs-helper claimed it to be.
 	#
-	if      $(grep -q "error: get: (curl:18)" OUT.stderr) ||
-		$(grep -q "error: get: (curl:52)" OUT.stderr) ||
-		$(grep -q "error: get: (curl:55)" OUT.stderr) ||
-		$(grep -q "error: get: (curl:56)" OUT.stderr)
+	if      grep "error: get: (curl:18)" OUT.stderr ||
+		grep "error: get: (curl:52)" OUT.stderr ||
+		grep "error: get: (curl:55)" OUT.stderr ||
+		grep "error: get: (curl:56)" OUT.stderr
 	then
 		mayhem_observed__close__connections
 		return $?
@@ -850,8 +850,24 @@ mayhem_observed__close () {
 	fi
 }
 
+test_lazy_prereq CURL_8_16_0 '
+	git gvfs-helper curl-version = 8.16.0 ||
+	test 8.15.0-DEV = "$(git gvfs-helper curl-version)"
+'
+
 test_expect_success 'curl-error: no server' '
 	test_when_finished "per_test_cleanup" &&
+
+	connect_timeout_ms= &&
+	# CURLE_COULDNT_CONNECT 7
+	regex="error: get: (curl:7)" &&
+	if test_have_prereq CURL_8_16_0
+	then
+		connect_timeout_ms=--connect-timeout-ms=200 &&
+		# CURLE_COULDNT_CONNECT 7
+		# CURLE_OPERATION_TIMEDOUT 28
+		regex="error: get: (curl:\(7\|28\))"
+	fi &&
 
 	# Try to do a multi-get without a server.
 	#
@@ -864,10 +880,9 @@ test_expect_success 'curl-error: no server' '
 		--remote=origin \
 		get \
 		--max-retries=2 \
+		$connect_timeout_ms \
 		<"$OIDS_FILE" >OUT.output 2>OUT.stderr &&
-
-	# CURLE_COULDNT_CONNECT 7
-	grep -q "error: get: (curl:7)" OUT.stderr
+	test_grep "$regex" OUT.stderr
 '
 
 test_expect_success 'curl-error: close socket while reading request' '
@@ -980,7 +995,7 @@ test_expect_success 'http-error: 503 Service Unavailable (with retry)' '
 
 	stop_gvfs_protocol_server &&
 
-	grep -q "error: get: (http:503)" OUT.stderr &&
+	test_grep "error: get: (http:503)" OUT.stderr &&
 	verify_connection_count 3
 '
 
@@ -998,7 +1013,7 @@ test_expect_success 'http-error: 429 Service Unavailable (with retry)' '
 
 	stop_gvfs_protocol_server &&
 
-	grep -q "error: get: (http:429)" OUT.stderr &&
+	test_grep "error: get: (http:429)" OUT.stderr &&
 	verify_connection_count 3
 '
 
@@ -1016,7 +1031,7 @@ test_expect_success 'http-error: 404 Not Found (no retry)' '
 
 	stop_gvfs_protocol_server &&
 
-	grep -q "error: get: (http:404)" OUT.stderr &&
+	test_grep "error: get: (http:404)" OUT.stderr &&
 	verify_connection_count 1
 '
 
@@ -1082,7 +1097,7 @@ test_expect_success 'http-error: 503 Service Unavailable (with retry and fallbac
 
 	stop_gvfs_protocol_server &&
 
-	grep -q "error: get: (http:503)" OUT.stderr &&
+	test_grep "error: get: (http:503)" OUT.stderr &&
 	verify_connection_count 6
 '
 
@@ -1113,7 +1128,7 @@ test_expect_success 'http-error: 503 Service Unavailable (with retry and no-fall
 
 	stop_gvfs_protocol_server &&
 
-	grep -q "error: get: (http:503)" OUT.stderr &&
+	test_grep "error: get: (http:503)" OUT.stderr &&
 	verify_connection_count 3
 '
 
@@ -1123,10 +1138,7 @@ test_expect_success 'http-error: 503 Service Unavailable (with retry and no-fall
 #################################################################
 
 test_lazy_prereq CURL_7_75_OR_NEWER '
-	case "$(curl version | sed -n "1s/^curl \([^ ]*\).*/\1/p")" in
-	""|[0-6].*|7.[0-9]*.*|7.[1-6][0-9].*|7.7[0-4]*.*) return 1;;
-	*) return 0;;
-	esac
+	git gvfs-helper curl-version ">=" 7.75.0
 '
 
 test_expect_success 'HTTP GET Auth on Origin Server' '
@@ -1534,7 +1546,7 @@ test_expect_success 'prefetch corrupt pack without idx' '
 	# Verify corruption detected in pack when building
 	# local idx file for it.
 
-	grep -q "error: .* index-pack failed" <OUT.stderr
+	test_grep "error: .* index-pack failed" OUT.stderr
 '
 
 # Send corrupt PACK files with IDX files.  Since the cache server
