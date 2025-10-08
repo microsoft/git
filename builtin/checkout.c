@@ -370,7 +370,13 @@ static void mark_ce_for_checkout_no_overlay(struct cache_entry *ce,
 					    const struct checkout_opts *opts)
 {
 	ce->ce_flags &= ~CE_MATCHED;
-	if (!opts->ignore_skipworktree && ce_skip_worktree(ce))
+	if (!opts->ignore_skipworktree && 
+		/* `restore --staged` after `cherry-pick -n` or `reset --soft` 
+		 * may have new files added to the index but with skip_worktree
+		 * set if using virtual file system
+		 */ 
+		!(core_virtualfilesystem && opts->checkout_index) 
+		&& ce_skip_worktree(ce))
 		return;
 	if (ce_path_match(the_repository->index, ce, &opts->pathspec, ps_matched)) {
 		ce->ce_flags |= CE_MATCHED;
@@ -641,10 +647,19 @@ static int checkout_paths(const struct checkout_opts *opts,
 		checkout_index = opts->checkout_index;
 
 	if (checkout_index) {
-		/* Some scenarios may update skipworktree bits, such as 
-		 * `restore --staged` after `cherry-pick -n` or `reset --soft`
-		 */
-		the_repository->index->updated_skipworktree = 1;
+		if (opts->checkout_index && core_virtualfilesystem) {
+			/* Some `restore --staged` scenarios may update
+			* skipworktree bits, such as after `cherry-pick -n` or
+			* `reset --soft`
+			*/
+			the_repository->index->updated_skipworktree = 1;
+			/* In same scenarios, if there were files added during
+			 * the previous operation they may not have been added
+			 * to the projection when added to the worktree, but
+			 * they need to be added now.
+			 */ 
+			the_repository->index->updated_workdir = 1;
+		}
 		if (write_locked_index(the_repository->index, &lock_file, COMMIT_LOCK))
 			die(_("unable to write new index file"));
 	} else {
