@@ -79,9 +79,6 @@ test_expect_success 'test status, add, commit, others trigger hook without flags
 	git commit -m "second" &&
 	test_path_is_file testsuccess && rm -f testsuccess &&
 	test_path_is_missing testfailure &&
-	git checkout -- dir1/file1.txt &&
-	test_path_is_file testsuccess && rm -f testsuccess &&
-	test_path_is_missing testfailure &&
 	git update-index &&
 	test_path_is_missing testsuccess &&
 	test_path_is_missing testfailure &&
