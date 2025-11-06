@@ -1825,7 +1825,7 @@ static void do_add_index_objects_to_pending(struct rev_info *revs,
 	int i;
 
 	/* TODO: audit for interaction with sparse-index. */
-	ensure_full_index(istate);
+	ensure_full_index_unaudited(istate);
 	for (i = 0; i < istate->cache_nr; i++) {
 		struct cache_entry *ce = istate->cache[i];
 		struct blob *blob;
@@ -3392,6 +3392,9 @@ static int leave_one_treesame_to_parent(struct rev_info *revs, struct commit *co
 	struct commit *unmarked = NULL, *marked = NULL;
 	struct commit_list *p;
 	unsigned n;
+
+	if (!ts)
+		return 0;
 
 	for (p = commit->parents, n = 0; p; p = p->next, n++) {
 		if (ts->treesame[n]) {

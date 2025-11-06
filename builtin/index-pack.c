@@ -894,7 +894,7 @@ static void sha1_object(const void *data, struct object_entry *obj_entry,
 	if (startup_info->have_repository) {
 		read_lock();
 		collision_test_needed = odb_has_object(the_repository->objects, oid,
-						       HAS_OBJECT_FETCH_PROMISOR);
+						       OBJECT_INFO_FOR_PREFETCH);
 		read_unlock();
 	}
 
@@ -1897,6 +1897,7 @@ int cmd_index_pack(int argc,
 	unsigned foreign_nr = 1;	/* zero is a "good" value, assume bad */
 	int report_end_of_input = 0;
 	int hash_algo = 0;
+	int dash_o = 0;
 
 	/*
 	 * index-pack never needs to fetch missing objects except when
@@ -1981,6 +1982,7 @@ int cmd_index_pack(int argc,
 				if (index_name || (i+1) >= argc)
 					usage(index_pack_usage);
 				index_name = argv[++i];
+				dash_o = 1;
 			} else if (starts_with(arg, "--index-version=")) {
 				char *c;
 				opts.version = strtoul(arg + 16, &c, 10);
@@ -2034,6 +2036,8 @@ int cmd_index_pack(int argc,
 		repo_set_hash_algo(the_repository, GIT_HASH_DEFAULT);
 
 	opts.flags &= ~(WRITE_REV | WRITE_REV_VERIFY);
+	if (rev_index && dash_o && !ends_with(index_name, ".idx"))
+		rev_index = 0;
 	if (rev_index) {
 		opts.flags |= verify ? WRITE_REV_VERIFY : WRITE_REV;
 		if (index_name)

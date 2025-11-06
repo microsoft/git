@@ -25,6 +25,12 @@
 struct subprocess_entry {
 	struct hashmap_entry ent;
 	const char *cmd;
+	/**
+	 * In case `cmd` is a `strdup()`ed value that needs to be released,
+	 * you can assign the pointer to `to_free` so that `subprocess_stop()`
+	 * will release it.
+	 */
+	char *to_free;
 	struct child_process process;
 };
 
@@ -55,6 +61,12 @@ typedef int(*subprocess_start_fn)(struct subprocess_entry *entry);
 /* Start a subprocess and add it to the subprocess hashmap. */
 int subprocess_start(struct hashmap *hashmap, struct subprocess_entry *entry, const char *cmd,
 		subprocess_start_fn startfn);
+
+int subprocess_start_strvec(struct hashmap *hashmap,
+			  struct subprocess_entry *entry,
+			  int is_git_cmd,
+			  const struct strvec *argv,
+			  subprocess_start_fn startfn);
 
 /* Kill a subprocess and remove it from the subprocess hashmap. */
 void subprocess_stop(struct hashmap *hashmap, struct subprocess_entry *entry);

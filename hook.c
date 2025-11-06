@@ -1,5 +1,9 @@
+#define USE_THE_REPOSITORY_VARIABLE
+
 #include "git-compat-util.h"
+#include "trace2/tr2_sid.h"
 #include "abspath.h"
+#include "environment.h"
 #include "advice.h"
 #include "gettext.h"
 #include "hook.h"
@@ -10,13 +14,66 @@
 #include "environment.h"
 #include "setup.h"
 
+static int early_hooks_path_config(const char *var, const char *value,
+				   const struct config_context *ctx UNUSED, void *cb)
+{
+	if (!strcmp(var, "core.hookspath"))
+		return git_config_pathname((char **)cb, var, value);
+
+	return 0;
+}
+
+/* Discover the hook before setup_git_directory() was called */
+static const char *hook_path_early(const char *name, struct strbuf *result)
+{
+	static struct strbuf hooks_dir = STRBUF_INIT;
+	static int initialized;
+
+	if (initialized < 0)
+		return NULL;
+
+	if (!initialized) {
+		struct strbuf gitdir = STRBUF_INIT, commondir = STRBUF_INIT;
+		char *early_hooks_dir = NULL;
+
+		if (discover_git_directory(&commondir, &gitdir) < 0) {
+			strbuf_release(&gitdir);
+			strbuf_release(&commondir);
+			initialized = -1;
+			return NULL;
+		}
+
+		read_early_config(the_repository, early_hooks_path_config, &early_hooks_dir);
+		if (!early_hooks_dir)
+			strbuf_addf(&hooks_dir, "%s/hooks/", commondir.buf);
+		else {
+			strbuf_add_absolute_path(&hooks_dir, early_hooks_dir);
+			free(early_hooks_dir);
+			strbuf_addch(&hooks_dir, '/');
+		}
+
+		strbuf_release(&gitdir);
+		strbuf_release(&commondir);
+
+		initialized = 1;
+	}
+
+	strbuf_addf(result, "%s%s", hooks_dir.buf, name);
+	return result->buf;
+}
+
 const char *find_hook(struct repository *r, const char *name)
 {
 	static struct strbuf path = STRBUF_INIT;
 
 	int found_hook;
 
-	repo_git_path_replace(r, &path, "hooks/%s", name);
+	strbuf_reset(&path);
+	if (have_git_dir())
+		repo_git_path_replace(r, &path, "hooks/%s", name);
+	else if (!hook_path_early(name, &path))
+		return NULL;
+
 	found_hook = access(path.buf, X_OK) >= 0;
 #ifdef STRIP_EXTENSION
 	if (!found_hook) {
@@ -120,6 +177,93 @@ static void run_hooks_opt_clear(struct run_hooks_opt *options)
 	strvec_clear(&options->args);
 }
 
+static char *get_post_index_change_sentinel_name(struct repository *r)
+{
+	struct strbuf path = STRBUF_INIT;
+	const char *sid = tr2_sid_get();
+	char *slash = strchr(sid, '/');
+
+	/*
+	 * Name is based on top-level SID, so children can indicate that
+	 * the top-level process should run the post-command hook.
+	 */
+	if (slash)
+		*slash = 0;
+
+	/*
+	 * Do not write to hooks directory, as it could be redirected
+	 * somewhere like the source tree.
+	 */
+	repo_git_path_replace(r, &path, "info/index-change-%s.snt", sid);
+
+	return strbuf_detach(&path, NULL);
+}
+
+static int write_post_index_change_sentinel(struct repository *r)
+{
+	char *path = get_post_index_change_sentinel_name(r);
+	FILE *fp = xfopen(path, "w");
+
+	if (fp) {
+		fprintf(fp, "run post-command hook");
+		fclose(fp);
+	}
+
+	free(path);
+	return fp ? 0 : -1;
+}
+
+/**
+ * Try to delete the sentinel file for this repository. If that succeeds, then
+ * return 1.
+ */
+static int post_index_change_sentinel_exists(struct repository *r)
+{
+	char *path = get_post_index_change_sentinel_name(r);
+	int res = 1;
+
+	if (unlink(path)) {
+		if (is_missing_file_error(errno))
+			res = 0;
+		else
+			warning_errno("failed to remove index-change sentinel file '%s'", path);
+	}
+
+	free(path);
+	return res;
+}
+
+/**
+ * See if we can replace the requested hook with an internal behavior.
+ * Returns 0 if the real hook should run. Returns nonzero if we instead
+ * executed custom internal behavior and the real hook should not run.
+ */
+static int handle_hook_replacement(struct repository *r,
+				   const char *hook_name,
+				   struct strvec *args)
+{
+	const char *strval;
+	if (repo_config_get_string_tmp(r, "postcommand.strategy", &strval) ||
+	    strcasecmp(strval, "worktree-change"))
+		return 0;
+
+	if (!strcmp(hook_name, "post-index-change")) {
+		/* Create a sentinel file only if the worktree changed. */
+		if (!strcmp(args->v[0], "1"))
+			write_post_index_change_sentinel(r);
+
+		/* We don't skip post-index-change hooks that exist. */
+		return 0;
+	}
+	if (!strcmp(hook_name, "post-command") &&
+	    !post_index_change_sentinel_exists(r)) {
+		/* We skip the post-command hook in this case. */
+		return 1;
+	}
+
+	return 0;
+}
+
 int run_hooks_opt(struct repository *r, const char *hook_name,
 		  struct run_hooks_opt *options)
 {
@@ -129,7 +273,7 @@ int run_hooks_opt(struct repository *r, const char *hook_name,
 		.hook_name = hook_name,
 		.options = options,
 	};
-	const char *const hook_path = find_hook(r, hook_name);
+	const char *hook_path;
 	int ret = 0;
 	const struct run_process_parallel_opts opts = {
 		.tr2_category = "hook",
@@ -144,6 +288,25 @@ int run_hooks_opt(struct repository *r, const char *hook_name,
 
 		.data = &cb_data,
 	};
+
+	/* Interject hook behavior depending on strategy. */
+	if (r && r->gitdir &&
+	    handle_hook_replacement(r, hook_name, &options->args))
+		return 0;
+
+	hook_path = find_hook(r, hook_name);
+
+	/*
+	 * Backwards compatibility hack in VFS for Git: when originally
+	 * introduced (and used!), it was called `post-indexchanged`, but this
+	 * name was changed during the review on the Git mailing list.
+	 *
+	 * Therefore, when the `post-index-change` hook is not found, let's
+	 * look for a hook with the old name (which would be found in case of
+	 * already-existing checkouts).
+	 */
+	if (!hook_path && !strcmp(hook_name, "post-index-change"))
+		hook_path = find_hook(r, "post-indexchanged");
 
 	if (!options)
 		BUG("a struct run_hooks_opt must be provided to run_hooks");
@@ -184,6 +347,7 @@ int run_hooks_l(struct repository *r, const char *hook_name, ...)
 {
 	struct run_hooks_opt opt = RUN_HOOKS_OPT_INIT;
 	va_list ap;
+	int result;
 	const char *arg;
 
 	va_start(ap, hook_name);
@@ -191,5 +355,7 @@ int run_hooks_l(struct repository *r, const char *hook_name, ...)
 		strvec_push(&opt.args, arg);
 	va_end(ap);
 
-	return run_hooks_opt(r, hook_name, &opt);
+	result = run_hooks_opt(r, hook_name, &opt);
+	strvec_clear(&opt.args);
+	return result;
 }

@@ -8,6 +8,7 @@
 #define DISABLE_SIGN_COMPARE_WARNINGS
 
 #include "git-compat-util.h"
+#include "virtualfilesystem.h"
 #include "config.h"
 #include "date.h"
 #include "diff.h"
@@ -553,7 +554,9 @@ static int index_name_stage_pos(struct index_state *istate,
 		if (S_ISSPARSEDIR(ce->ce_mode) &&
 		    ce_namelen(ce) < namelen &&
 		    !strncmp(name, ce->name, ce_namelen(ce))) {
-			ensure_full_index(istate);
+			const char *fmt = "searching for '%s' and found parent dir '%s'";
+			ensure_full_index_with_reason(istate, fmt,
+						      name, ce->name);
 			return index_name_stage_pos(istate, name, namelen, stage, search_mode);
 		}
 	}
@@ -1735,7 +1738,10 @@ static int read_index_extension(struct index_state *istate,
 {
 	switch (CACHE_EXT(ext)) {
 	case CACHE_EXT_TREE:
+		trace2_region_enter("index", "read/extension/cache_tree", NULL);
 		istate->cache_tree = cache_tree_read(data, sz);
+		trace2_data_intmax("index", NULL, "read/extension/cache_tree/bytes", (intmax_t)sz);
+		trace2_region_leave("index", "read/extension/cache_tree", NULL);
 		break;
 	case CACHE_EXT_RESOLVE_UNDO:
 		istate->resolve_undo = resolve_undo_read(data, sz, the_hash_algo);
@@ -1952,6 +1958,7 @@ static void post_read_index_from(struct index_state *istate)
 	tweak_untracked_cache(istate);
 	tweak_split_index(istate);
 	tweak_fsmonitor(istate);
+	apply_virtualfilesystem(istate);
 }
 
 static size_t estimate_cache_size_from_compressed(unsigned int entries)
@@ -2022,6 +2029,17 @@ static void *load_index_extensions(void *_data)
 	}
 
 	return NULL;
+}
+
+static void *load_index_extensions_threadproc(void *_data)
+{
+	void *result;
+
+	trace2_thread_start("load_index_extensions");
+	result = load_index_extensions(_data);
+	trace2_thread_exit();
+
+	return result;
 }
 
 /*
@@ -2100,12 +2118,17 @@ static void *load_cache_entries_thread(void *_data)
 	struct load_cache_entries_thread_data *p = _data;
 	int i;
 
+	trace2_thread_start("load_cache_entries");
+
 	/* iterate across all ieot blocks assigned to this thread */
 	for (i = p->ieot_start; i < p->ieot_start + p->ieot_blocks; i++) {
 		p->consumed += load_cache_entry_block(p->istate, p->ce_mem_pool,
 			p->offset, p->ieot->entries[i].nr, p->mmap, p->ieot->entries[i].offset, NULL);
 		p->offset += p->ieot->entries[i].nr;
 	}
+
+	trace2_thread_exit();
+
 	return NULL;
 }
 
@@ -2275,7 +2298,7 @@ int do_read_index(struct index_state *istate, const char *path, int must_exist)
 			int err;
 
 			p.src_offset = extension_offset;
-			err = pthread_create(&p.pthread, NULL, load_index_extensions, &p);
+			err = pthread_create(&p.pthread, NULL, load_index_extensions_threadproc, &p);
 			if (err)
 				die(_("unable to create load_index_extensions thread: %s"), strerror(err));
 
@@ -2327,7 +2350,7 @@ int do_read_index(struct index_state *istate, const char *path, int must_exist)
 	 */
 	prepare_repo_settings(istate->repo);
 	if (istate->repo->settings.command_requires_full_index)
-		ensure_full_index(istate);
+		ensure_full_index_with_reason(istate, "incompatible builtin");
 	else
 		ensure_correct_sparsity(istate);
 
@@ -2539,7 +2562,7 @@ int repo_index_has_changes(struct repository *repo,
 		return opt.flags.has_changes != 0;
 	} else {
 		/* TODO: audit for interaction with sparse-index. */
-		ensure_full_index(istate);
+		ensure_full_index_unaudited(istate);
 		for (i = 0; sb && i < istate->cache_nr; i++) {
 			if (i)
 				strbuf_addch(sb, ' ');
@@ -3007,9 +3030,13 @@ static int do_write_index(struct index_state *istate, struct tempfile *tempfile,
 	    !drop_cache_tree && istate->cache_tree) {
 		strbuf_reset(&sb);
 
+		trace2_region_enter("index", "write/extension/cache_tree", NULL);
 		cache_tree_write(&sb, istate->cache_tree);
 		err = write_index_ext_header(f, eoie_c, CACHE_EXT_TREE, sb.len) < 0;
 		hashwrite(f, sb.buf, sb.len);
+		trace2_data_intmax("index", NULL, "write/extension/cache_tree/bytes", (intmax_t)sb.len);
+		trace2_region_leave("index", "write/extension/cache_tree", NULL);
+
 		if (err) {
 			ret = -1;
 			goto out;
@@ -3157,7 +3184,7 @@ static int do_write_locked_index(struct index_state *istate,
 				   "%s", get_lock_file_path(lock));
 
 	if (was_full)
-		ensure_full_index(istate);
+		ensure_full_index_with_reason(istate, "re-expanding after write");
 
 	if (ret)
 		return ret;
@@ -3272,7 +3299,7 @@ static int write_shared_index(struct index_state *istate,
 				   the_repository, "%s", get_tempfile_path(*temp));
 
 	if (was_full)
-		ensure_full_index(istate);
+		ensure_full_index_with_reason(istate, "re-expanding after write");
 
 	if (ret)
 		return ret;
@@ -3829,7 +3856,7 @@ void overlay_tree_on_index(struct index_state *istate,
 
 	/* Hoist the unmerged entries up to stage #3 to make room */
 	/* TODO: audit for interaction with sparse-index. */
-	ensure_full_index(istate);
+	ensure_full_index_unaudited(istate);
 	for (i = 0; i < istate->cache_nr; i++) {
 		struct cache_entry *ce = istate->cache[i];
 		if (!ce_stage(ce))
@@ -3930,7 +3957,7 @@ static void update_callback(struct diff_queue_struct *q,
 		struct diff_filepair *p = q->queue[i];
 		const char *path = p->one->path;
 
-		if (!data->include_sparse &&
+		if (!data->include_sparse && !core_virtualfilesystem &&
 		    !path_in_sparse_checkout(path, data->index))
 			continue;
 

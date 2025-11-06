@@ -258,7 +258,7 @@ static char *credential_ask_one(const char *what, struct credential *c,
 
 	strbuf_release(&desc);
 	strbuf_release(&prompt);
-	return xstrdup(r);
+	return xstrdup(r); // CodeQL [SM01932] justification: CodeQL is wrong here because the value is read from a file via strbuf_read() which does NUL-terminate the string, something CodeQL fails to understand
 }
 
 static int credential_getpass(struct repository *r, struct credential *c)
@@ -455,6 +455,8 @@ static int run_credential_helper(struct credential *c,
 		helper.out = -1;
 	else
 		helper.no_stdout = 1;
+
+	helper.trace2_child_class = "cred";
 
 	if (start_command(&helper) < 0)
 		return -1;

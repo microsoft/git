@@ -4,6 +4,7 @@
 #include "builtin.h"
 #include "abspath.h"
 #include "advice.h"
+#include "gvfs.h"
 #include "checkout.h"
 #include "config.h"
 #include "copy.h"

@@ -482,9 +482,9 @@ static int read_basic_state(struct rebase_options *opts)
 		if (!read_oneliner(&buf, state_dir_path("allow_rerere_autoupdate", opts),
 				   READ_ONELINER_WARN_MISSING))
 			return -1;
-		if (!strcmp(buf.buf, "--rerere-autoupdate"))
+		if (!strcmp(buf.buf, "--rerere-autoupdate")) // CodeQL [SM01932] justification: CodeQL is wrong here because the value is read from a file via strbuf_read() which does NUL-terminate the string, something CodeQL fails to understand
 			opts->allow_rerere_autoupdate = RERERE_AUTOUPDATE;
-		else if (!strcmp(buf.buf, "--no-rerere-autoupdate"))
+		else if (!strcmp(buf.buf, "--no-rerere-autoupdate")) // CodeQL [SM01932] justification: CodeQL is wrong here because the value is read from a file via strbuf_read() which does NUL-terminate the string, something CodeQL fails to understand
 			opts->allow_rerere_autoupdate = RERERE_NOAUTOUPDATE;
 		else
 			warning(_("ignoring invalid allow_rerere_autoupdate: "
@@ -1243,6 +1243,7 @@ int cmd_rebase(int argc,
 
 #ifndef WITH_BREAKING_CHANGES
 	warn_on_auto_comment_char = true;
+	repo_config_clear(the_repository);
 #endif /* !WITH_BREAKING_CHANGES */
 	prepare_repo_settings(the_repository);
 	the_repository->settings.command_requires_full_index = 0;

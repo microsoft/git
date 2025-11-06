@@ -449,6 +449,8 @@ include::config/gui.adoc[]
 
 include::config/guitool.adoc[]
 
+include::config/gvfs.adoc[]
+
 include::config/help.adoc[]
 
 include::config/http.adoc[]
@@ -488,6 +490,8 @@ include::config/notes.adoc[]
 include::config/pack.adoc[]
 
 include::config/pager.adoc[]
+
+include::config/postcommand.adoc[]
 
 include::config/pretty.adoc[]
 

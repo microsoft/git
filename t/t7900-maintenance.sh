@@ -31,6 +31,25 @@ test_systemd_analyze_verify () {
 	fi
 }
 
+test_import_packfile () {
+	printf "blob\ndata <<END\n%s\nEND\n\n" 1 2 3 4 5 | \
+	git -c fastimport.unpackLimit=0 fast-import
+}
+
+test_get_packdir_files() {
+	if [ "$#" -eq 0 ]; then
+		find .git/objects/pack -type f
+	else
+		for arg in "$@"; do
+			find .git/objects/pack -type f -name $arg
+		done
+	fi
+}
+
+test_get_loose_object_files () {
+	find .git/objects -type f -path '.git/objects/??/*'
+}
+
 test_expect_success 'help text' '
 	test_expect_code 129 git maintenance -h >actual &&
 	test_grep "usage: git maintenance <subcommand>" actual &&
@@ -332,6 +351,37 @@ test_expect_success 'maintenance.loose-objects.batchSize' '
 	GIT_PROGRESS_DELAY=0 \
 	git -C loose-batch maintenance run --no-quiet --task=loose-objects 2>err &&
 	test_must_be_empty err
+'
+
+test_expect_success 'loose-objects and gvfs.sharedCache' '
+	git init gvfs-worktree &&
+	git init --bare gvfs-shared &&
+	git -C gvfs-worktree config gvfs.sharedCache "$PWD/gvfs-shared/objects" &&
+
+	# Hack to stop maintenance from running during "git commit"
+	echo in use >gvfs-worktree/.git/objects/maintenance.lock &&
+	git -C gvfs-worktree config maintenance.loose-objects.auto 1 &&
+	test_commit -C gvfs-worktree create-loose-object &&
+	rm gvfs-worktree/.git/objects/maintenance.lock &&
+	! ls -l gvfs-shared/objects/??/* &&
+	ls -l gvfs-worktree/.git/objects/??/* >loose-objects &&
+	test_file_not_empty loose-objects &&
+	! ls -l gvfs-shared/objects/pack/*.pack &&
+
+	# move the loose objects into the shared objects as if they had been
+	# fetched via the `gvfs-helper`
+	mv gvfs-worktree/.git/objects/?? gvfs-shared/objects/ &&
+
+	# Run `loose-objects` twice: The first run creates a pack-file
+	# but does not delete loose objects, the second run deletes
+	# loose objects but does not create a pack-file.
+	git -C gvfs-worktree maintenance run --task=loose-objects &&
+	git -C gvfs-worktree maintenance run --task=loose-objects &&
+
+	! ls -l gvfs-worktree/.git/objects/??/* &&
+	! ls -l gvfs-shared/.git/objects/??/* &&
+	ls -l gvfs-shared/objects/pack/*.pack >shared-packs &&
+	test_file_not_empty shared-packs
 '
 
 test_expect_success 'incremental-repack task' '
@@ -794,6 +844,7 @@ test_expect_success 'invalid --schedule value' '
 '
 
 test_expect_success '--schedule inheritance weekly -> daily -> hourly' '
+	git config --unset maintenance.strategy &&
 	git config maintenance.loose-objects.enabled true &&
 	git config maintenance.loose-objects.schedule hourly &&
 	git config maintenance.commit-graph.enabled true &&
@@ -1433,6 +1484,116 @@ test_expect_success 'maintenance aborts with existing lock file' '
 	: >repo/.git/objects/schedule.lock &&
 	test_must_fail env PATH="$PWD/script:$PATH" git -C repo maintenance start --scheduler=systemd 2>err &&
 	test_grep "Another scheduled git-maintenance(1) process seems to be running" err
+'
+
+test_expect_success 'cache-local-objects task with no shared cache no op' '
+	test_when_finished "rm -rf repo" &&
+	git init repo &&
+	(
+		cd repo &&
+
+		test_commit something &&
+		git config set maintenance.gc.enabled false &&
+		git config set maintenance.cache-local-objects.enabled true &&
+		git config set maintenance.cache-local-objects.auto 1 &&
+
+		test_import_packfile &&
+		test_get_packdir_files "*.pack" "*.idx" "*.keep" "*.rev" \
+			>files.txt &&
+		test_get_loose_object_files >>files.txt &&
+
+		git maintenance run &&
+		while IFS= read -r f; do
+			test_path_exists $f || exit 1
+		done <files.txt
+	)
+'
+
+test_expect_success 'cache-local-objects task cache path same as local odb no op' '
+	test_when_finished "rm -rf repo" &&
+	git init repo &&
+	(
+		cd repo &&
+
+		test_commit something &&
+		git config set gvfs.sharedcache .git/objects &&
+		git config set maintenance.gc.enabled false &&
+		git config set maintenance.cache-local-objects.enabled true &&
+		git config set maintenance.cache-local-objects.auto 1 &&
+
+		test_import_packfile &&
+		test_get_packdir_files "*.pack" "*.idx" "*.keep" "*.rev" \
+			>files.txt &&
+		test_get_loose_object_files >>files.txt &&
+
+		git maintenance run &&
+		while IFS= read -r f; do
+			test_path_exists $f || exit 1
+		done <files.txt
+	)
+'
+
+test_expect_success 'cache-local-objects task no .rev or .keep' '
+	test_when_finished "rm -rf repo cache" &&
+	mkdir -p cache/pack &&
+	git init repo &&
+	(
+		cd repo &&
+
+		test_commit something &&
+		git config set gvfs.sharedcache ../cache &&
+		git config set maintenance.gc.enabled false &&
+		git config set maintenance.cache-local-objects.enabled true &&
+		git config set maintenance.cache-local-objects.auto 1 &&
+
+		test_import_packfile &&
+		test_get_packdir_files "*.pack" "*.idx" >src.txt &&
+		test_get_loose_object_files >>src.txt &&
+
+		rm -f .git/objects/pack/*.rev .git/objects/pack/*.keep &&
+
+		sed "s/.git\\/objects\\//..\\/cache\\//" src.txt >dst.txt &&
+
+		git maintenance run &&
+		while IFS= read -r f; do
+			test_path_is_missing $f || exit 1
+		done <src.txt &&
+
+		while IFS= read -r f; do
+			test_path_exists $f || exit 1
+		done <dst.txt
+	)
+'
+
+test_expect_success 'cache-local-objects task success' '
+	test_when_finished "rm -rf repo cache" &&
+	mkdir -p cache/pack &&
+	git init repo &&
+	(
+		cd repo &&
+
+		test_commit something &&
+		git config set gvfs.sharedcache ../cache &&
+		git config set maintenance.gc.enabled false &&
+		git config set maintenance.cache-local-objects.enabled true &&
+		git config set maintenance.cache-local-objects.auto 1 &&
+
+		test_import_packfile &&
+		test_get_packdir_files "*.pack" "*.idx" "*.keep" "*.rev" \
+			>src.txt &&
+		test_get_loose_object_files >>src.txt &&
+
+		sed "s/.git\\/objects\\//..\\/cache\\//" src.txt >dst.txt &&
+
+		git maintenance run &&
+		while IFS= read -r f; do
+			test_path_is_missing $f || exit 1
+		done <src.txt &&
+
+		while IFS= read -r f; do
+			test_path_exists $f || exit 1
+		done <dst.txt
+	)
 '
 
 test_done

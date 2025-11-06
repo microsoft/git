@@ -765,7 +765,7 @@ static int do_recursive_merge(struct repository *r,
 	o.branch2 = next ? next_label : "(empty tree)";
 	if (is_rebase_i(opts))
 		o.buffer_output = 2;
-	o.show_rename_progress = 1;
+	o.show_rename_progress = isatty(2);
 
 	head_tree = parse_tree_indirect(head);
 	if (!head_tree)
@@ -2597,7 +2597,7 @@ static int read_and_refresh_cache(struct repository *r,
 	 * expand the sparse index.
 	 */
 	if (opts->strategy && strcmp(opts->strategy, "ort"))
-		ensure_full_index(r->index);
+		ensure_full_index_with_reason(r->index, "non-ort merge strategy");
 	return 0;
 }
 
@@ -2960,7 +2960,7 @@ static int have_finished_the_last_pick(void)
 		}
 	}
 	/* If there is only one line then we are done */
-	eol = strchr(buf.buf, '\n');
+	eol = strchr(buf.buf, '\n'); // CodeQL [SM01932] justification: CodeQL is wrong here because the value is read from a file via strbuf_read() which does NUL-terminate the string, something CodeQL fails to understand
 	if (!eol || !eol[1])
 		ret = 1;
 
@@ -3193,9 +3193,9 @@ static int read_populate_opts(struct replay_opts *opts)
 
 		if (read_oneliner(&buf, rebase_path_allow_rerere_autoupdate(),
 				  READ_ONELINER_SKIP_IF_EMPTY)) {
-			if (!strcmp(buf.buf, "--rerere-autoupdate"))
+			if (!strcmp(buf.buf, "--rerere-autoupdate")) // CodeQL [SM01932] justification: CodeQL is wrong here because the value is read from a file via strbuf_read() which does NUL-terminate the string, something CodeQL fails to understand
 				opts->allow_rerere_auto = RERERE_AUTOUPDATE;
-			else if (!strcmp(buf.buf, "--no-rerere-autoupdate"))
+			else if (!strcmp(buf.buf, "--no-rerere-autoupdate")) // CodeQL [SM01932] justification: CodeQL is wrong here because the value is read from a file via strbuf_read() which does NUL-terminate the string, something CodeQL fails to understand
 				opts->allow_rerere_auto = RERERE_NOAUTOUPDATE;
 			strbuf_reset(&buf);
 		}
@@ -3240,7 +3240,7 @@ static int read_populate_opts(struct replay_opts *opts)
 				  READ_ONELINER_SKIP_IF_EMPTY)) {
 			const char *p = ctx->current_fixups.buf;
 			ctx->current_fixup_count = 1;
-			while ((p = strchr(p, '\n'))) {
+			while ((p = strchr(p, '\n'))) { // CodeQL [SM01932] justification: CodeQL is wrong here because the value is read from a file via strbuf_read() which does NUL-terminate the string, something CodeQL fails to understand
 				ctx->current_fixup_count++;
 				p++;
 			}
