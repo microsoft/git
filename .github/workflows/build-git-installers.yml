@@ -880,6 +880,7 @@ jobs:
               name: tagName
             });
             releaseMetadata.release_id = createdRelease.data.id;
+            core.notice(`Created release at ${createdRelease.data.html_url}`);
 
             // Uploads contents of directory to the release created above
             async function uploadDirectoryToRelease(directory, includeExtensions=[]) {
