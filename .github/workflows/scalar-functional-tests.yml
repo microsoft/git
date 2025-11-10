@@ -20,7 +20,7 @@ jobs:
       fail-fast: false
       matrix:
         # Order by runtime (in descending order)
-        os: [windows-2022, macos-13, ubuntu-22.04]
+        os: [windows-2022, macos-15, ubuntu-22.04]
         # Scalar.NET used to be tested using `features: [false, experimental]`
         # But currently, Scalar/C ignores `feature.scalar` altogether, so let's
         # save some electrons and run only one of them...
@@ -99,7 +99,7 @@ jobs:
             ;;
           macOS)
             SUDO=sudo
-            extra=prefix=/usr/local
+            extra=prefix=/opt/homebrew
             ;;
           esac
 
@@ -123,10 +123,23 @@ jobs:
           repository: ${{ env.SCALAR_REPOSITORY }}
           ref: ${{ env.SCALAR_REF }}
 
-      - name: Setup .NET Core
+      - name: Target .NET 9
+        shell: bash
+        run:
+          csproj=scalar/Scalar.FunctionalTests/Scalar.FunctionalTests.csproj &&
+          sed 's/netcoreapp3\.1/net9.0/g' <$csproj >$csproj.new &&
+          mv $csproj.new $csproj &&
+
+          echo "BUILD_FRAGMENT=bin/Release/net9.0" >>$GITHUB_ENV &&
+
+          props=scalar/Directory.Build.props &&
+          sed 's/\(<RuntimeIdentifiers>\)[^<]*/\1osx-arm64/' <$props >$props.new &&
+          mv $props.new $props
+
+      - name: Setup .NET
         uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: '3.1.426'
+          dotnet-version: '9.0.306'
 
       - name: Install dependencies
         run: dotnet restore
