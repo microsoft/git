@@ -78,12 +78,35 @@ test_expect_success 'with post-index-change config' '
 	test_cmp expect post-index-change.out &&
 	test_path_is_missing post-command.out &&
 
+	# add keeps the worktree the same, so does not run post-command.
+	# and this should work through an alias.
+	git config alias.addalias add &&
+	rm -f post-command.out post-index-change.out &&
+	echo more stuff >>file &&
+	git addalias file &&
+	test_cmp expect post-index-change.out &&
+	test_path_is_missing post-command.out &&
+
 	echo stuff >>file &&
 	# reset --hard updates the worktree.
+	# even through an alias
+	git config alias.resetalias "reset --hard" &&
 	rm -f post-command.out post-index-change.out &&
-	git reset --hard &&
+	git resetalias &&
 	test_cmp expect post-index-change.out &&
-	test_cmp expect post-command.out
+	test_cmp expect post-command.out &&
+
+	rm -f post-command.out &&
+	test_must_fail git && # get help text
+	test_path_is_missing post-command.out &&
+
+	rm -f post-command.out &&
+	git version &&
+	test_path_is_missing post-command.out &&
+
+	rm -f post-command.out &&
+	test_must_fail git typo &&
+	test_path_is_missing post-command.out
 '
 
 test_done
