@@ -78,6 +78,8 @@ jobs:
 
           # Submit the manifest to the winget-pkgs repository
           $manifestDirectory = "$PWD\manifests\m\Microsoft\Git\$version"
-          Write-Host -NoNewLine "::notice::Submitting ${env:TAG_NAME} to winget... "
-          .\wingetcreate.exe submit -t "$(Get-Content token.txt)" $manifestDirectory
+          $output = & .\wingetcreate.exe submit -t "$(Get-Content token.txt)" $manifestDirectory
+          Write-Host $output
+          $url = ($output | Select-String -Pattern 'https://\S+' | ForEach-Object { $_.Matches.Value })[0]
+          Write-Host "::notice::Submitted ${env:TAG_NAME} to winget as $url"
         shell: powershell
