@@ -350,9 +350,9 @@ jobs:
           eval $b/please.sh make_installers_from_mingw_w64_git --include-pdbs \
               --version=${{ needs.prereqs.outputs.tag_version }} \
               -o artifacts --${{matrix.type.name}} \
-              --pkg=${{matrix.arch.artifact}}/mingw-w64-${{matrix.arch.toolchain}}-git-[0-9]*.tar.xz \
-              --pkg=${{matrix.arch.artifact}}/mingw-w64-${{matrix.arch.toolchain}}-git-doc-html-[0-9]*.tar.xz &&
-
+              $(ls ${{matrix.arch.artifact}}/mingw-w64-${{matrix.arch.toolchain}}-*.tar.* |
+                sed '/\.sig$/d;/archimport/d;/cvs/d;/p4/d;/gitweb/d;/doc-man/d;s/^/--pkg=/' |
+                tr '\n' ' ') &&
           if test portable = '${{matrix.type.name}}' && test -n "$(git config alias.signtool)"
           then
             git signtool artifacts/PortableGit-*.exe
