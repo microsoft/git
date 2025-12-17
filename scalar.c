@@ -88,19 +88,9 @@ static void setup_enlistment_directory(int argc, const char **argv,
 
 static int git_retries = 3;
 
-LAST_ARG_MUST_BE_NULL
-static int run_git(const char *arg, ...)
+static int run_git_argv(const struct strvec *argv)
 {
-	va_list args;
-	const char *p;
-	struct strvec argv = STRVEC_INIT;
 	int res = 0, attempts;
-
-	va_start(args, arg);
-	strvec_push(&argv, arg);
-	while ((p = va_arg(args, const char *)))
-		strvec_push(&argv, p);
-	va_end(args);
 
 	for (attempts = 0, res = 1;
 	     res && attempts < git_retries;
@@ -108,9 +98,28 @@ static int run_git(const char *arg, ...)
 		struct child_process cmd = CHILD_PROCESS_INIT;
 
 		cmd.git_cmd = 1;
-		strvec_pushv(&cmd.args, argv.v);
+		strvec_pushv(&cmd.args, argv->v);
 		res = run_command(&cmd);
 	}
+
+	return res;
+}
+
+LAST_ARG_MUST_BE_NULL
+static int run_git(const char *arg, ...)
+{
+	va_list args;
+	const char *p;
+	struct strvec argv = STRVEC_INIT;
+	int res;
+
+	va_start(args, arg);
+	strvec_push(&argv, arg);
+	while ((p = va_arg(args, const char *)))
+		strvec_push(&argv, p);
+	va_end(args);
+
+	res = run_git_argv(&argv);
 
 	strvec_clear(&argv);
 	return res;
