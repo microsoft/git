@@ -774,6 +774,7 @@ static int cmd_clone(int argc, const char **argv)
 	const char *cache_server_url = NULL, *local_cache_root = NULL;
 	char *default_cache_server_url = NULL, *local_cache_root_abs = NULL;
 	int gvfs_protocol = -1;
+	const char *ref_format = NULL;
 
 	struct option clone_options[] = {
 		OPT_STRING('b', "branch", &branch, N_("<branch>"),
@@ -797,18 +798,22 @@ static int cmd_clone(int argc, const char **argv)
 		OPT_STRING(0, "local-cache-path", &local_cache_root,
 			   N_("<path>"),
 			   N_("override the path for the local Scalar cache")),
+		OPT_STRING(0, "ref-format", &ref_format, N_("format"),
+			   N_("specify the reference format to use")),
 		OPT_HIDDEN_BOOL(0, "no-fetch-commits-and-trees",
 				&dummy, N_("no longer used")),
 		OPT_END(),
 	};
 	const char * const clone_usage[] = {
 		N_("scalar clone [--single-branch] [--branch <main-branch>] [--full-clone]\n"
-		   "\t[--[no-]src] [--[no-]tags] [--[no-]maintenance] <url> [<enlistment>]"),
+		   "\t[--[no-]src] [--[no-]tags] [--[no-]maintenance] [--ref-format <format>]\n"
+		   "\t<url> [<enlistment>]"),
 		NULL
 	};
 	const char *url;
 	char *enlistment = NULL, *dir = NULL;
 	struct strbuf buf = STRBUF_INIT;
+	struct strvec init_argv = STRVEC_INIT;
 	int res;
 
 	argc = parse_options(argc, argv, NULL, clone_options, clone_usage, 0);
@@ -856,16 +861,26 @@ static int cmd_clone(int argc, const char **argv)
 	if (!local_cache_root)
 		die(_("could not determine local cache root"));
 
-	strbuf_reset(&buf);
+	strvec_clear(&init_argv);
+	strvec_pushf(&init_argv, "-c");
 	if (branch)
-		strbuf_addf(&buf, "init.defaultBranch=%s", branch);
+		strvec_pushf(&init_argv, "init.defaultBranch=%s", branch);
 	else {
 		char *b = repo_default_branch_name(the_repository, 1);
-		strbuf_addf(&buf, "init.defaultBranch=%s", b);
+		strvec_pushf(&init_argv, "init.defaultBranch=%s", b);
 		free(b);
 	}
 
-	if ((res = run_git("-c", buf.buf, "init", "--", dir, NULL)))
+	strvec_push(&init_argv, "init");
+
+	if (ref_format) {
+		strvec_push(&init_argv, "--ref-format");
+		strvec_push(&init_argv, ref_format);
+	}
+
+	strvec_push(&init_argv, "--");
+	strvec_push(&init_argv, dir);
+	if ((res = run_git_argv(&init_argv)))
 		goto cleanup;
 
 	if (chdir(dir) < 0) {
@@ -1015,6 +1030,7 @@ cleanup:
 	free(enlistment);
 	free(dir);
 	strbuf_release(&buf);
+	strvec_clear(&init_argv);
 	free(default_cache_server_url);
 	free(local_cache_root_abs);
 	return res;
