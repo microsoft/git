@@ -13,6 +13,9 @@ gvfs.<verb>.cache-server::
 	get::
 		Use this cache server when downloading objects immediately via the
 		GET endpoint.
+	post::
+		Use this cache server when downloading objects in batches using the
+		POST endpoint.
 --
 
 gvfs.sharedcache::
