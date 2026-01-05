@@ -1725,4 +1725,52 @@ test_expect_success 'verb-specific cache-server: get does NOT use gvfs.prefetch.
 	verify_server_was_not_contacted 1
 '
 
+test_expect_success 'verb-specific cache-server: get uses gvfs.get.cache-server' '
+	test_when_finished "per_test_cleanup" &&
+	test_when_finished "git -C \"$REPO_T1\" config --unset gvfs.get.cache-server" &&
+	start_gvfs_protocol_server 0 &&
+	start_gvfs_protocol_server 1 &&
+
+	# Configure server 0 as default cache-server and server 1 for get.
+	git -C "$REPO_T1" config gvfs.cache-server "$(cache_server_url 0)" &&
+	git -C "$REPO_T1" config gvfs.get.cache-server "$(cache_server_url 1)" &&
+
+	# Run get - should go to server 1.
+	git -C "$REPO_T1" gvfs-helper \
+		--cache-server=trust \
+		--remote=origin \
+		get \
+		<"$OID_ONE_BLOB_FILE" >OUT.output 2>OUT.stderr &&
+
+	# Verify server 1 was contacted (get-specific).
+	verify_server_was_contacted 1 &&
+
+	# Verify server 0 was NOT contacted.
+	verify_server_was_not_contacted 0
+'
+
+test_expect_success 'verb-specific cache-server: prefetch does NOT use gvfs.get.cache-server' '
+	test_when_finished "per_test_cleanup" &&
+	test_when_finished "git -C \"$REPO_T1\" config --unset gvfs.get.cache-server" &&
+	start_gvfs_protocol_server 0 &&
+	start_gvfs_protocol_server 1 &&
+
+	# Configure server 0 as default cache-server and server 1 for get.
+	git -C "$REPO_T1" config gvfs.cache-server "$(cache_server_url 0)" &&
+	git -C "$REPO_T1" config gvfs.get.cache-server "$(cache_server_url 1)" &&
+
+	# Run prefetch - should go to server 0 (default), not server 1 (get).
+	git -C "$REPO_T1" gvfs-helper \
+		--cache-server=trust \
+		--remote=origin \
+		--no-progress \
+		prefetch >OUT.output 2>OUT.stderr &&
+
+	# Verify server 0 was contacted (default cache-server).
+	verify_server_was_contacted 0 &&
+
+	# Verify server 1 was NOT contacted (get-specific).
+	verify_server_was_not_contacted 1
+'
+
 test_done
