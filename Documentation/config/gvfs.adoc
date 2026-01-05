@@ -1,6 +1,16 @@
 gvfs.cache-server::
 	When set, redirect all GVFS Protocol requests to this base URL instead
-	of the origin server.
+	of the origin server. Individual verbs can be overridden with the
+	`gvfs.<verb>.cache-server` config keys.
+
+gvfs.<verb>.cache-server::
+	Override the base value of `gvfs.cache-server` when using this specific
+	`<verb>`. The verbs available are:
++
+--
+	prefetch::
+		Use this cache server when prefetching commits and tree packfiles.
+--
 
 gvfs.sharedcache::
 	When set, place all object data downloaded via the GVFS Protocol into
