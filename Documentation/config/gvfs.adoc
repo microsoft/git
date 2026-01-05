@@ -10,6 +10,9 @@ gvfs.<verb>.cache-server::
 --
 	prefetch::
 		Use this cache server when prefetching commits and tree packfiles.
+	get::
+		Use this cache server when downloading objects immediately via the
+		GET endpoint.
 --
 
 gvfs.sharedcache::
