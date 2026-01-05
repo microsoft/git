@@ -395,6 +395,7 @@ enum gh__server_type {
 
 enum gh__verb {
 	PREFETCH,
+	GET,
 };
 
 static void update_cache_server_for_verb(enum gh__verb verb)
@@ -406,6 +407,10 @@ static void update_cache_server_for_verb(enum gh__verb verb)
 	switch (verb) {
 		case PREFETCH:
 			verbstr = "prefetch";
+			break;
+
+		case GET:
+			verbstr = "get";
 			break;
 
 		default:
@@ -3360,7 +3365,9 @@ static void do__http_get__gvfs_object(struct gh__response_status *status,
 
 	setup_gvfs_objects_progress(&params, l_num, l_den);
 
+	update_cache_server_for_verb(GET);
 	do_req__with_fallback(component_url.buf, &params, status);
+	reset_cache_server();
 
 	gh__request_params__release(&params);
 	strbuf_release(&component_url);
