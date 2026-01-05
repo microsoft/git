@@ -1,8 +1,10 @@
 gvfs.cache-server::
-	TODO
+	When set, redirect all GVFS Protocol requests to this base URL instead
+	of the origin server.
 
 gvfs.sharedcache::
-	TODO
+	When set, place all object data downloaded via the GVFS Protocol into
+	this Git alternate.
 
 gvfs.fallback::
 	If set to `false`, then never fallback to the origin server when the cache
