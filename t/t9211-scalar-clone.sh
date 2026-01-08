@@ -201,4 +201,34 @@ test_expect_success '`scalar clone --no-src`' '
 	test_cmp with without
 '
 
+test_expect_success '`scalar clone --ref-format`' '
+	scalar clone "file://$(pwd)/to-clone" refs-default &&
+	scalar clone --ref-format files "file://$(pwd)/to-clone" refs-files &&
+	scalar clone --ref-format reftable "file://$(pwd)/to-clone" refs-reftable &&
+
+	test_path_is_dir refs-default/src &&
+	test_path_is_dir refs-files/src &&
+	test_path_is_dir refs-reftable/src &&
+
+	(
+		cd refs-default/src &&
+		case test_detect_ref_format in
+		files)
+			test_must_fail git config --local extensions.refstorage
+			;;
+		reftable)
+			test_cmp_config reftable extensions.refstorage
+			;;
+		esac
+	) &&
+	(
+		cd refs-files/src &&
+		test_must_fail git config --local extensions.refstorage
+	) &&
+	(
+		cd refs-reftable/src &&
+		test_cmp_config reftable extensions.refstorage
+	)
+'
+
 test_done
