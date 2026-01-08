@@ -1940,12 +1940,21 @@ static void my_finalize_packfile(struct gh__request_params *params,
 	 * files, do we create the matching .keep (when requested).
 	 *
 	 * If we get an error and the target files already exist, we
-	 * silently eat the error.  Note that finalize_object_file()
+	 * silently eat the error.  Note that finalize_object_file_flags()
 	 * has already munged errno (and it has various creation
 	 * strategies), so we don't bother looking at it.
+	 *
+	 * We use FOF_SKIP_COLLISION_CHECK in case the same packfile was
+	 * attempted for install earlier but got corrupted or failed to
+	 * flush due to a disk issue. This prevents a narrow failure case
+	 * but is better than failing for silly reasons.
 	 */
-	if (finalize_object_file(the_repository, temp_path_pack->buf, final_path_pack->buf) ||
-	    finalize_object_file(the_repository, temp_path_idx->buf, final_path_idx->buf)) {
+	if (finalize_object_file_flags(the_repository,
+				       temp_path_pack->buf, final_path_pack->buf,
+				       FOF_SKIP_COLLISION_CHECK) ||
+	    finalize_object_file_flags(the_repository,
+				       temp_path_idx->buf, final_path_idx->buf,
+				       FOF_SKIP_COLLISION_CHECK)) {
 		unlink(temp_path_pack->buf);
 		unlink(temp_path_idx->buf);
 
