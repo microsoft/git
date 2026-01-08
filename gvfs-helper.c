@@ -2459,7 +2459,16 @@ static void install_loose(struct gh__request_params *params,
 		goto cleanup;
 	}
 
-	if (finalize_object_file(the_repository, tmp_path.buf, loose_path.buf)) {
+	/*
+	 * We skip collision check because the loose object in the target
+	 * may be corrupt and we should override it with a better value
+	 * instead of failing at this point.
+	 *
+	 * See https://github.com/microsoft/git/issues/837
+	 */
+	if (finalize_object_file_flags(the_repository,
+				       tmp_path.buf, loose_path.buf,
+				       FOF_SKIP_COLLISION_CHECK)) {
 		unlink(tmp_path.buf);
 		strbuf_addf(&status->error_message,
 			    "could not install loose object '%s'",
