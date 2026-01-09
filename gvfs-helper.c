@@ -255,6 +255,7 @@
 #include "packfile.h"
 #include "date.h"
 #include "versioncmp.h"
+#include "advice.h"
 
 #define TR2_CAT "gvfs-helper"
 
@@ -1939,12 +1940,21 @@ static void my_finalize_packfile(struct gh__request_params *params,
 	 * files, do we create the matching .keep (when requested).
 	 *
 	 * If we get an error and the target files already exist, we
-	 * silently eat the error.  Note that finalize_object_file()
+	 * silently eat the error.  Note that finalize_object_file_flags()
 	 * has already munged errno (and it has various creation
 	 * strategies), so we don't bother looking at it.
+	 *
+	 * We use FOF_SKIP_COLLISION_CHECK in case the same packfile was
+	 * attempted for install earlier but got corrupted or failed to
+	 * flush due to a disk issue. This prevents a narrow failure case
+	 * but is better than failing for silly reasons.
 	 */
-	if (finalize_object_file(the_repository, temp_path_pack->buf, final_path_pack->buf) ||
-	    finalize_object_file(the_repository, temp_path_idx->buf, final_path_idx->buf)) {
+	if (finalize_object_file_flags(the_repository,
+				       temp_path_pack->buf, final_path_pack->buf,
+				       FOF_SKIP_COLLISION_CHECK) ||
+	    finalize_object_file_flags(the_repository,
+				       temp_path_idx->buf, final_path_idx->buf,
+				       FOF_SKIP_COLLISION_CHECK)) {
 		unlink(temp_path_pack->buf);
 		unlink(temp_path_idx->buf);
 
@@ -2459,7 +2469,16 @@ static void install_loose(struct gh__request_params *params,
 		goto cleanup;
 	}
 
-	if (finalize_object_file(the_repository, tmp_path.buf, loose_path.buf)) {
+	/*
+	 * We skip collision check because the loose object in the target
+	 * may be corrupt and we should override it with a better value
+	 * instead of failing at this point.
+	 *
+	 * See https://github.com/microsoft/git/issues/837
+	 */
+	if (finalize_object_file_flags(the_repository,
+				       tmp_path.buf, loose_path.buf,
+				       FOF_SKIP_COLLISION_CHECK)) {
 		unlink(tmp_path.buf);
 		strbuf_addf(&status->error_message,
 			    "could not install loose object '%s'",
@@ -3007,6 +3026,32 @@ static int compute_transient_delay(int attempt)
 	return v;
 }
 
+static void gvfs_advice_on_retry(void)
+{
+	static int advice_given = 0;
+
+	if (advice_given)
+		return;
+	advice_given = 1;
+
+	if (gvfs_shared_cache_pathname.len) {
+		advise_if_enabled(ADVICE_GVFS_HELPER_TRANSIENT_RETRY,
+				  "These retries may hint towards issues with your disk or\n"
+				  "shared object cache. Check to see if your disk is full.\n"
+				  "If your disk has space, then your shared object cache\n"
+				  "may have corrupt files. Push all local branches then\n"
+				  "delete '%s'\n"
+				  "and run 'git fetch' to reload the cache.",
+				  gvfs_shared_cache_pathname.buf);
+	} else {
+		advise_if_enabled(ADVICE_GVFS_HELPER_TRANSIENT_RETRY,
+				  "These retries may hint towards issues with your disk.\n"
+				  "Check to see if your disk is full. Note also that you\n"
+				  "do not have a gvfs.sharedCache config, which is not\n"
+				  "normal. You may need to delete and reclone this repo.");
+	}
+}
+
 /*
  * Robustly make an HTTP request.  Retry if necessary to hide common
  * transient network errors and/or 429 blockages.
@@ -3049,6 +3094,10 @@ static void do_req__with_robust_retry(const char *url_base,
 			/*fallthru*/
 
 		case GH__RETRY_MODE__TRANSIENT:
+			/*
+			 * Give advice for common reasons this could happen:
+			 */
+			gvfs_advice_on_retry();
 			params->k_transient_delay_sec =
 				compute_transient_delay(params->k_attempt);
 			continue;

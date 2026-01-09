@@ -60,6 +60,9 @@ enum advice_type {
 	ADVICE_USE_CORE_FSMONITOR_CONFIG,
 	ADVICE_WAITING_FOR_EDITOR,
 	ADVICE_WORKTREE_ADD_ORPHAN,
+
+	/* microsoft/git custom advice below: */
+	ADVICE_GVFS_HELPER_TRANSIENT_RETRY,
 };
 
 int git_default_advice_config(const char *var, const char *value);
