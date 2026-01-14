@@ -80,6 +80,6 @@ jobs:
           $manifestDirectory = "$PWD\manifests\m\Microsoft\Git\$version"
           $output = & .\wingetcreate.exe submit $manifestDirectory
           Write-Host $output
-          $url = ($output | Select-String -Pattern 'https://\S+' | ForEach-Object { $_.Matches.Value })[0]
+          $url = ($output | Select-String -Pattern 'https://github\.com/microsoft/winget-pkgs/pull/\S+' | ForEach-Object { $_.Matches.Value })[0]
           Write-Host "::notice::Submitted ${env:TAG_NAME} to winget as $url"
         shell: powershell
