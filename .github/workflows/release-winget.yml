@@ -62,6 +62,10 @@ jobs:
           $env:TAG_NAME -match 'v(.*?)vfs\.(.*)'
           $version = $Matches[1] + $Matches[2]
 
+          # Download the token from Azure Key Vault and mask it in the logs
+          $env:WINGET_CREATE_GITHUB_TOKEN = az keyvault secret show --name ${{ secrets.WINGET_TOKEN_SECRET_NAME }} --vault-name ${{ secrets.AZURE_VAULT }} --query "value" -o tsv
+          Write-Host -NoNewLine "::add-mask::$env:WINGET_CREATE_GITHUB_TOKEN"
+
           # Download wingetcreate and create manifests
           Invoke-WebRequest https://aka.ms/wingetcreate/latest -OutFile wingetcreate.exe
           .\wingetcreate.exe update Microsoft.Git `
@@ -71,10 +75,6 @@ jobs:
                  "$($asset_x64_url)|x64|user" `
                  "$($asset_arm64_url)|arm64|machine" `
                  "$($asset_arm64_url)|arm64|user"
-
-          # Download the token from Azure Key Vault and mask it in the logs
-          $env:WINGET_CREATE_GITHUB_TOKEN = az keyvault secret show --name ${{ secrets.WINGET_TOKEN_SECRET_NAME }} --vault-name ${{ secrets.AZURE_VAULT }} --query "value" -o tsv
-          Write-Host -NoNewLine "::add-mask::$env:WINGET_CREATE_GITHUB_TOKEN"
 
           # Submit the manifest to the winget-pkgs repository
           $manifestDirectory = "$PWD\manifests\m\Microsoft\Git\$version"
