@@ -62,6 +62,10 @@ jobs:
           $env:TAG_NAME -match 'v(.*?)vfs\.(.*)'
           $version = $Matches[1] + $Matches[2]
 
+          # Download the token from Azure Key Vault and mask it in the logs
+          $env:WINGET_CREATE_GITHUB_TOKEN = az keyvault secret show --name ${{ secrets.WINGET_TOKEN_SECRET_NAME }} --vault-name ${{ secrets.AZURE_VAULT }} --query "value" -o tsv
+          Write-Host -NoNewLine "::add-mask::$env:WINGET_CREATE_GITHUB_TOKEN"
+
           # Download wingetcreate and create manifests
           Invoke-WebRequest https://aka.ms/wingetcreate/latest -OutFile wingetcreate.exe
           .\wingetcreate.exe update Microsoft.Git `
@@ -72,14 +76,10 @@ jobs:
                  "$($asset_arm64_url)|arm64|machine" `
                  "$($asset_arm64_url)|arm64|user"
 
-          # Download the token from Azure Key Vault and mask it in the logs
-          az keyvault secret download --name ${{ secrets.WINGET_TOKEN_SECRET_NAME }} --vault-name ${{ secrets.AZURE_VAULT }} --file token.txt
-          Write-Host -NoNewLine "::add-mask::$(Get-Content token.txt)"
-
           # Submit the manifest to the winget-pkgs repository
           $manifestDirectory = "$PWD\manifests\m\Microsoft\Git\$version"
-          $output = & .\wingetcreate.exe submit -t "$(Get-Content token.txt)" $manifestDirectory
+          $output = & .\wingetcreate.exe submit $manifestDirectory
           Write-Host $output
-          $url = ($output | Select-String -Pattern 'https://\S+' | ForEach-Object { $_.Matches.Value })[0]
+          $url = ($output | Select-String -Pattern 'https://github\.com/microsoft/winget-pkgs/pull/\S+' | ForEach-Object { $_.Matches.Value })[0]
           Write-Host "::notice::Submitted ${env:TAG_NAME} to winget as $url"
         shell: powershell
