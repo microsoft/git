@@ -58,6 +58,42 @@ SHARED_CACHE_T2="$(pwd)"/shared_cache_t2
 PID_FILE="$(pwd)"/pid-file.pid
 SERVER_LOG="$(pwd)"/OUT.server.log
 
+# Helper functions to compute port, pid-file, and log for a given
+# port increment. An increment of 0 (or empty) uses the base values.
+#
+server_port () {
+	local instance="${1:-0}"
+	echo "$(($GIT_TEST_GVFS_PROTOCOL_PORT + $instance))"
+}
+
+server_pid_file () {
+	local instance="${1:-0}"
+	if test "$instance" -eq 0
+	then
+		echo "$PID_FILE"
+	else
+		echo "$(pwd)/pid-file-$instance.pid"
+	fi
+}
+
+server_log_file () {
+	local instance="${1:-0}"
+	if test "$instance" -eq 0
+	then
+		echo "$SERVER_LOG"
+	else
+		echo "$(pwd)/OUT.server-$instance.log"
+	fi
+}
+
+# Helper to build a cache-server URL for a given port increment.
+#
+cache_server_url () {
+	local instance="${1:-0}"
+	local port=$(server_port "$instance")
+	echo "http://127.0.0.1:$port/servertype/cache"
+}
+
 PATH="$GIT_BUILD_DIR/t/helper/:$PATH" && export PATH
 
 OIDS_FILE="$(pwd)"/oid_list.txt
@@ -229,15 +265,25 @@ test_expect_success 'setup repos' '
 	get_one_commit_oid
 '
 
+# Stop a gvfs-protocol server.
+# Usage: stop_gvfs_protocol_server [<port_increment>]
+#
+# The optional port_increment (default 0) specifies which server to stop.
+# Increment 0 uses the base port, 1 uses base+1, etc.
+#
 stop_gvfs_protocol_server () {
-	if ! test -f "$PID_FILE"
+	local instance="${1:-0}"
+	local pid_file=$(server_pid_file "$instance")
+	local log_file=$(server_log_file "$instance")
+
+	if ! test -f "$pid_file"
 	then
 		return 0
 	fi
 	#
 	# The server will shutdown automatically when we delete the pid-file.
 	#
-	rm -f "$PID_FILE"
+	rm -f "$pid_file"
 	#
 	# Give it a few seconds to shutdown (mainly to completely release the
 	# port before the next test start another instance and it attempts to
@@ -245,18 +291,29 @@ stop_gvfs_protocol_server () {
 	#
 	for k in 0 1 2 3 4
 	do
-		if grep -q "Starting graceful shutdown" "$SERVER_LOG"
+		if grep -q "Starting graceful shutdown" "$log_file"
 		then
 			return 0
 		fi
 		sleep 1
 	done
 
-	echo "stop_gvfs_protocol_server: timeout waiting for server shutdown"
+	echo "stop_gvfs_protocol_server($instance): timeout waiting for server shutdown"
 	return 1
 }
 
+# Start a gvfs-protocol server.
+# Usage: start_gvfs_protocol_server [<port_increment>]
+#
+# The optional port_increment (default 0) specifies which server to start.
+# Increment 0 uses the base port, 1 uses base+1, etc.
+# This allows running multiple servers simultaneously on different ports.
+#
 start_gvfs_protocol_server () {
+	local instance="${1:-0}"
+	local port=$(server_port "$instance")
+	local pid_file=$(server_pid_file "$instance")
+	local log_file=$(server_log_file "$instance")
 	#
 	# Launch our server into the background in repo_src.
 	#
@@ -264,24 +321,24 @@ start_gvfs_protocol_server () {
 		cd "$REPO_SRC"
 		test-gvfs-protocol --verbose \
 			--listen=127.0.0.1 \
-			--port=$GIT_TEST_GVFS_PROTOCOL_PORT \
+			--port=$port \
 			--reuseaddr \
-			--pid-file="$PID_FILE" \
-			2>"$SERVER_LOG" &
+			--pid-file="$pid_file" \
+			2>"$log_file" &
 	)
 	#
 	# Give it a few seconds to get started.
 	#
 	for k in 0 1 2 3 4
 	do
-		if test -f "$PID_FILE"
+		if test -f "$pid_file"
 		then
 			return 0
 		fi
 		sleep 1
 	done
 
-	echo "start_gvfs_protocol_server: timeout waiting for server startup"
+	echo "start_gvfs_protocol_server($instance): timeout waiting for server startup"
 	return 1
 }
 
@@ -322,8 +379,26 @@ start_gvfs_protocol_server_with_mayhem () {
 		sleep 1
 	done
 
-	echo "start_gvfs_protocol_server: timeout waiting for server startup"
+	echo "start_gvfs_protocol_server($instance): timeout waiting for server startup"
 	return 1
+}
+
+# Verify that a server received at least one connection.
+# Usage: verify_server_was_contacted [<port_increment>]
+#
+verify_server_was_contacted () {
+	local instance="${1:-0}"
+	local log_file=$(server_log_file "$instance")
+	grep -q "Connection from" "$log_file"
+}
+
+# Verify that a server was NOT contacted.
+# Usage: verify_server_was_not_contacted [<port_increment>]
+#
+verify_server_was_not_contacted () {
+	local instance="${1:-0}"
+	local log_file=$(server_log_file "$instance")
+	! grep -q "Connection from" "$log_file"
 }
 
 # Verify the number of connections from the client.
@@ -449,7 +524,12 @@ verify_vfs_packfile_count () {
 }
 
 per_test_cleanup () {
-	stop_gvfs_protocol_server
+	# Stop servers with port increments 0, 1, 2, 3 to handle tests
+	# that may use multiple servers.
+	for instance in 0 1 2 3
+	do
+		stop_gvfs_protocol_server "$instance"
+	done
 
 	rm -rf "$SHARED_CACHE_T1"/[0-9a-f][0-9a-f]/
 	rm -rf "$SHARED_CACHE_T1"/info/*
