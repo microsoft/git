@@ -1822,4 +1822,61 @@ test_expect_success 'verb-specific cache-server: get does NOT use gvfs.post.cach
 	verify_server_was_not_contacted 1
 '
 
+test_expect_success 'verb-specific cache-server: all verbs with different servers' '
+	test_when_finished "per_test_cleanup" &&
+	test_when_finished "git -C \"$REPO_T1\" config --unset gvfs.cache-server" &&
+	test_when_finished "git -C \"$REPO_T1\" config --unset gvfs.prefetch.cache-server" &&
+	test_when_finished "git -C \"$REPO_T1\" config --unset gvfs.get.cache-server" &&
+	test_when_finished "git -C \"$REPO_T1\" config --unset gvfs.post.cache-server" &&
+	start_gvfs_protocol_server 0 &&
+	start_gvfs_protocol_server 1 &&
+	start_gvfs_protocol_server 2 &&
+	start_gvfs_protocol_server 3 &&
+
+	# Configure each verb to use a different server:
+	# - server 0: default (unused in this test)
+	# - server 1: prefetch
+	# - server 2: get
+	# - server 3: post
+	git -C "$REPO_T1" config gvfs.cache-server "$(cache_server_url 0)" &&
+	git -C "$REPO_T1" config gvfs.prefetch.cache-server "$(cache_server_url 1)" &&
+	git -C "$REPO_T1" config gvfs.get.cache-server "$(cache_server_url 2)" &&
+	git -C "$REPO_T1" config gvfs.post.cache-server "$(cache_server_url 3)" &&
+
+	# Run prefetch - should go to server 1.
+	git -C "$REPO_T1" gvfs-helper \
+		--cache-server=trust \
+		--remote=origin \
+		--no-progress \
+		prefetch >OUT.output 2>OUT.stderr &&
+	verify_server_was_contacted 1 &&
+	verify_server_was_not_contacted 0 &&
+	verify_server_was_not_contacted 2 &&
+	verify_server_was_not_contacted 3 &&
+
+	# Clean up shared cache for next verb.
+	rm -rf "$SHARED_CACHE_T1"/pack/* &&
+
+	# Run get - should go to server 2.
+	git -C "$REPO_T1" gvfs-helper \
+		--cache-server=trust \
+		--remote=origin \
+		get \
+		<"$OID_ONE_BLOB_FILE" >OUT.output 2>OUT.stderr &&
+	verify_server_was_contacted 2 &&
+
+	# Clean up shared cache for next verb.
+	rm -rf "$SHARED_CACHE_T1"/[0-9a-f][0-9a-f]/ &&
+	rm -rf "$SHARED_CACHE_T1"/pack/* &&
+
+	# Run post - should go to server 3.
+	git -C "$REPO_T1" gvfs-helper \
+		--cache-server=trust \
+		--remote=origin \
+		--no-progress \
+		post \
+		<"$OIDS_BLOBS_FILE" >OUT.output 2>OUT.stderr &&
+	verify_server_was_contacted 3
+'
+
 test_done
