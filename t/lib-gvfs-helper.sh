@@ -64,9 +64,11 @@ SERVER_LOG="$(pwd)"/OUT.server.log
 # Helper functions to compute port, pid-file, and log for a given
 # port increment. An increment of 0 (or empty) uses the base values.
 #
+# Ensure we don't overlap with any other test port by modifying a
+# significant bit.
 server_port () {
 	local instance="${1:-0}"
-	echo $(($GIT_TEST_GVFS_PROTOCOL_PORT + "$instance"))
+	echo $(($GIT_TEST_GVFS_PROTOCOL_PORT + 10000 * $instance))
 }
 
 server_pid_file () {
@@ -93,7 +95,7 @@ server_log_file () {
 #
 cache_server_url () {
 	local instance="${1:-0}"
-	local port=$(server_port "$instance")
+	local port="$(server_port "$instance")"
 	echo "http://127.0.0.1:$port/servertype/cache"
 }
 
@@ -276,8 +278,8 @@ test_expect_success 'setup repos' '
 #
 stop_gvfs_protocol_server () {
 	local instance="${1:-0}"
-	local pid_file=$(server_pid_file "$instance")
-	local log_file=$(server_log_file "$instance")
+	local pid_file="$(server_pid_file "$instance")"
+	local log_file="$(server_log_file "$instance")"
 
 	if ! test -f "$pid_file"
 	then
@@ -314,9 +316,9 @@ stop_gvfs_protocol_server () {
 #
 start_gvfs_protocol_server () {
 	local instance="${1:-0}"
-	local port=$(server_port "$instance")
-	local pid_file=$(server_pid_file "$instance")
-	local log_file=$(server_log_file "$instance")
+	local port="$(server_port "$instance")"
+	local pid_file="$(server_pid_file "$instance")"
+	local log_file="$(server_log_file "$instance")"
 	#
 	# Launch our server into the background in repo_src.
 	#
@@ -391,7 +393,7 @@ start_gvfs_protocol_server_with_mayhem () {
 #
 verify_server_was_contacted () {
 	local instance="${1:-0}"
-	local log_file=$(server_log_file "$instance")
+	local log_file="$(server_log_file "$instance")"
 	grep -q "Connection from" "$log_file"
 }
 
@@ -400,7 +402,7 @@ verify_server_was_contacted () {
 #
 verify_server_was_not_contacted () {
 	local instance="${1:-0}"
-	local log_file=$(server_log_file "$instance")
+	local log_file="$(server_log_file "$instance")"
 	! grep -q "Connection from" "$log_file"
 }
 
