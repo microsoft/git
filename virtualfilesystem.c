@@ -337,6 +337,32 @@ static void clear_ce_flags_virtualfilesystem_1(struct index_state *istate, int s
 			entry += len + 1;
 		}
 	}
+
+	/*
+	 * If vfs_check_added_entries_for_clear_skip_worktree is set and we are checking
+	 * for added entries, clear the mask from all added entries even if they
+	 * are not in the virtual filesystem.
+	 * This is used in scenarios like cherry-pick -n, where the added entries
+	 * are not added to the virtual file system but still need to be checked out
+	 * in the working tree.
+	 */
+	if ((select_mask & CE_ADDED)
+	    && (clear_mask & CE_SKIP_WORKTREE)
+	    && istate->vfs_check_added_entries_for_clear_skip_worktree) {
+		for (i = 0; i < istate->cache_nr; i++) {
+			struct cache_entry *ce = istate->cache[i];
+			if (!select_mask || (ce->ce_flags & select_mask)) {
+				if (ce->ce_flags & clear_mask) {
+					ce->ce_flags &= ~clear_mask;
+					/*
+					* We also signal to VFS that there are updates to skipworktree
+					* that it needs to react to.
+					*/
+					istate->updated_skipworktree = 1;
+				}
+			}
+		}
+	}
 }
 
 /*

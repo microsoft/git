@@ -2004,6 +2004,8 @@ int unpack_trees(unsigned len, struct tree_desc *t, struct unpack_trees_options 
 	    is_sparse_index_allowed(&o->internal.result, 0))
 		o->internal.result.sparse_index = 1;
 
+	o->internal.result.vfs_check_added_entries_for_clear_skip_worktree =
+		o->src_index->vfs_check_added_entries_for_clear_skip_worktree;
 	/*
 	 * Sparse checkout loop #1: set NEW_SKIP_WORKTREE on existing entries
 	 */

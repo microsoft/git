@@ -652,6 +652,15 @@ static int checkout_paths(const struct checkout_opts *opts,
 		checkout_index = opts->checkout_index;
 
 	if (checkout_index) {
+		if (core_virtualfilesystem) {
+			/* Some scenarios that checkout the index may update skipworktree bits,
+			* such as `restore --staged` after `cherry-pick -n` or `reset --soft`,
+			* so this flag should be set to ensure the correct virtual filesystem
+			* event is sent.
+			*/
+			the_repository->index->updated_skipworktree = 1;
+		}
+
 		if (write_locked_index(the_repository->index, &lock_file, COMMIT_LOCK))
 			die(_("unable to write new index file"));
 	} else {

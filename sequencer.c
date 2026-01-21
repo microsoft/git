@@ -787,13 +787,22 @@ static int do_recursive_merge(struct repository *r,
 	 * to be replace with the tree the index matched before we
 	 * started doing any picks.
 	 */
+	if (opts->no_commit && core_virtualfilesystem) {
+		/* When using the virtual file system, staged new files
+		 * should clear SKIP_WORKTREE during this step to ensure the new files
+		 * are properly added to the working tree as well as index - otherwise
+		 * sparse-checkout functionality will prevent them from being added.
+		 */
+		o.repo->index->vfs_check_added_entries_for_clear_skip_worktree = 1;
+	}
 	merge_switch_to_result(&o, head_tree, &result, 1, show_output);
+	o.repo->index->vfs_check_added_entries_for_clear_skip_worktree = 0;
+
 	clean = result.clean;
 	if (clean < 0) {
 		rollback_lock_file(&index_lock);
 		return clean;
 	}
-
 	if (write_locked_index(r->index, &index_lock,
 			       COMMIT_LOCK | SKIP_IF_UNCHANGED))
 		/*
