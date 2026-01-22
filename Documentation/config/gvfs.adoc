@@ -1,8 +1,26 @@
 gvfs.cache-server::
-	TODO
+	When set, redirect all GVFS Protocol requests to this base URL instead
+	of the origin server. Individual verbs can be overridden with the
+	`gvfs.<verb>.cache-server` config keys.
+
+gvfs.<verb>.cache-server::
+	Override the base value of `gvfs.cache-server` when using this specific
+	`<verb>`. The verbs available are:
++
+--
+	prefetch::
+		Use this cache server when prefetching commits and tree packfiles.
+	get::
+		Use this cache server when downloading objects immediately via the
+		GET endpoint.
+	post::
+		Use this cache server when downloading objects in batches using the
+		POST endpoint.
+--
 
 gvfs.sharedcache::
-	TODO
+	When set, place all object data downloaded via the GVFS Protocol into
+	this Git alternate.
 
 gvfs.fallback::
 	If set to `false`, then never fallback to the origin server when the cache
