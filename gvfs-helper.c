@@ -374,7 +374,8 @@ static struct gh__global {
 	struct credential cache_creds;
 
 	const char *main_url;
-	const char *cache_server_url;
+	char *cache_server_url;
+	char *cache_server_url_backup;
 
 	struct strbuf buf_odb_path;
 
@@ -391,6 +392,64 @@ enum gh__server_type {
 
 	GH__SERVER_TYPE__NR,
 };
+
+enum gh__verb {
+	PREFETCH,
+	GET,
+	POST,
+};
+
+static void update_cache_server_for_verb(enum gh__verb verb)
+{
+	const char *verbstr = NULL;
+	char *value = NULL;
+	struct strbuf key = STRBUF_INIT;
+
+	switch (verb) {
+		case PREFETCH:
+			verbstr = "prefetch";
+			break;
+
+		case GET:
+			verbstr = "get";
+			break;
+
+		case POST:
+			verbstr = "post";
+			break;
+
+		default:
+			gh__global.cache_server_url_backup = NULL;
+			return;
+	}
+
+	gh__global.cache_server_url_backup = gh__global.cache_server_url;
+
+	strbuf_addf(&key, "gvfs.%s.cache-server", verbstr);
+
+	if (!repo_config_get_string(the_repository, key.buf, &value) &&
+	    value) {
+		trace2_data_string("gvfs-helper", the_repository, key.buf, value);
+		gh__global.cache_server_url = value;
+	} else {
+		gh__global.cache_server_url_backup = NULL;
+	}
+
+	strbuf_release(&key);
+}
+
+static void reset_cache_server(void)
+{
+	/*
+	 * The backup exists only if the base was replaced with a
+	 * freeable value.
+	 */
+	if (gh__global.cache_server_url_backup) {
+		free(gh__global.cache_server_url);
+		gh__global.cache_server_url = gh__global.cache_server_url_backup;
+		gh__global.cache_server_url_backup = NULL;
+	}
+}
 
 static const char *gh__server_type_label[GH__SERVER_TYPE__NR] = {
 	"(main)",
@@ -3168,6 +3227,7 @@ static void do_req__with_fallback(const char *url_component,
 				  struct gh__request_params *params,
 				  struct gh__response_status *status)
 {
+retry_backup:
 	if (gh__global.cache_server_url &&
 	    params->b_permit_cache_server_if_defined) {
 		do_req__to_cache_server(url_component, params, status);
@@ -3177,6 +3237,15 @@ static void do_req__with_fallback(const char *url_component,
 
 		if (!gh__cmd_opts.try_fallback)
 			return;
+
+		/*
+		 * If we overrode the cache-server using a custom key,
+		 * then fall back to the regular cache server on failure.
+		 */
+		if (gh__global.cache_server_url_backup) {
+			reset_cache_server();
+			goto retry_backup;
+		}
 
 		/*
 		 * The cache-server shares creds with the main Git server,
@@ -3301,7 +3370,9 @@ static void do__http_get__gvfs_object(struct gh__response_status *status,
 
 	setup_gvfs_objects_progress(&params, l_num, l_den);
 
+	update_cache_server_for_verb(GET);
 	do_req__with_fallback(component_url.buf, &params, status);
+	reset_cache_server();
 
 	gh__request_params__release(&params);
 	strbuf_release(&component_url);
@@ -3373,7 +3444,9 @@ static void do__http_post__gvfs_objects(struct gh__response_status *status,
 
 	setup_gvfs_objects_progress(&params, j_pack_num, j_pack_den);
 
+	update_cache_server_for_verb(POST);
 	do_req__with_fallback("gvfs/objects", &params, status);
+	reset_cache_server();
 
 	gh__request_params__release(&params);
 	jw_release(&jw_req);
@@ -3493,7 +3566,9 @@ static void do__http_get__gvfs_prefetch(struct gh__response_status *status,
 			    show_date(seconds_since_epoch, 0,
 				      DATE_MODE(ISO8601)));
 
+	update_cache_server_for_verb(PREFETCH);
 	do_req__with_fallback(component_url.buf, &params, status);
+	reset_cache_server();
 
 	gh__request_params__release(&params);
 	strbuf_release(&component_url);
