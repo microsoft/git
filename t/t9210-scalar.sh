@@ -455,6 +455,47 @@ test_expect_success '`scalar clone` with GVFS-enabled server' '
 	)
 '
 
+. "$TEST_DIRECTORY"/lib-gvfs-helper.sh
+
+test_expect_success 'scalar clone: all verbs with different servers' '
+	git config --global core.askPass true &&
+
+	test_when_finished "per_test_cleanup" &&
+	test_when_finished "scalar delete scalar-clone" &&
+
+	start_gvfs_protocol_server 1 &&
+	start_gvfs_protocol_server 2 &&
+	start_gvfs_protocol_server 3 &&
+
+	# Configure each verb to use a different server:
+	# - server 0: default (unused in this test; not running.)
+	# - server 1: prefetch
+	# - server 2: get
+	# - server 3: post
+	scalar -c credential.interactive=true \
+			clone --full-clone \
+			 --cache-server-url="$(cache_server_url 0)" \
+		     --prefetch-cache-server-url="$(cache_server_url 1)" \
+		     --get-cache-server-url="$(cache_server_url 2)" \
+		     --post-cache-server-url="$(cache_server_url 3)" \
+			 --gvfs-protocol \
+		     -- "http://$HOST_PORT/" scalar-clone 2>err >out &&
+
+	test_grep "Cache server URL: $(cache_server_url 0)" err &&
+	test_grep "Prefetch cache server URL: $(cache_server_url 1)" err &&
+	test_grep "Objects GET cache server URL: $(cache_server_url 2)" err &&
+	test_grep "Objects POST cache server URL: $(cache_server_url 3)" err &&
+
+	test_cmp_config -C scalar-clone/src "$(cache_server_url 0)" gvfs.cache-server &&
+	test_cmp_config -C scalar-clone/src "$(cache_server_url 1)" gvfs.prefetch.cache-server &&
+	test_cmp_config -C scalar-clone/src "$(cache_server_url 2)" gvfs.get.cache-server &&
+	test_cmp_config -C scalar-clone/src "$(cache_server_url 3)" gvfs.post.cache-server &&
+
+	verify_server_was_contacted 1 &&
+	verify_server_was_contacted 2 &&
+	verify_server_was_contacted 3
+'
+
 test_expect_success 'fetch <non-existent> does not hang in gvfs-helper' '
 	test_must_fail git -C using-gvfs/src fetch origin does-not-exist
 '
