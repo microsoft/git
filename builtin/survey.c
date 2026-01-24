@@ -292,7 +292,6 @@ struct survey_stats_base_object {
 	uint32_t cnt_cached;   /* see oi.whence */
 	uint32_t cnt_loose;    /* see oi.whence */
 	uint32_t cnt_packed;   /* see oi.whence */
-	uint32_t cnt_dbcached; /* see oi.whence */
 
 	uint64_t sum_size; /* sum(object_size) */
 	uint64_t sum_disk_size; /* sum(disk_size) */
@@ -1415,9 +1414,6 @@ static void increment_totals(struct survey_context *ctx,
 			break;
 		case OI_PACKED:
 			base->cnt_packed++;
-			break;
-		case OI_DBCACHED:
-			base->cnt_dbcached++;
 			break;
 		default:
 			break;
