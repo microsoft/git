@@ -271,7 +271,7 @@ static int gh_client__objects__receive_response(
 	}
 
 	if (ghc & GHC__CREATED__PACKFILE)
-		packfile_store_reprepare(the_repository->objects->sources->packfiles);
+		packfile_store_reprepare(gh_client__chosen_odb->packfiles);
 
 	*p_ghc = ghc;
 	*p_nr_loose = nr_loose;
