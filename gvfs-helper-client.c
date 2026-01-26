@@ -539,10 +539,9 @@ int gh_client__get_immediate(const struct object_id *oid,
  * Ask gvfs-helper to prefetch commits-and-trees packfiles since a
  * given timestamp.
  *
- * If seconds_since_epoch is zero, gvfs-helper will scan the ODB for
- * the last received prefetch and ask for ones newer than that.
+ * We ignore seconds_since_epoch and use the value from the ODB.
  */
-int gh_client__prefetch(timestamp_t seconds_since_epoch,
+int gh_client__prefetch(timestamp_t seconds_since_epoch UNUSED,
 			int *nr_packfiles_received)
 {
 	struct gh_server__process *entry;
@@ -557,14 +556,12 @@ int gh_client__prefetch(timestamp_t seconds_since_epoch,
 		return -1;
 
 	trace2_region_enter("gh-client", "objects/prefetch", the_repository);
-	trace2_data_intmax("gh-client", the_repository, "prefetch/since",
-			   seconds_since_epoch);
 
 	process = &entry->subprocess.process;
 
 	sigchain_push(SIGPIPE, SIG_IGN);
 
-	err = gh_client__send__objects_prefetch(process, seconds_since_epoch);
+	err = gh_client__send__objects_prefetch(process, /* seconds unknown */ 0);
 	if (!err)
 		err = gh_client__objects__receive_response(
 			process, &ghc, &nr_loose, &nr_packfile);

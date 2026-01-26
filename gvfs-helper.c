@@ -3542,6 +3542,10 @@ static void do__http_get__gvfs_prefetch(struct gh__response_status *status,
 		strbuf_addf(&component_url, "?lastPackTimestamp=%"PRItime,
 			    seconds_since_epoch);
 
+	trace2_data_intmax(TR2_CAT, the_repository,
+			   "prefetch/since",
+			   seconds_since_epoch);
+
 	params.b_is_post = 0;
 	params.b_write_to_file = 1;
 	params.b_permit_cache_server_if_defined = 1;
