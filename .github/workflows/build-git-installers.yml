@@ -491,6 +491,11 @@ jobs:
           HOST_CPU = universal
           BASIC_CFLAGS += -arch arm64 -arch x86_64
 
+          # macOS uses Apple Common Crypto instead of OpenSSL. The main Makefile
+          # sets NO_OPENSSL and adds -DNO_OPENSSL to BASIC_CFLAGS, but contrib
+          # Makefiles that only include config.mak* don't get this logic.
+          BASIC_CFLAGS += -DNO_OPENSSL
+
           # CRITICAL FIX: Disable USE_HOMEBREW_LIBICONV
           # On Darwin 24+ (macOS 15), config.mak.uname sets USE_HOMEBREW_LIBICONV
           # which causes ICONVDIR to point to Homebrew's libiconv. But Homebrew's
