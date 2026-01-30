@@ -408,6 +408,9 @@ jobs:
           brew link --force gettext
 
           # Make universal gettext library
+          # Note: libintl depends on iconv, but we use the system's libiconv
+          # which is already universal, rather than Homebrew's libiconv which
+          # has different symbol names (_libiconv vs _iconv)
           lipo -create -output libintl.a /usr/local/opt/gettext/lib/libintl.a /opt/homebrew/opt/gettext/lib/libintl.a
 
       - name: Log in to Azure
@@ -487,9 +490,24 @@ jobs:
           # used in 'git version --build-options'.  We'll fix that in code.
           HOST_CPU = universal
           BASIC_CFLAGS += -arch arm64 -arch x86_64
+
+          # macOS uses Apple Common Crypto instead of OpenSSL. The main Makefile
+          # sets NO_OPENSSL and adds -DNO_OPENSSL to BASIC_CFLAGS, but contrib
+          # Makefiles that only include config.mak* don't get this logic.
+          BASIC_CFLAGS += -DNO_OPENSSL
+
+          # CRITICAL FIX: Disable USE_HOMEBREW_LIBICONV
+          # On Darwin 24+ (macOS 15), config.mak.uname sets USE_HOMEBREW_LIBICONV
+          # which causes ICONVDIR to point to Homebrew's libiconv. But Homebrew's
+          # libiconv exports _libiconv/_libiconv_open symbols (with prefix), while
+          # Homebrew's gettext/libintl was built against system iconv which uses
+          # _iconv/_iconv_open symbols (no prefix). We must use the system's
+          # /usr/lib/libiconv.dylib which is universal and has the correct symbols.
+          USE_HOMEBREW_LIBICONV =
+          ICONVDIR =
           EOF
 
-          # Configure the Git build to pick up gettext
+          # Configure the Git build to find our universal libintl.a
           homebrew_prefix="$(brew --prefix)"
           cat >>git/config.mak <<EOF
           CFLAGS = -I$homebrew_prefix/include -I/usr/local/opt/gettext/include
