@@ -1379,7 +1379,7 @@ static void increment_totals(struct survey_context *ctx,
 				uint64_t nr_entries;
 				int qb;
 
-				parse_tree(tree);
+				repo_parse_tree(the_repository, tree);
 				init_tree_desc(&desc, &oids->oid[i], tree->buffer, tree->size);
 				nr_entries = 0;
 				while (tree_entry(&desc, &entry))
