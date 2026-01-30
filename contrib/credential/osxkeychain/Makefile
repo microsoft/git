@@ -41,8 +41,8 @@ prefix ?= /usr/local
 gitexecdir ?= $(prefix)/libexec/git-core
 
 CC ?= gcc
-CFLAGS ?= -g -O2 -Wall -I../../.. $(BASIC_CFLAGS)
-LDFLAGS ?= $(BASIC_LDFLAGS) $(EXTLIBS)
+override CFLAGS += -g -O2 -Wall -I../../.. $(BASIC_CFLAGS)
+override LDFLAGS += $(BASIC_LDFLAGS) $(EXTLIBS)
 INSTALL ?= install
 RM ?= rm -f
 
