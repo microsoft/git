@@ -527,6 +527,7 @@ static int run_post_command_hook(struct repository *r)
 {
 	char *lock;
 	int ret = 0;
+	int saved_errno = errno;
 	struct run_hooks_opt opt = RUN_HOOKS_OPT_INIT;
 
 	/*
@@ -545,6 +546,7 @@ static int run_post_command_hook(struct repository *r)
 	strvec_pushf(&opt.args, "--exit_code=%u", exit_code);
 	ret = run_hooks_opt(r, "post-command", &opt);
 
+	errno = saved_errno;
 	strvec_clear(&sargv);
 	strvec_clear(&opt.args);
 	setenv("COMMAND_HOOK_LOCK", "false", 1);
