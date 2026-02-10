@@ -4,6 +4,21 @@ test_description='post-command hook'
 
 . ./test-lib.sh
 
+test_expect_success 'hook does not block git help' '
+	git config help.autocorrect immediate &&
+	git commit --allow-empty -m "a single log entry" &&
+	mkdir -p .git/hooks &&
+	write_script .git/hooks/post-command <<-EOF &&
+		echo "\$*" | sed "s/ --git-pid=[0-9]*//" \
+		>\$(git rev-parse --git-dir)/post-command.out
+	EOF
+	# intentional typo "logg" gets autocorrected to "log"
+	git logg --format=%s --first-parent > actual &&
+	test "log --format=%s --first-parent --exit_code=0" = "$(cat .git/post-command.out)" &&
+	echo "a single log entry" >expect &&
+	test_cmp expect actual
+'
+
 test_expect_success 'with no hook' '
 	echo "first" > file &&
 	git add file &&
