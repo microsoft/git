@@ -783,6 +783,7 @@ static int cmd_clone(int argc, const char **argv)
 	int src = 1, tags = 1, maintenance = 1;
 	const char *cache_server_url = NULL, *local_cache_root = NULL;
 	char *default_cache_server_url = NULL, *local_cache_root_abs = NULL;
+	const char *prefetch_server = NULL, *get_server = NULL, *post_server = NULL;
 	int gvfs_protocol = -1;
 	const char *ref_format = NULL;
 
@@ -805,6 +806,15 @@ static int cmd_clone(int argc, const char **argv)
 		OPT_STRING(0, "cache-server-url", &cache_server_url,
 			   N_("<url>"),
 			   N_("the url or friendly name of the cache server")),
+		OPT_STRING(0, "prefetch-cache-server-url", &prefetch_server,
+			   N_("<url>"),
+			   N_("the url or friendly name of a cache server for the prefetch endpoint")),
+		OPT_STRING(0, "get-cache-server-url", &get_server,
+			   N_("<url>"),
+			   N_("the url or friendly name of a cache server for the objects GET endpoint")),
+		OPT_STRING(0, "post-cache-server-url", &post_server,
+			   N_("<url>"),
+			   N_("the url or friendly name of a cache server for the objects POST endpoint")),
 		OPT_STRING(0, "local-cache-path", &local_cache_root,
 			   N_("<path>"),
 			   N_("override the path for the local Scalar cache")),
@@ -817,7 +827,8 @@ static int cmd_clone(int argc, const char **argv)
 	const char * const clone_usage[] = {
 		N_("scalar clone [--single-branch] [--branch <main-branch>] [--full-clone]\n"
 		   "\t[--[no-]src] [--[no-]tags] [--[no-]maintenance] [--ref-format <format>]\n"
-		   "\t<url> [<enlistment>]"),
+		   "\t[--cache-server-url <url>] [--[verb]-cache-server-url <url>]\n"
+		   "\t[--local-cache-path <path>] <url> [<enlistment>]"),
 		NULL
 	};
 	const char *url;
@@ -979,6 +990,33 @@ static int cmd_clone(int argc, const char **argv)
 		if (cache_server_url)
 			fprintf(stderr, "Cache server URL: %s\n",
 				cache_server_url);
+
+		if (prefetch_server &&
+		    set_config("gvfs.prefetch.cache-server=%s", prefetch_server)) {
+			res = error(_("could not configure prefetch cache server"));
+			goto cleanup;
+		}
+		if (prefetch_server)
+			fprintf(stderr, "Prefetch cache server URL: %s\n",
+				prefetch_server);
+
+		if (get_server &&
+		    set_config("gvfs.get.cache-server=%s", get_server)) {
+			res = error(_("could not configure objects GET cache server"));
+			goto cleanup;
+		}
+		if (get_server)
+			fprintf(stderr, "Objects GET cache server URL: %s\n",
+				get_server);
+
+		if (post_server &&
+		    set_config("gvfs.post.cache-server=%s", post_server)) {
+			res = error(_("could not configure objects POST cache server"));
+			goto cleanup;
+		}
+		if (post_server)
+			fprintf(stderr, "Objects POST cache server URL: %s\n",
+				post_server);
 	} else {
 		if (set_config("core.useGVFSHelper=false") ||
 		    set_config("remote.origin.promisor=true") ||
