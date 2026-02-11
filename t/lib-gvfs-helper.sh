@@ -58,8 +58,8 @@ SHARED_CACHE_T2="$(pwd)"/shared_cache_t2
 # The server will shut down if/when we delete it.  (This is a little
 # easier than killing it by PID.)
 #
-PID_FILE="$(pwd)"/pid-file.pid
-SERVER_LOG="$(pwd)"/OUT.server.log
+PID_FILE="$(pwd)"/pid-file-gvfs.pid
+SERVER_LOG="$(pwd)"/OUT.gvfs.server.log
 
 # Helper functions to compute port, pid-file, and log for a given
 # port increment. An increment of 0 (or empty) uses the base values.
@@ -294,7 +294,7 @@ stop_gvfs_protocol_server () {
 	# port before the next test start another instance and it attempts to
 	# bind to it).
 	#
-	for k in 0 1 2 3 4
+	for k in $(test_seq 5)
 	do
 		if grep -q "Starting graceful shutdown" "$log_file"
 		then
@@ -334,7 +334,7 @@ start_gvfs_protocol_server () {
 	#
 	# Give it a few seconds to get started.
 	#
-	for k in 0 1 2 3 4
+	for k in $(test_seq 5)
 	do
 		if test -f "$pid_file"
 		then
@@ -375,7 +375,7 @@ start_gvfs_protocol_server_with_mayhem () {
 	#
 	# Give it a few seconds to get started.
 	#
-	for k in 0 1 2 3 4
+	for k in $(test_seq 5)
 	do
 		if test -f "$PID_FILE"
 		then
