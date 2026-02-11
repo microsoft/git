@@ -70,7 +70,7 @@ int gh_client__drain_queue(enum gh_client__created *p_ghc);
  * Ask `gvfs-helper server` to fetch any "prefetch packs"
  * available on the server more recent than the requested time.
  *
- * If seconds_since_epoch is zero, gvfs-helper will scan the ODB for
+ * seconds_since_epoch is ignored. the gvfs-helper will scan the ODB for
  * the last received prefetch and ask for ones newer than that.
  *
  * A long-running background process is used to subsequent requests
