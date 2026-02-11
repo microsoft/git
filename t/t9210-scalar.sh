@@ -360,20 +360,20 @@ test_expect_success UNZIP 'scalar diagnose' '
 GIT_TEST_ALLOW_GVFS_VIA_HTTP=1
 export GIT_TEST_ALLOW_GVFS_VIA_HTTP
 
-test_set_port GIT_TEST_GVFS_PROTOCOL_PORT
-HOST_PORT=127.0.0.1:$GIT_TEST_GVFS_PROTOCOL_PORT
-PID_FILE="$(pwd)"/pid-file.pid
-SERVER_LOG="$(pwd)"/OUT.server.log
+test_set_port GIT_TEST_GVFS_PROTOCOL_ORIGIN_PORT
+ORIGIN_HOST_PORT=127.0.0.1:$GIT_TEST_GVFS_PROTOCOL_ORIGIN_PORT
+ORIGIN_PID_FILE="$(pwd)"/pid-file.$GIT_TEST_GVFS_PROTOCOL_ORIGIN_PORT.pid
+ORIGIN_SERVER_LOG="$(pwd)"/OUT.server.$GIT_TEST_GVFS_PROTOCOL_ORIGIN_PORT.log
 
 test_atexit '
-	test -f "$PID_FILE" || return 0
+	test -f "$ORIGIN_PID_FILE" || return 0
 
 	# The server will shutdown automatically when we delete the pid-file.
-	rm -f "$PID_FILE"
+	rm -f "$ORIGIN_PID_FILE"
 
 	test -z "$verbose$verbose_log" || {
 		echo "server log:"
-		cat "$SERVER_LOG"
+		cat "$ORIGIN_SERVER_LOG"
 	}
 
 	# Give it a few seconds to shutdown (mainly to completely release the
@@ -381,7 +381,7 @@ test_atexit '
 	# bind to it).
 	for k in $(test_seq 5)
 	do
-		grep -q "Starting graceful shutdown" "$SERVER_LOG" &&
+		grep -q "Starting graceful shutdown" "$ORIGIN_SERVER_LOG" &&
 		return 0 ||
 		sleep 1
 	done
@@ -394,14 +394,14 @@ start_gvfs_enabled_http_server () {
 	GIT_HTTP_EXPORT_ALL=1 \
 	test-gvfs-protocol --verbose \
 		--listen=127.0.0.1 \
-		--port=$GIT_TEST_GVFS_PROTOCOL_PORT \
+		--port=$GIT_TEST_GVFS_PROTOCOL_ORIGIN_PORT \
 		--reuseaddr \
-		--pid-file="$PID_FILE" \
-		2>"$SERVER_LOG" &
+		--pid-file="$ORIGIN_PID_FILE" \
+		2>"$ORIGIN_SERVER_LOG" &
 
-	for k in 0 1 2 3 4
+	for k in $(test_seq 5)
 	do
-		if test -f "$PID_FILE"
+		if test -f "$ORIGIN_PID_FILE"
 		then
 			return 0
 		fi
@@ -426,12 +426,12 @@ test_expect_success '`scalar clone` with GVFS-enabled server' '
 	GIT_TRACE2_EVENT="$(pwd)/clone-trace-with-gvfs" scalar \
 		-c credential.interactive=true \
 		clone --gvfs-protocol \
-		--single-branch -- http://$HOST_PORT/ using-gvfs &&
+		--single-branch -- http://$ORIGIN_HOST_PORT/ using-gvfs &&
 
 	grep "GET/config(main)" <clone-trace-with-gvfs &&
 
 	: verify that the shared cache has been configured &&
-	cache_key="url_$(printf "%s" http://$HOST_PORT/ |
+	cache_key="url_$(printf "%s" http://$ORIGIN_HOST_PORT/ |
 		tr A-Z a-z |
 		test-tool sha1)" &&
 	echo "$(pwd)/.scalarCache/$cache_key" >expect &&
@@ -439,7 +439,7 @@ test_expect_success '`scalar clone` with GVFS-enabled server' '
 	test_cmp expect actual &&
 
 	: verify that URL-specific HTTP version setting is configured for GVFS URLs in clone &&
-	git -C using-gvfs/src config "http.http://$HOST_PORT/.version" >actual &&
+	git -C using-gvfs/src config "http.http://$ORIGIN_HOST_PORT/.version" >actual &&
 	echo "HTTP/1.1" >expect &&
 	test_cmp expect actual &&
 
@@ -455,7 +455,52 @@ test_expect_success '`scalar clone` with GVFS-enabled server' '
 	)
 '
 
-test_expect_success 'fetch <non-existent> does not hang in gvfs-helper' '
+. "$TEST_DIRECTORY"/lib-gvfs-helper.sh
+
+test_expect_success 'scalar clone: all verbs with different servers' '
+	git config --global core.askPass true &&
+
+	test_when_finished "per_test_cleanup" &&
+	test_when_finished "scalar delete scalar-clone" &&
+
+	start_gvfs_protocol_server 1 &&
+	start_gvfs_protocol_server 2 &&
+	start_gvfs_protocol_server 3 &&
+	start_gvfs_protocol_server 4 &&
+
+	# Configure each verb to use a different server:
+	# - server 1: default (unused in this test; not running.)
+	# - server 2: prefetch
+	# - server 3: get
+	# - server 4: post
+	scalar -c credential.interactive=true \
+			clone --full-clone \
+			 --cache-server-url="$(cache_server_url 1)" \
+		     --prefetch-cache-server-url="$(cache_server_url 2)" \
+		     --get-cache-server-url="$(cache_server_url 3)" \
+		     --post-cache-server-url="$(cache_server_url 4)" \
+			 --gvfs-protocol \
+		     -- "http://$ORIGIN_HOST_PORT/" scalar-clone 2>err >out &&
+
+	test_grep "Cache server URL: $(cache_server_url 1)" err &&
+	test_grep "Prefetch cache server URL: $(cache_server_url 2)" err &&
+	test_grep "Objects GET cache server URL: $(cache_server_url 3)" err &&
+	test_grep "Objects POST cache server URL: $(cache_server_url 4)" err &&
+
+	test_cmp_config -C scalar-clone/src "$(cache_server_url 1)" gvfs.cache-server &&
+	test_cmp_config -C scalar-clone/src "$(cache_server_url 2)" gvfs.prefetch.cache-server &&
+	test_cmp_config -C scalar-clone/src "$(cache_server_url 3)" gvfs.get.cache-server &&
+	test_cmp_config -C scalar-clone/src "$(cache_server_url 4)" gvfs.post.cache-server &&
+
+	verify_server_was_contacted 1 &&
+	verify_server_was_contacted 2 &&
+	verify_server_was_contacted 3
+'
+
+test_expect_success EXPENSIVE 'fetch <non-existent> does not hang in gvfs-helper' '
+	# Marked as EXPENSIVE as this will go through multiple rounds of
+	# exponential backoff, including delays of 8, 16, 32, 64, 128,
+	# and 256 seconds in two separate instances.
 	test_must_fail git -C using-gvfs/src fetch origin does-not-exist
 '
 
@@ -469,7 +514,7 @@ test_expect_success '`scalar clone --no-gvfs-protocol` skips gvfs/config' '
 	GIT_TRACE2_EVENT="$(pwd)/clone-trace-no-gvfs" scalar \
 		-c credential.interactive=true \
 		clone --no-gvfs-protocol \
-		--single-branch -- http://$HOST_PORT/ skipping-gvfs &&
+		--single-branch -- http://$ORIGIN_HOST_PORT/ skipping-gvfs &&
 
 	! grep "GET/config(main)" <clone-trace-no-gvfs &&
 	! git -C skipping-gvfs/src config core.gvfs &&
@@ -564,11 +609,11 @@ test_expect_success 'scalar cache-server basics' '
 test_expect_success 'scalar cache-server list URL' '
 	repo=with-real-gvfs &&
 	git init $repo &&
-	git -C $repo remote add origin http://$HOST_PORT/ &&
+	git -C $repo remote add origin http://$ORIGIN_HOST_PORT/ &&
 	scalar cache-server --list origin $repo >out &&
 
 	cat >expect <<-EOF &&
-	#0: http://$HOST_PORT/servertype/cache
+	#0: http://$ORIGIN_HOST_PORT/servertype/cache
 	EOF
 
 	test_cmp expect out &&
