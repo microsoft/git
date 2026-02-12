@@ -1356,13 +1356,16 @@ static int option_parse_shared_cache_directory(const struct option *opt,
 		 */
 		strbuf_addbuf(&gvfs_shared_cache_pathname, &buf_arg);
 
+		/* Attempt to create the directory, in case it doesn't exist. */
+		safe_create_leading_directories(the_repository,
+						gvfs_shared_cache_pathname.buf);
+		mkdir(gvfs_shared_cache_pathname.buf, 0777);
+
 		add_gvfs_shared_cache_to_alternates(the_repository->objects, buf_arg.buf);
 
 		strbuf_release(&buf_arg);
 		return 0;
-	}
-
-	else {
+	} else {
 		/*
 		 * The requested shared-cache is different from the one
 		 * we inherited.  Replace the inherited value with this
@@ -1374,6 +1377,11 @@ static int option_parse_shared_cache_directory(const struct option *opt,
 
 		strbuf_setlen(&gvfs_shared_cache_pathname, 0);
 		strbuf_addbuf(&gvfs_shared_cache_pathname, &buf_arg);
+
+		/* Attempt to create the directory, in case it doesn't exist. */
+		safe_create_leading_directories(the_repository,
+						gvfs_shared_cache_pathname.buf);
+		mkdir(gvfs_shared_cache_pathname.buf, 0777);
 
 		add_gvfs_shared_cache_to_alternates(the_repository->objects, buf_arg.buf);
 
