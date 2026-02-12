@@ -461,6 +461,37 @@ test_expect_success '`scalar clone` with GVFS-enabled server' '
 	)
 '
 
+test_expect_success '`scalar clone` with GVFS-enabled server; local cache path' '
+	: the fake cache server requires fake authentication &&
+	git config --global core.askPass true &&
+
+	LOCAL_CACHE_BASE="$(pwd)/local" &&
+
+	# We must set credential.interactive=true to bypass a setting
+	# in "scalar clone" that disables interactive credentials during
+	# an unattended command.
+	scalar \
+		-c credential.interactive=true \
+		clone --gvfs-protocol \
+		--local-cache-path="$LOCAL_CACHE_BASE" \
+		--single-branch -- http://$ORIGIN_HOST_PORT/ with-local &&
+
+	: verify that the shared cache has been configured &&
+	cache_key="url_$(printf "%s" http://$ORIGIN_HOST_PORT/ |
+		tr A-Z a-z |
+		test-tool sha1)" &&
+	LOCAL_CACHE_DIR="$LOCAL_CACHE_BASE/$cache_key" &&
+	echo "$LOCAL_CACHE_DIR" >expect &&
+	git -C with-local/src config gvfs.sharedCache >actual &&
+	test_cmp expect actual &&
+
+	: check the local cache is recreated on fetch &&
+	rm -rf $LOCAL_CACHE_BASE &&
+	git -C with-local fetch &&
+	test_path_is_dir "$LOCAL_CACHE_DIR" &&
+	test_path_is_dir "$LOCAL_CACHE_DIR/pack"
+'
+
 . "$TEST_DIRECTORY"/lib-gvfs-helper.sh
 
 test_expect_success 'scalar clone: all verbs with different servers' '
