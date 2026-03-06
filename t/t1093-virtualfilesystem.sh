@@ -368,6 +368,57 @@ test_expect_success 'folder with same prefix as file' '
 	test_cmp expected actual
 '
 
+test_expect_success 'checkout skips lstat for deleted skip-worktree entries in VFS mode' '
+	# When switching branches, entries present in the old tree but absent
+	# in the new tree go through deleted_entry() -> verify_absent_if_directory().
+	# Without the fix, the tree entry lacks CE_NEW_SKIP_WORKTREE (only
+	# src_index entries get that flag), so verify_absent_if_directory()
+	# falls through to verify_absent_1() which lstats the path. If a
+	# directory exists where the deleted file entry was (simulating a
+	# worst-case scenario), the lstat finds it and
+	# verify_clean_subdirectory() rejects the checkout due to untracked
+	# content inside.
+	#
+	# With the fix, verify_absent_if_directory() is skipped entirely
+	# when VFS mode is active — no lstat, no rejection, checkout completes.
+	#
+	# Set up two branches: main has dir1/ + dir2/, side has only dir1/
+	clean_repo &&
+
+	test_when_finished "rm -rf dir2/file1.txt && git -c core.virtualfilesystem= checkout main" &&
+
+	git -c core.virtualfilesystem= checkout -b side &&
+	git -c core.virtualfilesystem= rm -rf dir2 &&
+	git -c core.virtualfilesystem= commit -m "remove dir2" &&
+	git -c core.virtualfilesystem= checkout main &&
+
+	# Configure VFS hook that returns nothing (0% hydration)
+	write_script .git/hooks/virtualfilesystem <<-\EOF &&
+		printf ""
+	EOF
+
+	# Create a directory where the deleted file entry is, with
+	# untracked content inside. This would not happen with a real
+	# VFS because the VFS would report the file-to-directory change
+	# in the virtualfilesystem hook results, clearing skip-worktree.
+	# But it lets us verify that the lstat is not called: without
+	# the fix, verify_absent_1() lstats this path, finds a directory,
+	# and verify_clean_subdirectory() rejects the checkout because of
+	# the untracked file inside.
+	rm -f dir2/file1.txt &&
+	mkdir -p dir2/file1.txt &&
+	echo "untracked" >dir2/file1.txt/trap.txt &&
+
+	# Verify all entries are skip-worktree before checkout
+	git ls-files -v >actual &&
+	! grep "^H " actual &&
+
+	# Checkout to side branch. Without the fix this fails because
+	# verify_absent_1 finds untracked content in the directory at
+	# dir2/file1.txt. With the fix the lstat is skipped entirely.
+	git checkout side
+'
+
 test_expect_success MINGW,FSMONITOR_DAEMON 'virtualfilesystem hook disables built-in FSMonitor' '
 	clean_repo &&
 	test_config core.usebuiltinfsmonitor true &&
