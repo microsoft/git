@@ -251,6 +251,7 @@
 #include "abspath.h"
 #include "progress.h"
 #include "trace2.h"
+#include "trace2/tr2_sid.h"
 #include "wrapper.h"
 #include "packfile.h"
 #include "date.h"
@@ -452,6 +453,34 @@ static void reset_cache_server(void)
 		gh__global.cache_server_url = gh__global.cache_server_url_backup;
 		gh__global.cache_server_url_backup = NULL;
 	}
+}
+
+/*
+ * Build the X-Session-Id header value based on gvfs.sessionkey config.
+ *
+ * If gvfs.sessionkey is set, it specifies which config key contains
+ * a prefix to prepend to the SID. The format is: <prefix>:<SID>
+ *
+ * If gvfs.sessionkey is not set or the referenced key doesn't exist,
+ * the header value is just the SID.
+ *
+ * Returns a newly allocated string that must be freed by the caller.
+ */
+static char *build_session_id_header(void)
+{
+	struct strbuf header = STRBUF_INIT;
+	const char *sid = tr2_sid_get();
+
+	strbuf_addf(&header, "X-Session-Id: %s", sid);
+
+	return strbuf_detach(&header, NULL);
+}
+
+static void append_session_id_header(struct curl_slist **headers)
+{
+	char *session_id_header = build_session_id_header();
+	*headers = curl_slist_append(*headers, session_id_header);
+	free(session_id_header);
 }
 
 static const char *gh__server_type_label[GH__SERVER_TYPE__NR] = {
@@ -3308,6 +3337,7 @@ static void do__http_get__simple_endpoint(struct gh__response_status *status,
 					   "X-TFS-FedAuthRedirect: Suppress");
 	params.headers = curl_slist_append(params.headers,
 					   "Pragma: no-cache");
+	append_session_id_header(&params.headers);
 
 	if (gh__cmd_opts.show_progress) {
 		/*
@@ -3377,6 +3407,7 @@ static void do__http_get__gvfs_object(struct gh__response_status *status,
 					   "X-TFS-FedAuthRedirect: Suppress");
 	params.headers = curl_slist_append(params.headers,
 					   "Pragma: no-cache");
+	append_session_id_header(&params.headers);
 
 	oidcpy(&params.loose_oid, oid);
 
@@ -3438,6 +3469,8 @@ static void do__http_post__gvfs_objects(struct gh__response_status *status,
 					   "Pragma: no-cache");
 	params.headers = curl_slist_append(params.headers,
 					   "Content-Type: application/json");
+	append_session_id_header(&params.headers);
+
 	/*
 	 * If our POST contains more than one object, we want the
 	 * server to send us a packfile.  We DO NOT want the non-standard
@@ -3574,6 +3607,7 @@ static void do__http_get__gvfs_prefetch(struct gh__response_status *status,
 					   "Pragma: no-cache");
 	params.headers = curl_slist_append(params.headers,
 					   "Accept: application/x-gvfs-timestamped-packfiles-indexes");
+	append_session_id_header(&params.headers);
 
 	if (gh__cmd_opts.show_progress)
 		strbuf_addf(&params.progress_base_phase3_msg,
