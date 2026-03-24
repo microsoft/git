@@ -163,4 +163,26 @@ test_expect_success 'integration: implicit-get: cache_http_503,with-fallback: di
 
 # T2 should be considered contaminated at this point.
 
+#################################################################
+# Test X-Session-Id header
+#
+# The X-Session-Id header should contain the SID (session ID).
+#################################################################
+
+test_expect_success 'integration: X-Session-Id header with and without prefix' '
+	test_when_finished "per_test_cleanup" &&
+	start_gvfs_protocol_server &&
+
+	git -C "$REPO_T1" gvfs-helper \
+		--cache-server=disable \
+		--remote=origin \
+		get \
+		<"$OID_ONE_BLOB_FILE" >OUT.output1 &&
+
+	# Verify X-Session-Id contains SID (with process ID marker "-P")
+	test_grep "X-Session-Id:.*-P" "$SERVER_LOG" >OUT.case1 &&
+	# Verify no slash (no prefix)
+	test_grep ! "X-Session-Id:.*:" OUT.case1
+'
+
 test_done
