@@ -26,3 +26,11 @@ gvfs.fallback::
 	If set to `false`, then never fallback to the origin server when the cache
 	server fails to connect. This will alert users to failures with the cache
 	server, but avoid causing throttling on the origin server.
+
+gvfs.sessionKey::
+	If set to a string, then the value is a config key name that will be used
+	to set a prefix in the `X-Session-Id` header sent to the server for all
+	GVFS Protocol calls. This allows engineering systems to improve support
+	across client and server behavior, including any End User Pseodynomous
+	Identifiers (EUPI) that may be configured. The `X-Session-Id` will
+	include the SID of the current process in either case.
