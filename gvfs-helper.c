@@ -470,8 +470,28 @@ static char *build_session_id_header(void)
 {
 	struct strbuf header = STRBUF_INIT;
 	const char *sid = tr2_sid_get();
+	char *session_key = NULL;
+	char *prefix = NULL;
 
-	strbuf_addf(&header, "X-Session-Id: %s", sid);
+	/* Read gvfs.sessionkey to see if it points to a config key */
+	if (!repo_config_get_string(the_repository, "gvfs.sessionkey", &session_key) &&
+	    session_key) {
+		/* Try to read the config key that session_key points to */
+		if (!repo_config_get_string(the_repository, session_key, &prefix) &&
+		    prefix) {
+			/* We have a prefix, format as: X-Session-Id: <prefix>:<SID> */
+			strbuf_addf(&header, "X-Session-Id: %s:%s", prefix, sid);
+			free(prefix);
+		} else {
+			/* Config key doesn't exist, use just SID */
+			strbuf_addf(&header, "X-Session-Id: %s", sid);
+		}
+
+		free(session_key);
+	} else {
+		/* No gvfs.sessionkey configured, use just SID */
+		strbuf_addf(&header, "X-Session-Id: %s", sid);
+	}
 
 	return strbuf_detach(&header, NULL);
 }
