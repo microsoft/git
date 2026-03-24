@@ -173,6 +173,7 @@ test_expect_success 'integration: X-Session-Id header with and without prefix' '
 	test_when_finished "per_test_cleanup" &&
 	start_gvfs_protocol_server &&
 
+	# Case 1: No gvfs.sessionkey configured - should send just SID
 	git -C "$REPO_T1" gvfs-helper \
 		--cache-server=disable \
 		--remote=origin \
@@ -182,7 +183,34 @@ test_expect_success 'integration: X-Session-Id header with and without prefix' '
 	# Verify X-Session-Id contains SID (with process ID marker "-P")
 	test_grep "X-Session-Id:.*-P" "$SERVER_LOG" >OUT.case1 &&
 	# Verify no slash (no prefix)
-	test_grep ! "X-Session-Id:.*:" OUT.case1
+	test_grep ! "X-Session-Id:.*:" OUT.case1 &&
+
+	# Case 2: gvfs.sessionkey points to non-existent config - should send just SID
+	rm -f OUT.output* OUT.case* &&
+	git -C "$REPO_T1" -c gvfs.sessionkey="test.id" gvfs-helper \
+		--cache-server=disable \
+		--remote=origin \
+		get \
+		<"$OID_ONE_BLOB_FILE" >OUT.output2 &&
+
+	# Verify X-Session-Id still contains just SID (no prefix)
+	test_grep "X-Session-Id:.*-P" "$SERVER_LOG" >OUT.case2 &&
+	test_grep ! "X-Session-Id:.*:" OUT.case2 &&
+
+	# Case 3: gvfs.sessionkey points to existing config - should send prefix/SID
+	rm -f OUT.output* OUT.case* &&
+	git -C "$REPO_T1" \
+		-c gvfs.sessionkey="test.id" \
+		-c test.id="my-trace-12345" \
+		gvfs-helper \
+		--cache-server=disable \
+		--remote=origin \
+		get \
+		<"$OID_ONE_BLOB_FILE" >OUT.output3 &&
+
+	# Verify X-Session-Id contains prefix, slash, and SID
+	test_grep "X-Session-Id:.*my-trace-12345:" "$SERVER_LOG" >OUT.case3 &&
+	test_grep "X-Session-Id:.*my-trace-12345:.*-P" OUT.case3
 '
 
 test_done
