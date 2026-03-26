@@ -783,7 +783,7 @@ static struct cmd_struct commands[] = {
 #ifndef WITH_BREAKING_CHANGES
 	{ "whatchanged", cmd_whatchanged, RUN_SETUP | DEPRECATED },
 #endif
-	{ "worktree", cmd_worktree, RUN_SETUP | BLOCK_ON_VFS_ENABLED },
+	{ "worktree", cmd_worktree, RUN_SETUP },
 	{ "write-tree", cmd_write_tree, RUN_SETUP },
 };
 
