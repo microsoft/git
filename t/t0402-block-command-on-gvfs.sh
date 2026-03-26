@@ -27,7 +27,34 @@ not_with_gvfs update-index --index-version 2
 not_with_gvfs update-index --skip-worktree
 not_with_gvfs update-index --no-skip-worktree
 not_with_gvfs update-index --split-index
-not_with_gvfs worktree list
+
+# worktree is conditionally allowed: blocked when VFS enabled without
+# GVFS_SUPPORTS_WORKTREES.
+test_expect_success 'worktree blocked with VFS but without SUPPORTS_WORKTREES' '
+	test_config core.gvfs $((0xffff & ~(1<<8))) && # all bits except GVFS_SUPPORTS_WORKTREES
+	test_must_fail git worktree list 2>err &&
+	test_grep "not supported when using the virtual file system" err
+'
+
+test_expect_success 'worktree operations work when SUPPORTS_WORKTREES is set' '
+	test_commit initial &&
+
+	# Use core.gvfs=true which sets all bits including SUPPORTS_WORKTREES.
+	test_config core.gvfs true &&
+
+	# add: succeeds, forces --no-checkout (no initial.t on disk)
+	git worktree add ../vfs-wt &&
+	test_path_exists ../vfs-wt/.git &&
+	! test_path_exists ../vfs-wt/initial.t &&
+
+	# list: shows the worktree
+	git worktree list >out &&
+	grep "vfs-wt" out &&
+
+	# remove: cleans up
+	git worktree remove --force ../vfs-wt &&
+	! test_path_exists ../vfs-wt
+'
 
 test_expect_success 'test gc --auto succeeds when disabled via config' '
 	test_config core.gvfs true &&
