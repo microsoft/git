@@ -2472,6 +2472,13 @@ static int http_request_recoverable(const char *url,
 		if (http_auth.ntlm_suppressed && http_auth.ntlm_allow)
 			http_auth_methods |= CURLAUTH_NTLM;
 
+		/*
+		 * Re-enable NTLM auth if the helper allows it and we would
+		 * otherwise suppress authentication via NTLM.
+		 */
+		if (http_auth.ntlm_suppressed && http_auth.ntlm_allow)
+			http_auth_methods |= CURLAUTH_NTLM;
+
 		ret = http_request(url, result, target, options);
 	}
 	if (ret == HTTP_RATE_LIMITED) {
