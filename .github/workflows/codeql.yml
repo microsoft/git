@@ -30,6 +30,7 @@ jobs:
         if: matrix.language == 'cpp'
         env:
           jobname: codeql
+          CI_JOB_IMAGE: ubuntu-latest
 
       # Initializes the CodeQL tools for scanning.
       - name: Initialize CodeQL
