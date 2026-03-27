@@ -6,6 +6,7 @@
 #include "convert.h"
 #include "environment.h"
 #include "repository.h"
+#include "gvfs.h"
 #include "odb.h"
 #include "odb/source.h"
 #include "odb/streaming.h"
@@ -157,13 +158,14 @@ static int open_istream_incore(struct odb_read_stream **out,
 		.base.read = read_istream_incore,
 	};
 	struct odb_incore_read_stream *st;
+	unsigned flags = gvfs_config_is_set(odb->repo, GVFS_MISSING_OK) ?
+		0 : OBJECT_INFO_DIE_IF_CORRUPT;
 	int ret;
 
 	oi.typep = &stream.base.type;
 	oi.sizep = &stream.base.size;
 	oi.contentp = (void **)&stream.buf;
-	ret = odb_read_object_info_extended(odb, oid, &oi,
-					    OBJECT_INFO_DIE_IF_CORRUPT);
+	ret = odb_read_object_info_extended(odb, oid, &oi, flags);
 	if (ret)
 		return ret;
 
