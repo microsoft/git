@@ -1552,6 +1552,19 @@ static enum worker_result req__read(struct req *req, int fd)
 	 */
 done:
 
+	/*
+	 * Log the X-Session-Id header if present (for testing purposes).
+	 */
+	{
+		struct string_list_item *item;
+		for_each_string_list_item(item, &req->header_list) {
+			if (starts_with(item->string, "X-Session-Id:")) {
+				loginfo("Received header: %s", item->string);
+				break;
+			}
+		}
+	}
+
 #if 0
 	/*
 	 * This is useful for debugging the request, but very noisy.
