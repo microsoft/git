@@ -856,6 +856,14 @@ static int add(int ac, const char **av, const char *prefix,
 	if (ac < 1 || ac > 2)
 		usage_with_options(git_worktree_add_usage, options);
 
+	/*
+	 * When the virtual file system is active, skip checkout during
+	 * worktree creation. The VFS layer will handle the checkout
+	 * after the worktree structure is set up.
+	 */
+	if (gvfs_config_is_set(the_repository, GVFS_USE_VIRTUAL_FILESYSTEM))
+		opts.checkout = 0;
+
 	path = prefix_filename(prefix, av[0]);
 	branch = ac < 2 ? "HEAD" : av[1];
 	used_new_branch_options = new_branch || new_branch_force;
@@ -1376,6 +1384,21 @@ static int delete_git_work_tree(struct worktree *wt)
 	return ret;
 }
 
+/*
+ * Check if a pre-command hook has already verified worktree cleanliness
+ * and written a marker file to skip git's own check. VFSForGit uses this
+ * to unmount ProjFS after its own status check; without it, git's status
+ * call would fail because the virtual filesystem is no longer available.
+ */
+static int should_skip_clean_check(struct worktree *wt)
+{
+	char *path = repo_common_path(the_repository,
+		"worktrees/%s/skip-clean-check", wt->id);
+	int skip = file_exists(path);
+	free(path);
+	return skip;
+}
+
 static int remove_worktree(int ac, const char **av, const char *prefix,
 			   struct repository *repo UNUSED)
 {
@@ -1415,7 +1438,7 @@ static int remove_worktree(int ac, const char **av, const char *prefix,
 	strbuf_release(&errmsg);
 
 	if (file_exists(wt->path)) {
-		if (!force)
+		if (!force && !(core_virtualfilesystem && should_skip_clean_check(wt)))
 			check_clean_worktree(wt, av[0]);
 
 		ret |= delete_git_work_tree(wt);
@@ -1486,6 +1509,14 @@ int cmd_worktree(int ac,
 		prefix = "";
 
 	ac = parse_options(ac, av, prefix, options, git_worktree_usage, 0);
+
+	/*
+	 * Block worktree commands when VFS is active unless the VFS layer
+	 * has signaled worktree support via GVFS_SUPPORTS_WORKTREES.
+	 */
+	if (gvfs_config_is_set(the_repository, GVFS_USE_VIRTUAL_FILESYSTEM) &&
+	    !gvfs_config_is_set(the_repository, GVFS_SUPPORTS_WORKTREES))
+		die("'git worktree' is not supported when using the virtual file system");
 
 	prepare_repo_settings(the_repository);
 	the_repository->settings.command_requires_full_index = 0;
