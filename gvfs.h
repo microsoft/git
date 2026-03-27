@@ -27,8 +27,16 @@ struct repository;
 #define GVFS_USE_VIRTUAL_FILESYSTEM                 (1 << 3)
 
 #define GVFS_FETCH_SKIP_REACHABILITY_AND_UPLOADPACK (1 << 4)
+/* Bit 5 was GVFS_LOWER_DEFAULT_SLOP, removed in 2018 (unused). */
 #define GVFS_BLOCK_FILTERS_AND_EOL_CONVERSIONS      (1 << 6)
 #define GVFS_PREFETCH_DURING_FETCH		    (1 << 7)
+
+/*
+ * When set, this flag indicates that the VFS layer supports
+ * git worktrees. This allows `git worktree add/remove` to
+ * operate on VFS-enabled repositories.
+ */
+#define GVFS_SUPPORTS_WORKTREES                     (1 << 8)
 
 #define GVFS_ANY_MASK                               0xFFFFFFFF
 
