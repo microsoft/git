@@ -1,0 +1,176 @@
+name: VFS for Git Functional Tests
+
+on:
+  push:
+    branches: [ vfs-*, tentative/vfs-* ]
+  pull_request:
+    branches: [ vfs-*, features/* ]
+
+permissions:
+  actions: read
+  contents: read
+
+jobs:
+  build:
+    runs-on: ${{ matrix.architecture == 'aarch64' && 'windows-11-arm' || 'windows-2022' }}
+    name: Build Git (${{ matrix.architecture }})
+
+    strategy:
+      matrix:
+        architecture: [ x86_64, aarch64 ]
+      fail-fast: false
+
+    steps:
+      - name: Check out Git's source code
+        uses: actions/checkout@v6
+
+      - name: Setup build tools
+        uses: git-for-windows/setup-git-for-windows-sdk@v2
+        with:
+          architecture: ${{ matrix.architecture }}
+
+      - name: Provide a minimal `install`
+        shell: bash
+        run: |
+          test -x /usr/bin/install ||
+          tr % '\t' >/usr/bin/install <<-\EOF
+          #!/bin/sh
+
+          cmd=cp
+          while test $# != 0
+          do
+          %case "$1" in
+          %-d) cmd="mkdir -p";;
+          %-m) shift;; # ignore mode
+          %*) break;;
+          %esac
+          %shift
+          done
+
+          exec $cmd "$@"
+          EOF
+
+      - name: Build and install Git
+        shell: bash
+        env:
+          NO_TCLTK: Yup
+        run: |
+          # We do require a VFS version
+          def_ver="$(sed -n '/^DEF_VER=/{
+            s/^DEF_VER=\(.*vfs.*\)/\1/p
+            tq # already found a *.vfs.* one, skip next line
+            s/^DEF_VER=\(.*\)/\1.vfs.0.0/p
+            :q
+            q
+          }' GIT-VERSION-GEN)"
+          test -n "$def_ver"
+
+          # VFSforGit cannot handle -rc versions; strip the `-rc` part, if any
+          case "$def_ver" in
+          *-rc*) def_ver=${def_ver%%-rc*}.vfs.${def_ver#*.vfs.};;
+          esac
+
+          # Ensure that `git version` reflects DEF_VER
+          case "$(git describe --match "v[0-9]*vfs*" HEAD)" in
+          ${def_ver%%.vfs.*}.vfs.*) ;; # okay, we can use this
+          *) echo ${def_ver}.NNN.g$(git rev-parse --short HEAD) >version;;
+          esac
+
+          make -j5 DESTDIR="$GITHUB_WORKSPACE/MicrosoftGit/payload/${{ matrix.architecture }}" install
+
+      - name: Upload Git artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: MicrosoftGit-${{ matrix.architecture }}
+          path: MicrosoftGit
+
+  package:
+    runs-on: windows-2022
+    name: Package Git
+    needs: build
+
+    outputs:
+      vfs_run_id: ${{ steps.find_run.outputs.run_id }}
+
+    steps:
+      - name: Download x86_64 build
+        uses: actions/download-artifact@v8
+        with:
+          name: MicrosoftGit-x86_64
+          path: MicrosoftGit
+
+      - name: Download aarch64 build
+        uses: actions/download-artifact@v8
+        with:
+          name: MicrosoftGit-aarch64
+          path: MicrosoftGit
+
+      - name: Create install script
+        shell: bash
+        run: |
+          cat >"$GITHUB_WORKSPACE/MicrosoftGit/install.bat" <<'BATCH'
+          @echo off
+          if "%PROCESSOR_ARCHITECTURE%"=="ARM64" (
+            set GIT_PAYLOAD=%~dp0payload\aarch64
+          ) else (
+            set GIT_PAYLOAD=%~dp0payload\x86_64
+          )
+          echo Installing Git from %GIT_PAYLOAD% to "C:\Program Files\Git"...
+          robocopy "%GIT_PAYLOAD%" "C:\Program Files\Git" /E /NFL /NDL /NJH /NJS /NS /NC
+          if %ERRORLEVEL% GEQ 8 exit /b %ERRORLEVEL%
+          echo C:\Program Files\Git\cmd>>"%GITHUB_PATH%"
+          exit /b 0
+          BATCH
+
+      - name: Upload Git artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: MicrosoftGit
+          path: MicrosoftGit
+
+      - name: Find latest VFSForGit build
+        id: find_run
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          run_id=$(gh run list \
+            --repo microsoft/VFSForGit \
+            --workflow build.yaml \
+            --branch master \
+            --status success \
+            --limit 1 \
+            --json databaseId \
+            -q '.[0].databaseId')
+          test -n "$run_id" || { echo "::error::No successful VFSForGit build found"; exit 1; }
+
+          # If the run was skipped, follow the annotation to the real run.
+          # The skip notice may only appear on a re-attempt, so check
+          # attempts from latest to first.
+          attempts=$(gh api "repos/microsoft/VFSForGit/actions/runs/$run_id" \
+            --jq '.run_attempt')
+          for attempt in $(seq "$attempts" -1 1); do
+            job_id=$(gh api "repos/microsoft/VFSForGit/actions/runs/$run_id/attempts/$attempt/jobs" \
+              --jq '.jobs[] | select(.name == "Validation") | .id')
+            test -n "$job_id" || continue
+            skip_msg=$(gh api "repos/microsoft/VFSForGit/check-runs/$job_id/annotations" \
+              --jq '[.[] | select(.message | startswith("Skipping:"))][0].message // empty')
+            test -n "$skip_msg" || continue
+            real_id=$(echo "$skip_msg" | sed -n 's|.*/runs/\([0-9]*\).*|\1|p')
+            if [ -n "$real_id" ] && [ "$real_id" != "$run_id" ]; then
+              echo "::notice::Skipped run $run_id (attempt $attempt), following to real run $real_id"
+              run_id=$real_id
+            fi
+            break
+          done
+
+          echo "run_id=$run_id" >> "$GITHUB_OUTPUT"
+          echo ::notice::Using VFSForGit build with run_id=$run_id
+
+  functional_tests:
+    name: Functional Tests
+    needs: package
+    uses: microsoft/VFSForGit/.github/workflows/functional-tests.yaml@master
+    with:
+      vfs_repository: microsoft/VFSForGit
+      vfs_run_id: ${{ needs.package.outputs.vfs_run_id }}
