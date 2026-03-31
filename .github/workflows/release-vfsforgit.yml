@@ -1,0 +1,98 @@
+name: Update VFS for Git
+
+on:
+  release:
+    types: [released]
+
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Tag name to release'
+        required: true
+
+permissions:
+  id-token: write # required for Azure login via OIDC
+
+env:
+  TAG_NAME: ${{ github.event.inputs.tag || github.event.release.tag_name }}
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    environment: release
+    steps:
+      - name: Log into Azure
+        uses: azure/login@v3
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Checkout (for akv-secret action)
+        uses: actions/checkout@v6
+        with:
+          sparse-checkout: .github/actions
+
+      - name: Retrieve token
+        id: token
+        uses: ./.github/actions/akv-secret
+        with:
+          vault: ${{ secrets.AZURE_VAULT }}
+          secrets: |
+            ${{ secrets.VFSFORGIT_TOKEN_SECRET_NAME }} > $output:result
+
+      # Create a PR to bump the default GIT_VERSION
+      - name: Create VFS for Git version bump PR
+        env:
+          # GH_TOKEN overrides the GITHUB_TOKEN provided by the actions runner,
+          # so that `gh` commands use the VFS for Git repo token from Key Vault.
+          GH_TOKEN: ${{ steps.token.outputs.result }}
+        run: |
+          # Configure gh as the git credential helper and force HTTPS protocol
+          # so that git clone/push authenticate using GH_TOKEN.
+          gh auth setup-git
+          gh config set git_protocol https
+
+          REPO="microsoft/VFSForGit"
+          BRANCH="automation/gitrelease-$TAG_NAME"
+          FILE=".github/workflows/build.yaml"
+
+          # Clone VFS for Git repo (sparse partial clone for efficiency)
+          gh repo clone "$REPO" vfsforgit -- --filter=blob:none --no-checkout --depth=1
+          cd vfsforgit
+          git sparse-checkout set "$FILE"
+          git checkout
+
+          # Create new branch
+          git checkout -b "$BRANCH"
+
+          # Update the GIT_VERSION default in build.yaml
+          sed -i "/GIT_VERSION/s/|| '[^']*' }}/|| '$TAG_NAME' }}/" "$FILE"
+
+          # Verify the change was made
+          if ! git diff --quiet "$FILE"; then
+            git config user.name "github-actions[bot]"
+            git config user.email "github-actions[bot]@users.noreply.github.com"
+
+            git add "$FILE"
+            git commit -m "Update default Microsoft Git version to $TAG_NAME"
+
+            # Push the new branch
+            git push origin "$BRANCH"
+
+            # Create the PR
+            WORKFLOW_URL="https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+            RELEASE_URL="https://github.com/microsoft/git/releases/tag/$TAG_NAME"
+            PR_TITLE="Update default Microsoft Git version to $TAG_NAME"
+            PR_BODY="This PR was automatically created by the [microsoft/git release workflow]($WORKFLOW_URL)
+          to update the default Microsoft Git version to [\`$TAG_NAME\`]($RELEASE_URL)."
+
+            PR_URL=$(gh pr create \
+              --repo "$REPO" \
+              --head "$BRANCH" \
+              --title "$PR_TITLE" \
+              --body "$PR_BODY")
+            echo "::notice::Created VFS for Git PR: $PR_URL"
+          else
+            echo "::warning::No changes detected in $FILE; GIT_VERSION may already be set to $TAG_NAME"
+          fi
