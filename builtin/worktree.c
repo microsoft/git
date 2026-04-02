@@ -1438,7 +1438,9 @@ static int remove_worktree(int ac, const char **av, const char *prefix,
 	strbuf_release(&errmsg);
 
 	if (file_exists(wt->path)) {
-		if (!force && !(core_virtualfilesystem && should_skip_clean_check(wt)))
+		if (!force &&
+		    !(gvfs_config_is_set(the_repository, GVFS_SUPPORTS_WORKTREES) &&
+		      should_skip_clean_check(wt)))
 			check_clean_worktree(wt, av[0]);
 
 		ret |= delete_git_work_tree(wt);
