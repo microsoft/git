@@ -2376,23 +2376,17 @@ static void extract_packfile_from_multipack(
 }
 
 /*
- * Run index-pack on a previously extracted temp packfile, then
- * finalize (move) it into the ODB.
+ * Finalize a prefetch packfile after index-pack has already run:
+ * compute final pathnames and move .pack/.idx/.keep into the ODB.
  */
-static void index_and_finalize_packfile(struct gh__request_params *params,
-					struct gh__response_status *status,
-					struct prefetch_entry *entry)
+static void finalize_prefetch_packfile(struct gh__request_params *params,
+				       struct gh__response_status *status,
+				       struct prefetch_entry *entry)
 {
 	struct strbuf buf_timestamp = STRBUF_INIT;
 	struct strbuf final_path_pack = STRBUF_INIT;
 	struct strbuf final_path_idx = STRBUF_INIT;
 	struct strbuf final_filename = STRBUF_INIT;
-
-	my_run_index_pack(params, status,
-			  &entry->temp_path_pack, &entry->temp_path_idx,
-			  NULL);
-	if (status->ec != GH__ERROR_CODE__OK)
-		goto done;
 
 	strbuf_addf(&buf_timestamp, "%u", (unsigned int)entry->timestamp);
 	create_final_packfile_pathnames("prefetch", buf_timestamp.buf,
@@ -2405,11 +2399,87 @@ static void index_and_finalize_packfile(struct gh__request_params *params,
 			     &final_path_pack, &final_path_idx,
 			     &final_filename);
 
-done:
 	strbuf_release(&buf_timestamp);
 	strbuf_release(&final_path_pack);
 	strbuf_release(&final_path_idx);
 	strbuf_release(&final_filename);
+}
+
+#define PREFETCH_MAX_WORKERS 4
+
+/*
+ * Context for parallel index-pack execution.
+ *
+ * The run_processes_parallel() callbacks are always called from
+ * the main thread, so no locking is needed for these fields.
+ */
+struct prefetch_parallel_ctx {
+	struct prefetch_entry *entries;
+	unsigned short np;
+	unsigned short next;
+
+	struct gh__request_params *params;
+	struct gh__response_status *status;
+
+	struct progress *progress;
+	int nr_finished;
+	int nr_installed;
+};
+
+static int prefetch_get_next_task(struct child_process *cp,
+				  struct strbuf *out UNUSED,
+				  void *pp_cb,
+				  void **pp_task_cb)
+{
+	struct prefetch_parallel_ctx *ctx = pp_cb;
+	struct prefetch_entry *entry;
+
+	if (ctx->next >= ctx->np)
+		return 0;
+
+	entry = &ctx->entries[ctx->next];
+	*pp_task_cb = entry;
+	ctx->next++;
+
+	cp->git_cmd = 1;
+	strvec_push(&cp->args, "index-pack");
+	strvec_push(&cp->args, "--no-rev-index");
+	strvec_pushl(&cp->args, "-o", entry->temp_path_idx.buf, NULL);
+	strvec_push(&cp->args, entry->temp_path_pack.buf);
+	cp->no_stdin = 1;
+
+	return 1;
+}
+
+static int prefetch_task_finished(int result,
+				  struct strbuf *out UNUSED,
+				  void *pp_cb,
+				  void *pp_task_cb)
+{
+	struct prefetch_parallel_ctx *ctx = pp_cb;
+	struct prefetch_entry *entry = pp_task_cb;
+
+	ctx->nr_finished++;
+	display_progress(ctx->progress, ctx->nr_finished);
+
+	if (result) {
+		unlink(entry->temp_path_pack.buf);
+		unlink(entry->temp_path_idx.buf);
+
+		if (ctx->status->ec == GH__ERROR_CODE__OK) {
+			strbuf_addf(&ctx->status->error_message,
+				    "index-pack failed on '%s'",
+				    entry->temp_path_pack.buf);
+			ctx->status->ec = GH__ERROR_CODE__INDEX_PACK_FAILED;
+		}
+		return 0;
+	}
+
+	finalize_prefetch_packfile(ctx->params, ctx->status, entry);
+	if (ctx->status->ec == GH__ERROR_CODE__OK)
+		ctx->nr_installed++;
+
+	return 0;
 }
 
 struct keep_files_data {
@@ -2553,21 +2623,58 @@ static void install_prefetch(struct gh__request_params *params,
 		goto cleanup;
 
 	/*
-	 * Phase 2: run index-pack on each extracted packfile and
-	 * finalize it into the ODB.
+	 * Phase 2: run index-pack on the extracted packfiles in
+	 * parallel and finalize each into the ODB.
+	 *
+	 * Use up to PREFETCH_MAX_WORKERS concurrent index-pack
+	 * processes.  The entries are already in timestamp order
+	 * (oldest first), so the largest pack—the one that takes
+	 * the longest—starts immediately while the remaining
+	 * workers cycle through the smaller daily/hourly packs.
+	 *
+	 * When there is only one packfile there is no benefit from
+	 * the parallel infrastructure, so fall through to a simple
+	 * sequential index-pack + finalize.
 	 */
-	if (gh__cmd_opts.show_progress)
-		params->progress = start_progress(
-			the_repository, "Installing prefetch packfiles", np);
+	if (np == 1) {
+		my_run_index_pack(params, status,
+				  &entries[0].temp_path_pack,
+				  &entries[0].temp_path_idx,
+				  NULL);
+		if (status->ec == GH__ERROR_CODE__OK) {
+			finalize_prefetch_packfile(params, status, &entries[0]);
+			if (status->ec == GH__ERROR_CODE__OK)
+				nr_installed++;
+		}
+	} else {
+		struct prefetch_parallel_ctx pctx = {
+			.entries = entries,
+			.np = np,
+			.next = 0,
+			.params = params,
+			.status = status,
+			.nr_finished = 0,
+			.nr_installed = 0,
+		};
+		struct run_process_parallel_opts pp_opts = {
+			.tr2_category = TR2_CAT,
+			.tr2_label = "prefetch/index-pack",
+			.processes = MY_MIN(np, PREFETCH_MAX_WORKERS),
+			.get_next_task = prefetch_get_next_task,
+			.task_finished = prefetch_task_finished,
+			.data = &pctx,
+		};
 
-	for (k = 0; k < np; k++) {
-		index_and_finalize_packfile(params, status, &entries[k]);
-		display_progress(params->progress, k + 1);
-		if (status->ec != GH__ERROR_CODE__OK)
-			break;
-		nr_installed++;
+		if (gh__cmd_opts.show_progress)
+			pctx.progress = start_progress(
+				the_repository,
+				"Installing prefetch packfiles", np);
+
+		run_processes_parallel(&pp_opts);
+
+		stop_progress(&pctx.progress);
+		nr_installed = pctx.nr_installed;
 	}
-	stop_progress(&params->progress);
 
 	if (nr_installed)
 		delete_stale_keep_files(params, status);
