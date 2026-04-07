@@ -34,3 +34,12 @@ gvfs.sessionKey::
 	across client and server behavior, including any End User Pseodynomous
 	Identifiers (EUPI) that may be configured. The `X-Session-Id` will
 	include the SID of the current process in either case.
+
+gvfs.prefetchThreads::
+	Set the number of parallel `index-pack` processes that run when
+	installing prefetch packfiles. The default value is `1`, which
+	processes packfiles sequentially without any thread infrastructure.
+	Setting this to a higher value (for example `4`) enables parallel
+	index-pack execution, which can significantly speed up the
+	installation of multiple prefetch packs. Values less than `1` are
+	treated as `1`.
