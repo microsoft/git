@@ -97,6 +97,38 @@ test_expect_success 'status score=01%' '
 	test_grep "renamed:" actual
 '
 
+test_expect_success 'diff.renameThreshold sets default threshold' '
+	git -c diff.renameThreshold=100% status >actual &&
+	test_grep "deleted:" actual &&
+	test_grep "new file:" actual
+'
+
+test_expect_success 'status.renameThreshold overrides diff.renameThreshold' '
+	git -c diff.renameThreshold=100% -c status.renameThreshold=01% status >actual &&
+	test_grep "renamed:" actual
+'
+
+test_expect_success 'diff.renameThreshold=01% detects rename in status' '
+	git -c diff.renameThreshold=01% status >actual &&
+	test_grep "renamed:" actual
+'
+
+test_expect_success 'commit honors diff.renameThreshold' '
+	git -c diff.renameThreshold=100% commit --dry-run >actual &&
+	test_grep "deleted:" actual &&
+	test_grep "new file:" actual
+'
+
+test_expect_success 'commit honors status.renameThreshold' '
+	git -c status.renameThreshold=01% commit --dry-run >actual &&
+	test_grep "renamed:" actual
+'
+
+test_expect_success '-M overrides status.renameThreshold' '
+	git -c status.renameThreshold=100% status -M=01% >actual &&
+	test_grep "renamed:" actual
+'
+
 test_expect_success 'copies not overridden by find-renames' '
 	cp renamed copy &&
 	git add copy &&
