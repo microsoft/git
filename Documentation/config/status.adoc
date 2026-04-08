@@ -54,6 +54,12 @@ status.renameLimit::
 	in linkgit:git-status[1] and linkgit:git-commit[1]. Defaults to
 	the value of diff.renameLimit.
 
+status.renameThreshold::
+	The minimum similarity threshold for rename detection in
+	linkgit:git-status[1] and linkgit:git-commit[1].  Defaults to
+	the value of diff.renameThreshold.  See `diff.renameThreshold`
+	for the accepted value format.
+
 status.renames::
 	Whether and how Git detects renames in linkgit:git-status[1] and
 	linkgit:git-commit[1] .  If set to "false", rename detection is
