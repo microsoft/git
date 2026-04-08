@@ -1672,6 +1672,26 @@ static int git_status_config(const char *k, const char *v,
 		s->detect_rename = git_config_rename(k, v);
 		return 0;
 	}
+	if (!strcmp(k, "diff.renamethreshold")) {
+		if (s->rename_score == -1) {
+			const char *arg = v;
+			if (!v)
+				return config_error_nonbool(k);
+			s->rename_score = parse_rename_score(&arg);
+			if (*arg)
+				return error(_("invalid value for '%s': '%s'"), k, v);
+		}
+		return 0;
+	}
+	if (!strcmp(k, "status.renamethreshold")) {
+		const char *arg = v;
+		if (!v)
+			return config_error_nonbool(k);
+		s->rename_score = parse_rename_score(&arg);
+		if (*arg)
+			return error(_("invalid value for '%s': '%s'"), k, v);
+		return 0;
+	}
 	return git_diff_ui_config(k, v, ctx, NULL);
 }
 
