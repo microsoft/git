@@ -360,7 +360,15 @@ void apply_virtualfilesystem(struct index_state *istate)
 	size_t i;
 	struct apply_virtual_filesystem_stats stats = {0};
 
-	if (!repo_config_get_virtualfilesystem(istate->repo))
+	/*
+	 * We cannot use `istate->repo` here, as the config will be read for
+	 * `the_repository` and any mismatch is marked as a bug by f9b3c1f731dd
+	 * (environment: stop storing `core.attributesFile` globally, 2026-02-16).
+	 * This is not a bad thing, though: VFS is fundamentally incompatible
+	 * with submodules, which is the only scenario where this distinction
+	 * would matter in practice.
+	 */
+	if (!repo_config_get_virtualfilesystem(the_repository))
 		return;
 
 	trace2_region_enter("vfs", "apply", the_repository);
