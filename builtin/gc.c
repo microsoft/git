@@ -1858,6 +1858,7 @@ static int maintenance_task_cache_local_objs(UNUSED struct maintenance_run_opts 
 {
 	struct strbuf dstdir = STRBUF_INIT;
 	struct repository *r = the_repository;
+	int ret = 0;
 
 	/* This task is only applicable with a VFS/Scalar shared cache. */
 	if (!shared_object_dir)
@@ -1872,12 +1873,13 @@ static int maintenance_task_cache_local_objs(UNUSED struct maintenance_run_opts 
 	for_each_file_in_pack_dir(r->objects->sources->path, move_pack_to_shared_cache,
 				  dstdir.buf);
 
-	for_each_loose_object(r->objects, move_loose_object_to_shared_cache, NULL,
-			      FOR_EACH_OBJECT_LOCAL_ONLY);
+	ret = for_each_loose_file_in_source(r->objects->sources,
+				      move_loose_object_to_shared_cache,
+				      NULL, NULL, NULL);
 
 cleanup:
 	strbuf_release(&dstdir);
-	return 0;
+	return ret;
 }
 
 typedef int (*maintenance_task_fn)(struct maintenance_run_opts *opts,
