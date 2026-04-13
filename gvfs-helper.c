@@ -328,12 +328,15 @@ enum gh__error_code {
 	GH__ERROR_CODE__HTTP_503 = 6,
 	GH__ERROR_CODE__HTTP_OTHER = 7,
 	GH__ERROR_CODE__UNEXPECTED_CONTENT_TYPE = 8,
-	GH__ERROR_CODE__COULD_NOT_CREATE_TEMPFILE = 8,
-	GH__ERROR_CODE__COULD_NOT_INSTALL_LOOSE = 10,
-	GH__ERROR_CODE__COULD_NOT_INSTALL_PACKFILE = 11,
-	GH__ERROR_CODE__SUBPROCESS_SYNTAX = 12,
-	GH__ERROR_CODE__INDEX_PACK_FAILED = 13,
-	GH__ERROR_CODE__COULD_NOT_INSTALL_PREFETCH = 14,
+
+	GH__ERROR_CODE__HTTP_ERROR_LIMIT = 9,
+
+	GH__ERROR_CODE__COULD_NOT_CREATE_TEMPFILE = 10,
+	GH__ERROR_CODE__COULD_NOT_INSTALL_LOOSE = 11,
+	GH__ERROR_CODE__COULD_NOT_INSTALL_PACKFILE = 12,
+	GH__ERROR_CODE__SUBPROCESS_SYNTAX = 13,
+	GH__ERROR_CODE__INDEX_PACK_FAILED = 14,
+	GH__ERROR_CODE__COULD_NOT_INSTALL_PREFETCH = 15,
 };
 
 enum gh__cache_server_mode {
@@ -3142,13 +3145,22 @@ static int compute_transient_delay(int attempt)
 	return v;
 }
 
-static void gvfs_advice_on_retry(void)
+static void gvfs_advice_on_retry(enum gh__error_code ec)
 {
 	static int advice_given = 0;
 
 	if (advice_given)
 		return;
 	advice_given = 1;
+
+	if (ec < GH__ERROR_CODE__HTTP_ERROR_LIMIT) {
+		advise_if_enabled(ADVICE_GVFS_HELPER_TRANSIENT_RETRY,
+				  "GVFS Protocol network requests are failing. This is\n"
+				  "likely caused by a service outage or unstable network\n"
+				  "connection. Check your local network or contact your\n"
+				  "engineering systems team for assistance.");
+		return;
+	}
 
 	if (gvfs_shared_cache_pathname.len) {
 		advise_if_enabled(ADVICE_GVFS_HELPER_TRANSIENT_RETRY,
@@ -3213,7 +3225,7 @@ static void do_req__with_robust_retry(const char *url_base,
 			/*
 			 * Give advice for common reasons this could happen:
 			 */
-			gvfs_advice_on_retry();
+			gvfs_advice_on_retry(status->ec);
 			params->k_transient_delay_sec =
 				compute_transient_delay(params->k_attempt);
 			continue;
