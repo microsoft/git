@@ -127,15 +127,13 @@ int subprocess_start_strvec(struct hashmap *hashmap,
 			  subprocess_start_fn startfn)
 {
 	int err;
-	size_t k;
 	struct child_process *process;
 	struct strbuf quoted = STRBUF_INIT;
 
 	process = &entry->process;
 
 	child_process_init(process);
-	for (k = 0; k < argv->nr; k++)
-		strvec_push(&process->args, argv->v[k]);
+	strvec_pushv(&process->args, argv->v);
 	process->use_shell = 1;
 	process->in = -1;
 	process->out = -1;
