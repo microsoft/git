@@ -1548,6 +1548,7 @@ test_expect_success 'cache-local-objects task with no shared cache no op' '
 
 		test_commit something &&
 		git config set maintenance.gc.enabled false &&
+		git config set maintenance.geometric-repack.enabled false &&
 		git config set maintenance.cache-local-objects.enabled true &&
 		git config set maintenance.cache-local-objects.auto 1 &&
 
@@ -1572,6 +1573,7 @@ test_expect_success 'cache-local-objects task cache path same as local odb no op
 		test_commit something &&
 		git config set gvfs.sharedcache .git/objects &&
 		git config set maintenance.gc.enabled false &&
+		git config set maintenance.geometric-repack.enabled false &&
 		git config set maintenance.cache-local-objects.enabled true &&
 		git config set maintenance.cache-local-objects.auto 1 &&
 
@@ -1597,6 +1599,7 @@ test_expect_success 'cache-local-objects task no .rev or .keep' '
 		test_commit something &&
 		git config set gvfs.sharedcache ../cache &&
 		git config set maintenance.gc.enabled false &&
+		git config set maintenance.geometric-repack.enabled false &&
 		git config set maintenance.cache-local-objects.enabled true &&
 		git config set maintenance.cache-local-objects.auto 1 &&
 
@@ -1629,6 +1632,7 @@ test_expect_success 'cache-local-objects task success' '
 		test_commit something &&
 		git config set gvfs.sharedcache ../cache &&
 		git config set maintenance.gc.enabled false &&
+		git config set maintenance.geometric-repack.enabled false &&
 		git config set maintenance.cache-local-objects.enabled true &&
 		git config set maintenance.cache-local-objects.auto 1 &&
 
