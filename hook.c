@@ -577,8 +577,15 @@ struct string_list *list_hooks(struct repository *r, const char *hookname,
 	CALLOC_ARRAY(hook_head, 1);
 	string_list_init_dup(hook_head);
 
-	/* Add hooks from the config, e.g. hook.myhook.event = pre-commit */
-	list_hooks_add_configured(r, hookname, hook_head, options);
+	/*
+	 * The pre/post-command hooks are only supported as traditional hookdir
+	 * hooks, never as config-based hooks. Building the config map validates
+	 * all hook.*.event entries and would die() on partially-configured
+	 * hooks, which is fatal when "git config" is still in the middle of
+	 * setting up a multi-key hook definition.
+	 */
+	if (strcmp(hookname, "pre-command") && strcmp(hookname, "post-command"))
+		list_hooks_add_configured(r, hookname, hook_head, options);
 
 	/* Add the default "traditional" hooks from hookdir. */
 	list_hooks_add_default(r, hookname, hook_head, options);
