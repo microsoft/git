@@ -68,7 +68,7 @@ jobs:
           make -j5 DESTDIR="$GITHUB_WORKSPACE/MicrosoftGit/payload/${{ matrix.architecture }}" install
 
       - name: Upload Git artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: MicrosoftGit-${{ matrix.architecture }}
           path: MicrosoftGit
@@ -112,7 +112,7 @@ jobs:
           BATCH
 
       - name: Upload Git artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: MicrosoftGit
           path: MicrosoftGit
