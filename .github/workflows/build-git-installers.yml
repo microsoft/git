@@ -178,7 +178,7 @@ jobs:
           git commit -s -m "mingw-w64-git: new version ($version)" PKGBUILD &&
           git bundle create "$b"/MINGW-packages.bundle origin/main..main)
       - name: Publish mingw-w64-${{matrix.arch.toolchain}}-git
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: "${{ matrix.arch.artifact }}"
           path: artifacts
@@ -376,7 +376,7 @@ jobs:
           }
           exit $ret
       - name: Publish ${{matrix.type.name}}-${{matrix.arch.name}}
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: win-${{matrix.type.name}}-${{matrix.arch.name}}
           path: artifacts
