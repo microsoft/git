@@ -245,7 +245,8 @@ static void list_hooks_add_default(struct repository *r, const char *hookname,
 	struct hook *h;
 
 	/* Interject hook behavior depending on strategy. */
-	if (r && handle_hook_replacement(r, hookname, &options->args))
+	if (r && options &&
+	    handle_hook_replacement(r, hookname, &options->args))
 		return;
 
 	hook_path = find_hook(r, hookname);
