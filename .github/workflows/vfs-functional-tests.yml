@@ -74,7 +74,7 @@ jobs:
           # Ensure that `git version` reflects DEF_VER
           case "$(git describe --match "v[0-9]*vfs*" HEAD)" in
           ${def_ver%%.vfs.*}.vfs.*) ;; # okay, we can use this
-          *) git -c user.name=ci -c user.email=ci@github tag -m for-testing ${def_ver}.NNN.g$(git rev-parse --short HEAD);;
+          *) echo ${def_ver}.NNN.g$(git rev-parse --short HEAD) >version;;
           esac
 
           make -j5 DESTDIR="$GITHUB_WORKSPACE/MicrosoftGit/payload/${{ matrix.architecture }}" install
