@@ -55,6 +55,7 @@ jobs:
         env:
           NO_TCLTK: Yup
         run: |
+          set -x
           # We do require a VFS version
           def_ver="$(sed -n '/^DEF_VER=/{
             s/^DEF_VER=\(.*vfs.*\)/\1/p
