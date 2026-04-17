@@ -39,8 +39,14 @@ parameters:
         toolchain: clang-aarch64
         mingwprefix: clangarm64
 
-  # No matrix for macOS as we build both x64 and ARM64 in the same job
-  # and produce a universal binary.
+  - name: macos_matrix
+    type: object
+    default:
+      - id: macos_universal
+        jobName: 'macOS (x64 + ARM64)'
+        pool: 'Azure Pipelines'
+        image: macOS-latest
+        os: macos
 
   - name: linux_matrix
     type: object
@@ -145,35 +151,36 @@ extends:
                   displayName: 'Dummy prepare artifacts'
 
           #
-          # macOS build job (universal)
+          # macOS build jobs
           #
-          - job: macos_universal
-            displayName: 'macOS (x64 + ARM64)'
-            pool:
-              name: 'Azure Pipelines'
-              image: macOS-latest
-              os: macos
-            variables:
-              tag_name: $[stageDependencies.prereqs.prebuild.outputs['info.tag_name']]
-              tag_sha: $[stageDependencies.prereqs.prebuild.outputs['info.tag_sha']]
-              git_version: $[stageDependencies.prereqs.prebuild.outputs['info.git_version']]
-            templateContext:
-              outputs:
-                - output: pipelineArtifact
-                  targetPath: '$(Build.ArtifactStagingDirectory)/_final'
-                  artifactName: 'macos_universal'
-            steps:
-              - checkout: self
-              # TODO: add tasks to set up build environment
-              # TODO: add tasks to build Git and installers
-              - script: |
-                  echo "Hello, Mac!"
-                displayName: 'Dummy build'
-              # TODO: put final artifacts under $(Build.ArtifactStagingDirectory)/_final
-              - script: |
-                  mkdir -p $(Build.ArtifactStagingDirectory)/_final
-                  echo "TODO" > $(Build.ArtifactStagingDirectory)/_final/placeholder.txt
-                displayName: 'Dummy prepare artifacts'
+          - ${{ each dim in parameters.macos_matrix }}:
+            - job: ${{ dim.id }}
+              displayName: ${{ dim.jobName }}
+              pool:
+                name: ${{ dim.pool }}
+                image: ${{ dim.image }}
+                os: ${{ dim.os }}
+              variables:
+                tag_name: $[stageDependencies.prereqs.prebuild.outputs['info.tag_name']]
+                tag_sha: $[stageDependencies.prereqs.prebuild.outputs['info.tag_sha']]
+                git_version: $[stageDependencies.prereqs.prebuild.outputs['info.git_version']]
+              templateContext:
+                outputs:
+                  - output: pipelineArtifact
+                    targetPath: '$(Build.ArtifactStagingDirectory)/_final'
+                    artifactName: '${{ dim.id }}'
+              steps:
+                - checkout: self
+                # TODO: add tasks to set up build environment
+                # TODO: add tasks to build Git and installers
+                - script: |
+                    echo "Hello, Mac!"
+                  displayName: 'Dummy build'
+                # TODO: put final artifacts under $(Build.ArtifactStagingDirectory)/_final
+                - script: |
+                    mkdir -p $(Build.ArtifactStagingDirectory)/_final
+                    echo "TODO" > $(Build.ArtifactStagingDirectory)/_final/placeholder.txt
+                  displayName: 'Dummy prepare artifacts'
 
           #
           # Linux build jobs
@@ -215,7 +222,7 @@ extends:
         dependsOn: [prereqs, build]
         jobs:
           #
-          # Artifact validation jobs
+          # Windows validation jobs
           #
           - ${{ each dim in parameters.windows_matrix }}:
             - job: validate_${{ dim.id }}
@@ -235,23 +242,30 @@ extends:
                     dir $(Pipeline.Workspace)\assets\${{ dim.id }}
                   displayName: 'Validate artifacts'
 
-          - job: validate_macos_universal
-            displayName: 'Validate macOS (x64 + ARM64)'
-            pool:
-              name: 'Azure Pipelines'
-              image: macOS-latest
-              os: macos
-            templateContext:
-              inputs:
-                - input: pipelineArtifact
-                  artifactName: 'macos_universal'
-                  targetPath: $(Pipeline.Workspace)/assets/macos_universal
-            steps:
-              # TODO: add artifact validation steps
-              - script: |
-                  ls $(Pipeline.Workspace)/assets/macos_universal
-                displayName: 'Validate artifacts'
+          #
+          # macOS validation jobs
+          #
+          - ${{ each dim in parameters.macos_matrix }}:
+            - job: validate_${{ dim.id }}
+              displayName: 'Validate ${{ dim.jobName }}'
+              pool:
+                name: ${{ dim.pool }}
+                image: ${{ dim.image }}
+                os: ${{ dim.os }}
+              templateContext:
+                inputs:
+                  - input: pipelineArtifact
+                    artifactName: '${{ dim.id }}'
+                    targetPath: $(Pipeline.Workspace)/assets/${{ dim.id }}
+              steps:
+                # TODO: add artifact validation steps
+                - script: |
+                    ls $(Pipeline.Workspace)/assets/${{ dim.id }}
+                  displayName: 'Validate artifacts'
 
+          #
+          # Linux validation jobs
+          #
           - ${{ each dim in parameters.linux_matrix }}:
             - job: validate_${{ dim.id }}
               displayName: 'Validate ${{ dim.jobName }}'
@@ -270,11 +284,15 @@ extends:
                     ls $(Pipeline.Workspace)/assets/${{ dim.id }}
                   displayName: 'Validate artifacts'
 
+          #
+          # GitHub release publishing
+          #
           - job: github
             dependsOn:
               - ${{ each dim in parameters.windows_matrix }}:
                 - validate_${{ dim.id }}
-              - validate_macos_universal
+              - ${{ each dim in parameters.macos_matrix }}:
+                - validate_${{ dim.id }}
               - ${{ each dim in parameters.linux_matrix }}:
                 - validate_${{ dim.id }}
             displayName: 'Publish GitHub release'
@@ -291,21 +309,18 @@ extends:
               type: releaseJob
               isProduction: true
               inputs:
-                - input: pipelineArtifact
-                  artifactName: 'windows_x64'
-                  targetPath: $(Pipeline.Workspace)/assets/windows_x64
-                - input: pipelineArtifact
-                  artifactName: 'windows_arm64'
-                  targetPath: $(Pipeline.Workspace)/assets/windows_arm64
-                - input: pipelineArtifact
-                  artifactName: 'macos_universal'
-                  targetPath: $(Pipeline.Workspace)/assets/macos_universal
-                - input: pipelineArtifact
-                  artifactName: 'linux_x64'
-                  targetPath: $(Pipeline.Workspace)/assets/linux_x64
-                - input: pipelineArtifact
-                  artifactName: 'linux_arm64'
-                  targetPath: $(Pipeline.Workspace)/assets/linux_arm64
+                - ${{ each dim in parameters.windows_matrix }}:
+                  - input: pipelineArtifact
+                    artifactName: '${{ dim.id }}'
+                    targetPath: $(Pipeline.Workspace)/assets/${{ dim.id }}
+                - ${{ each dim in parameters.macos_matrix }}:
+                  - input: pipelineArtifact
+                    artifactName: '${{ dim.id }}'
+                    targetPath: $(Pipeline.Workspace)/assets/${{ dim.id }}
+                - ${{ each dim in parameters.linux_matrix }}:
+                  - input: pipelineArtifact
+                    artifactName: '${{ dim.id }}'
+                    targetPath: $(Pipeline.Workspace)/assets/${{ dim.id }}
             steps:
               - task: GitHubRelease@1
                 displayName: 'Create Draft GitHub Release'
