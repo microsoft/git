@@ -76,6 +76,32 @@ jobs:
                  "$($asset_arm64_url)|arm64|machine" `
                  "$($asset_arm64_url)|arm64|user"
 
+          # Sync the winget-pkgs fork with upstream before submitting,
+          # to avoid "The forked repository could not be synced with
+          # the upstream commits" errors from wingetcreate.
+          # If the fork does not exist yet, wingetcreate will create
+          # it fresh (and therefore up-to-date), so a 404 is fine.
+          # See https://docs.github.com/en/rest/branches/branches#sync-a-fork-branch-with-the-upstream-repository
+          $headers = @{
+            Authorization = "token $env:WINGET_CREATE_GITHUB_TOKEN"
+            Accept = "application/vnd.github+json"
+          }
+          $user = (Invoke-RestMethod -Uri "https://api.github.com/user" -Headers $headers).login
+          try {
+            Invoke-RestMethod -Method Post `
+              -Uri "https://api.github.com/repos/$user/winget-pkgs/merge-upstream" `
+              -Headers $headers `
+              -Body '{"branch":"master"}' `
+              -ContentType "application/json"
+            Write-Host "Synced $user/winget-pkgs fork with upstream."
+          } catch {
+            if ($_.Exception.Response.StatusCode.value__ -eq 404) {
+              Write-Host "No fork found at $user/winget-pkgs; wingetcreate will create one."
+            } else {
+              throw
+            }
+          }
+
           # Submit the manifest to the winget-pkgs repository
           $manifestDirectory = "$PWD\manifests\m\Microsoft\Git\$version"
           $output = & .\wingetcreate.exe submit $manifestDirectory
