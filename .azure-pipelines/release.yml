@@ -10,6 +10,10 @@ resources:
       ref: refs/tags/release
 
 parameters:
+  - name: 'esrp'
+    type: boolean
+    default: false # TODO: change default to true after testing
+    displayName: 'Enable ESRP code signing'
   - name: 'github'
     type: boolean
     default: false # TODO: change default to true after testing
@@ -68,8 +72,20 @@ parameters:
         deb_arch: arm64
 
 variables:
+  - name: 'esrpAppConnectionName'
+    value: '1ESGitClient-ESRP-App'
+  - name: 'esrpMIConnectionName'
+    value: '1ESGitClient-ESRP-MI'
+  - name: 'esrpNuGetConnectionName'
+    value: '1ESGitClient-ESRP-NuGet'
   - name: 'githubConnectionName'
     value: 'GitHub-MicrosoftGit'
+  # ESRP signing variables set in the pipeline settings:
+  # - esrpEndpointUrl
+  # - esrpClientId
+  # - esrpTenantId
+  # - esrpKeyVaultName
+  # - esrpSignReqCertName
 
 extends:
   template: v1/1ES.Official.PipelineTemplate.yml@1ESPipelines
@@ -138,12 +154,65 @@ extends:
                     artifactName: '${{ dim.id }}'
               steps:
                 - checkout: self
+                - ${{ if eq(parameters.esrp, true) }}:
+                  - task: NuGetAuthenticate@1
+                    displayName: 'Authenticate NuGet (ESRP)'
+                    inputs:
+                      nuGetServiceConnections: $(esrpNuGetConnectionName)
+                  - task: NuGetCommand@2
+                    displayName: 'Download ESRP client'
+                    inputs:
+                      command: custom
+                      arguments: >-
+                        install Microsoft.EsrpClient
+                        -source https://microsoft.pkgs.visualstudio.com/_packaging/ESRP/nuget/v3/index.json
+                        -OutputDirectory $(Agent.TempDirectory)/esrp
+                  - powershell: |
+                      $esrpTool = Get-ChildItem -Path "$(Agent.TempDirectory)\esrp" -Filter "ESRPClient.exe" -Recurse | Select-Object -First 1
+                      if (-not $esrpTool) {
+                        Write-Error "ESRPClient.exe not found"
+                        exit 1
+                      }
+                      Write-Host "Found ESRP client: $($esrpTool.FullName)"
+                      Write-Host "##vso[task.setvariable variable=ESRP_TOOL]$($esrpTool.FullName)"
+                    displayName: 'Locate ESRP client'
+                  - task: AzureKeyVault@2
+                    displayName: 'Download ESRP certificates'
+                    inputs:
+                      azureSubscription: $(esrpMIConnectionName)
+                      KeyVaultName: $(esrpKeyVaultName)
+                      SecretsFilter: '$(esrpAuthCertName),$(esrpSignCertName)'
+                  - powershell: |
+                      $certs = @("$(esrpAuthCertName)", "$(esrpSignCertName)")
+                      foreach ($cert in $certs) {
+                        $path = "$(Agent.TempDirectory)\$cert.pfx"
+                        Write-Host "Importing certificate: $cert"
+                        $pfx = Import-PfxCertificate -FilePath $path -CertStoreLocation "Cert:\LocalMachine\My"
+                        Write-Host "  Thumbprint: $($pfx.Thumbprint)"
+                      }
+                    displayName: 'Install ESRP certificates'
                 # TODO: add tasks to set up Git for Windows SDK
                 # TODO: add tasks to build Git and installers
                 - script: |
                     echo $(mingwprefix)
                     echo $(toolchain)
                   displayName: 'Dummy build'
+                - ${{ if eq(parameters.esrp, true) }}:
+                  - bash: |
+                      cp /c/Windows/System32/calc.exe example1.exe
+                      cp /c/Windows/System32/calc.exe example2.exe
+                      cp /c/Windows/System32/calc.exe example3.exe
+                      .azure-pipelines/esrp/windows/esrpsign.sh \
+                        example1.exe \
+                        example2.exe \
+                        example3.exe
+                    displayName: 'Example ESRP signing'
+                    env:
+                      ESRP_TOOL: $(ESRP_TOOL)
+                      ESRP_CLIENT_ID: $(esrpClientId)
+                      ESRP_TENANT_ID: $(esrpTenantId)
+                      ESRP_AUTH_CERT_NAME: $(esrpAuthCertName)
+                      ESRP_SIGN_CERT_NAME: $(esrpSignCertName)
                 # TODO: put final artifacts under $(Build.ArtifactStagingDirectory)/_final
                 - script: |
                     mkdir $(Build.ArtifactStagingDirectory)\_final
