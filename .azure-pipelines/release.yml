@@ -216,7 +216,69 @@ extends:
         displayName: 'Release'
         dependsOn: [prereqs, build]
         jobs:
+          #
+          # Artifact validation jobs
+          #
+          - ${{ each dim in parameters.windows_matrix }}:
+            - job: validate_${{ dim.id }}
+              displayName: 'Validate ${{ dim.jobName }}'
+              pool:
+                name: ${{ dim.pool }}
+                image: ${{ dim.image }}
+                os: ${{ dim.os }}
+              templateContext:
+                inputs:
+                  - input: pipelineArtifact
+                    artifactName: '${{ dim.id }}'
+                    targetPath: $(Pipeline.Workspace)/assets/${{ dim.id }}
+              steps:
+                # TODO: add artifact validation steps
+                - script: |
+                    dir $(Pipeline.Workspace)\assets\${{ dim.id }}
+                  displayName: 'Validate artifacts'
+
+          - job: validate_macos_universal
+            displayName: 'Validate macOS (x64 + ARM64)'
+            pool:
+              name: 'Azure Pipelines'
+              image: macOS-latest
+              os: macos
+            templateContext:
+              inputs:
+                - input: pipelineArtifact
+                  artifactName: 'macos_universal'
+                  targetPath: $(Pipeline.Workspace)/assets/macos_universal
+            steps:
+              # TODO: add artifact validation steps
+              - script: |
+                  ls $(Pipeline.Workspace)/assets/macos_universal
+                displayName: 'Validate artifacts'
+
+          - ${{ each dim in parameters.linux_matrix }}:
+            - job: validate_${{ dim.id }}
+              displayName: 'Validate ${{ dim.jobName }}'
+              pool:
+                name: ${{ dim.pool }}
+                image: ${{ dim.image }}
+                os: ${{ dim.os }}
+              templateContext:
+                inputs:
+                  - input: pipelineArtifact
+                    artifactName: '${{ dim.id }}'
+                    targetPath: $(Pipeline.Workspace)/assets/${{ dim.id }}
+              steps:
+                # TODO: add artifact validation steps
+                - script: |
+                    ls $(Pipeline.Workspace)/assets/${{ dim.id }}
+                  displayName: 'Validate artifacts'
+
           - job: github
+            dependsOn:
+              - ${{ each dim in parameters.windows_matrix }}:
+                - validate_${{ dim.id }}
+              - validate_macos_universal
+              - ${{ each dim in parameters.linux_matrix }}:
+                - validate_${{ dim.id }}
             displayName: 'Publish GitHub release'
             condition: and(succeeded(), eq('${{ parameters.github }}', true))
             pool:
