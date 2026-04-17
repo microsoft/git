@@ -4,18 +4,23 @@ on:
   release:
     types: [released]
 
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Tag name to release'
+        required: true
+
 permissions:
   id-token: write # required for Azure login via OIDC
+
+env:
+  TAG_NAME: ${{ github.event.inputs.tag || github.event.release.tag_name }}
 
 jobs:
   update:
     runs-on: ubuntu-latest
     environment: release
     steps:
-      - name: Compute tag name
-        id: tag
-        run: echo "name=${{ github.event.release.tag_name }}" >>$GITHUB_OUTPUT
-
       - name: Log into Azure
         uses: azure/login@v2
         with:
@@ -48,9 +53,8 @@ jobs:
           gh auth setup-git
           gh config set git_protocol https
 
-          TAG="${{ steps.tag.outputs.name }}"
           REPO="microsoft/VFSForGit"
-          BRANCH="automation/gitrelease-$TAG"
+          BRANCH="automation/gitrelease-$TAG_NAME"
           FILE=".github/workflows/build.yaml"
 
           # Clone VFS for Git repo (sparse partial clone for efficiency)
@@ -63,7 +67,7 @@ jobs:
           git checkout -b "$BRANCH"
 
           # Update the GIT_VERSION default in build.yaml
-          sed -i "/GIT_VERSION/s/|| '[^']*' }}/|| '$TAG' }}/" "$FILE"
+          sed -i "/GIT_VERSION/s/|| '[^']*' }}/|| '$TAG_NAME' }}/" "$FILE"
 
           # Verify the change was made
           if ! git diff --quiet "$FILE"; then
@@ -71,20 +75,17 @@ jobs:
             git config user.email "github-actions[bot]@users.noreply.github.com"
 
             git add "$FILE"
-            git commit -m "Update default Microsoft Git version to $TAG"
+            git commit -m "Update default Microsoft Git version to $TAG_NAME"
 
             # Push the new branch
             git push origin "$BRANCH"
 
             # Create the PR
             WORKFLOW_URL="https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
-            RELEASE_URL="https://github.com/microsoft/git/releases/tag/$TAG"
-            PR_TITLE="Update default Microsoft Git version to $TAG"
-            PR_BODY=$(cat <<EOF
-            This PR was automatically created by the [microsoft/git release workflow]($WORKFLOW_URL)
-            to update the default Microsoft Git version to [\`$TAG\`]($RELEASE_URL).
-            EOF
-            )
+            RELEASE_URL="https://github.com/microsoft/git/releases/tag/$TAG_NAME"
+            PR_TITLE="Update default Microsoft Git version to $TAG_NAME"
+            PR_BODY="This PR was automatically created by the [microsoft/git release workflow]($WORKFLOW_URL)
+          to update the default Microsoft Git version to [\`$TAG_NAME\`]($RELEASE_URL)."
 
             PR_URL=$(gh pr create \
               --repo "$REPO" \
@@ -93,5 +94,5 @@ jobs:
               --body "$PR_BODY")
             echo "::notice::Created VFS for Git PR: $PR_URL"
           else
-            echo "::warning::No changes detected in $FILE; GIT_VERSION may already be set to $TAG"
+            echo "::warning::No changes detected in $FILE; GIT_VERSION may already be set to $TAG_NAME"
           fi
