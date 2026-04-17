@@ -98,9 +98,14 @@ extends:
                     git_version=TODO_GITVER
                     tag_name=TODO_TAGNAME
                     tag_sha=TODO_TAGSHA
+                    echo "Git version: $git_version"
+                    echo "Tag name: $tag_name"
+                    echo "Tag SHA: $tag_sha"
                     echo "##vso[task.setvariable variable=git_version;isOutput=true;isReadOnly=true]$git_version"
                     echo "##vso[task.setvariable variable=tag_name;isOutput=true;isReadOnly=true]$tag_name"
                     echo "##vso[task.setvariable variable=tag_sha;isOutput=true;isReadOnly=true]$tag_sha"
+                    rev=$(echo "$(Build.BuildNumber)" | grep -oE '[0-9]+$')
+                    echo "##vso[build.updatebuildnumber]${tag_name} (rev:${rev})"
 
       - stage: build
         displayName: 'Build'
