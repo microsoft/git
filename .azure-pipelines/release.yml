@@ -158,7 +158,8 @@ extends:
                   - task: NuGetAuthenticate@1
                     displayName: 'Authenticate NuGet (ESRP)'
                     inputs:
-                      nuGetServiceConnections: $(esrpNuGetConnectionName)
+                      azureDevOpsServiceConnection: '$(esrpNuGetConnectionName)'
+                      feedUrl: 'https://microsoft.pkgs.visualstudio.com/_packaging/ESRP/nuget/v3/index.json'
                   - task: NuGetCommand@2
                     displayName: 'Download ESRP client'
                     inputs:
