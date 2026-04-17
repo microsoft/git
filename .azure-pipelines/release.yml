@@ -84,6 +84,8 @@ extends:
               name: GitClientPME-1ESHostedPool-intel-pc
               image: ubuntu-x86_64-ado1es
               os: linux
+            templateContext:
+              type: validationJob
             steps:
               - task: Bash@3
                 displayName: 'Resolve version and tag information'
