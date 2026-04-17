@@ -142,7 +142,9 @@ extends:
                   displayName: 'Dummy build'
                 # TODO: put final artifacts under $(Build.ArtifactStagingDirectory)/_final
                 - script: |
+                    mkdir $(Build.ArtifactStagingDirectory)/_final
                     echo "TODO" > $(Build.ArtifactStagingDirectory)/_final/placeholder.txt
+                  displayName: 'Dummy prepare artifacts'
 
           #
           # macOS build job (universal)
@@ -171,7 +173,9 @@ extends:
                 displayName: 'Dummy build'
               # TODO: put final artifacts under $(Build.ArtifactStagingDirectory)/_final
               - script: |
+                  mkdir -p $(Build.ArtifactStagingDirectory)/_final
                   echo "TODO" > $(Build.ArtifactStagingDirectory)/_final/placeholder.txt
+                displayName: 'Dummy prepare artifacts'
 
           #
           # Linux build jobs
@@ -204,7 +208,9 @@ extends:
                   displayName: 'Dummy build'
                 # TODO: put final artifacts under $(Build.ArtifactStagingDirectory)/_final
                 - script: |
+                    mkdir -p $(Build.ArtifactStagingDirectory)/_final
                     echo "TODO" > $(Build.ArtifactStagingDirectory)/_final/placeholder.txt
+                  displayName: 'Dummy prepare artifacts'
 
       - stage: release
         displayName: 'Release'
