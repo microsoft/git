@@ -48,7 +48,13 @@ Downloading and Installing
 If you're working in a monorepo and want to take advantage of the performance boosts in
 `microsoft/git`, then you can download the latest version installer for your OS from the
 [Releases page](https://github.com/microsoft/git/releases). Alternatively, you can opt to install
-via the command line, using the below instructions for supported OSes:
+via the command line, using the below instructions for supported OSes.
+
+Binary `.tar.gz` archives are also available for Linux (x64 and ARM64) and
+macOS (ARM64). They contain the installers' `usr/local` tree and can be
+extracted at the filesystem root. Linux archives require the same runtime
+dependencies as the Debian package; they do not make older distributions
+compatible.
 
 ## Windows
 
