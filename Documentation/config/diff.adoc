@@ -161,9 +161,9 @@ endif::git-diff[]
 	(e.g. `0.5`).  If not set, the default is 50%.  This setting
 	has no effect if rename detection is turned off.
 +
-	This config setting is also respected by linkgit:git-blame[1];
-	to limit blame to only consider exact renames, for example, set
-	`diff.renameThreshold = 100%`.
+This config setting is also respected by linkgit:git-blame[1];
+to limit blame to only consider exact renames, for example, set
+`diff.renameThreshold = 100%`.
 
 `diff.renames`::
 	Whether and how Git detects renames.  If set to `false`,
