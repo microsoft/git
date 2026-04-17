@@ -80,11 +80,8 @@ jobs:
             WORKFLOW_URL="https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
             RELEASE_URL="https://github.com/microsoft/git/releases/tag/$TAG"
             PR_TITLE="Update default Microsoft Git version to $TAG"
-            PR_BODY=$(cat <<EOF
-            This PR was automatically created by the [microsoft/git release workflow]($WORKFLOW_URL)
-            to update the default Microsoft Git version to [\`$TAG\`]($RELEASE_URL).
-            EOF
-            )
+            PR_BODY="This PR was automatically created by the [microsoft/git release workflow]($WORKFLOW_URL)
+          to update the default Microsoft Git version to [\`$TAG\`]($RELEASE_URL)."
 
             PR_URL=$(gh pr create \
               --repo "$REPO" \
