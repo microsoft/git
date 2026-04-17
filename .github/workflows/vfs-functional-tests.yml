@@ -59,6 +59,11 @@ jobs:
           def_ver="$(sed -n 's/DEF_VER=\(.*vfs.*\)/\1/p' GIT-VERSION-GEN)"
           test -n "$def_ver"
 
+          # VFSforGit cannot handle -rc versions; strip the `-rc` part, if any
+          case "$def_ver" in
+          *-rc*) def_ver=${def_ver%%-rc*}.vfs.${def_ver#*.vfs.};;
+          esac
+
           # Ensure that `git version` reflects DEF_VER
           case "$(git describe --match "v[0-9]*vfs*" HEAD)" in
           ${def_ver%%.vfs.*}.vfs.*) ;; # okay, we can use this
