@@ -56,7 +56,13 @@ jobs:
           NO_TCLTK: Yup
         run: |
           # We do require a VFS version
-          def_ver="$(sed -n 's/DEF_VER=\(.*vfs.*\)/\1/p' GIT-VERSION-GEN)"
+          def_ver="$(sed -n '/^DEF_VER=/{
+            s/^DEF_VER=\(.*vfs.*\)/\1/p
+            tq # already found a *.vfs.* one, skip next line
+            s/^DEF_VER=\(.*\)/\1.vfs.0.0/p
+            :q
+            q
+          }' GIT-VERSION-GEN)"
           test -n "$def_ver"
 
           # VFSforGit cannot handle -rc versions; strip the `-rc` part, if any
