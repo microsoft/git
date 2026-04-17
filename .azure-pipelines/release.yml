@@ -85,6 +85,7 @@ variables:
   # - esrpClientId
   # - esrpTenantId
   # - esrpKeyVaultName
+  # - esrpAuthCertName
   # - esrpSignReqCertName
 
 extends:
