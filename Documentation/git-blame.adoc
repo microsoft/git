@@ -25,9 +25,10 @@ lines.
 
 The origin of lines is automatically followed across whole-file
 renames (currently there is no option to turn the rename-following
-off). To follow lines moved from one file to another, or to follow
-lines that were copied and pasted from another file, etc., see the
-`-C` and `-M` options.
+off, but the minimum similarity threshold can be adjusted with
+`diff.renameThreshold`; see linkgit:git-diff[1]).  To follow lines
+moved from one file to another, or to follow lines that were copied
+and pasted from another file, etc., see the `-C` and `-M` options.
 
 The report does not tell you anything about lines which have been deleted or
 replaced; you need to use a tool such as `git diff` or the "pickaxe"

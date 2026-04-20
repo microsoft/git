@@ -126,6 +126,21 @@ test_expect_success 'test diff.renames unset' '
 	compare_diff_patch current expected
 '
 
+test_expect_success 'diff.renameThreshold=100% suppresses inexact rename in diff' '
+	git -c diff.renameThreshold=100% diff --cached $tree >current &&
+	compare_diff_patch current no-rename
+'
+
+test_expect_success 'diff.renameThreshold=1% detects rename in diff' '
+	git -c diff.renameThreshold=1% diff --cached $tree >current &&
+	compare_diff_patch current expected
+'
+
+test_expect_success '-M overrides diff.renameThreshold' '
+	git -c diff.renameThreshold=100% diff -M --cached $tree >current &&
+	compare_diff_patch current expected
+'
+
 test_expect_success 'favour same basenames over different ones' '
 	cp path1 another-path &&
 	git add another-path &&
@@ -153,6 +168,16 @@ test_expect_success 'favour same basenames even with minor differences' '
 	git show HEAD:path1 | sed "s/15/16/" > subdir/path1 &&
 	git status >out &&
 	test_grep "renamed: .*path1 -> subdir/path1" out
+'
+
+test_expect_success 'diff.renameThreshold with modified rename in status' '
+	git show HEAD:path1 | sed -e "s/Line 1/Changed 1/" \
+		-e "s/Line 2/Changed 2/" -e "s/Line 3/Changed 3/" >subdir/path1 &&
+	git add subdir/path1 &&
+	git -c diff.renameThreshold=100% status >out &&
+	test_grep ! "renamed:" out &&
+	git -c diff.renameThreshold=1% status >out &&
+	test_grep "renamed:" out
 '
 
 test_expect_success 'two files with same basename and same content' '
