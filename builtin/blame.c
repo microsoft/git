@@ -64,6 +64,7 @@ static int incremental;
 static int xdl_opts;
 static int abbrev = -1;
 static int no_whole_file_rename;
+static int blame_detect_rename = -1;
 static int show_progress;
 static char repeated_meta_color[COLOR_MAXLEN];
 static int coloring_mode;
@@ -784,6 +785,27 @@ static int git_blame_config(const char *var, const char *value,
 		}
 	}
 
+	if (!strcmp(var, "blame.renames")) {
+		blame_detect_rename = git_config_bool(var, value);
+		return 0;
+	}
+
+	/*
+	 * Blame does not use git_diff_basic_config in its config
+	 * chain, so diff_rename_score_default is not normally loaded.
+	 * Forward blame.renameThreshold as diff.renameThreshold to
+	 * set the global that repo_diff_setup() copies into
+	 * diff_options.rename_score.
+	 */
+	if (!strcmp(var, "blame.renamethreshold"))
+		return git_diff_basic_config("diff.renamethreshold",
+					     value, ctx, cb);
+
+	/* Same approach for blame.renameLimit; see above. */
+	if (!strcmp(var, "blame.renamelimit"))
+		return git_diff_basic_config("diff.renamelimit",
+					     value, ctx, cb);
+
 	if (!strcmp(var, "diff.algorithm")) {
 		long diff_algorithm;
 		if (!value)
@@ -1032,7 +1054,10 @@ int cmd_blame(int argc,
 	}
 parse_done:
 	revision_opts_finish(&revs);
-	no_whole_file_rename = !revs.diffopt.flags.follow_renames;
+	if (blame_detect_rename >= 0)
+		no_whole_file_rename = !blame_detect_rename;
+	if (!revs.diffopt.flags.follow_renames)
+		no_whole_file_rename = 1;
 	xdl_opts |= revs.diffopt.xdl_opts & XDF_INDENT_HEURISTIC;
 	revs.diffopt.flags.follow_renames = 0;
 	argc = parse_options_end(&ctx);
