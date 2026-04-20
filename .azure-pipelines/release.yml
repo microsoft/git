@@ -76,8 +76,6 @@ variables:
     value: '1ESGitClient-ESRP-App'
   - name: 'esrpMIConnectionName'
     value: '1ESGitClient-ESRP-MI'
-  - name: 'esrpNuGetConnectionName'
-    value: '1ESGitClient-ESRP-NuGet'
   - name: 'githubConnectionName'
     value: 'GitHub-MicrosoftGit'
   # ESRP signing variables set in the pipeline settings:
@@ -157,16 +155,13 @@ extends:
                 - ${{ if eq(parameters.esrp, true) }}:
                   - task: NuGetAuthenticate@1
                     displayName: 'Authenticate NuGet (ESRP)'
-                    inputs:
-                      azureDevOpsServiceConnection: '$(esrpNuGetConnectionName)'
-                      feedUrl: 'https://microsoft.pkgs.visualstudio.com/_packaging/ESRP/nuget/v3/index.json'
                   - task: NuGetCommand@2
                     displayName: 'Download ESRP client'
                     inputs:
                       command: custom
                       arguments: >-
                         install Microsoft.EsrpClient
-                        -source https://microsoft.pkgs.visualstudio.com/_packaging/ESRP/nuget/v3/index.json
+                        -source https://pkgs.dev.azure.com/mseng/1ES/_packaging/GitClient/nuget/v3/index.json
                         -OutputDirectory $(Agent.TempDirectory)/esrp
                   - powershell: |
                       $esrpTool = Get-ChildItem -Path "$(Agent.TempDirectory)\esrp" -Filter "ESRPClient.exe" -Recurse | Select-Object -First 1
