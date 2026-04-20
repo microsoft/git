@@ -154,6 +154,13 @@ endif::git-diff[]
 	`-l`.  If not set, the default value is currently 1000.  This
 	setting has no effect if rename detection is turned off.
 
+`diff.renameThreshold`::
+	The minimum similarity threshold for rename detection;
+	equivalent to the `git diff` option `-M`.  The value is a
+	percentage (e.g. `50%`), or a fraction between 0 and 1
+	(e.g. `0.5`).  If not set, the default is 50%.  This setting
+	has no effect if rename detection is turned off.
+
 `diff.renames`::
 	Whether and how Git detects renames.  If set to `false`,
 	rename detection is disabled. If set to `true`, basic rename
