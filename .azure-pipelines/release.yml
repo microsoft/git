@@ -177,9 +177,9 @@ extends:
                     inputs:
                       azureSubscription: $(esrpMIConnectionName)
                       KeyVaultName: $(esrpKeyVaultName)
-                      SecretsFilter: '$(esrpAuthCertName),$(esrpSignCertName)'
+                      SecretsFilter: '$(esrpAuthCertName),$(esrpSignReqCertName)'
                   - powershell: |
-                      $certs = @("$(esrpAuthCertName)", "$(esrpSignCertName)")
+                      $certs = @("$(esrpAuthCertName)", "$(esrpSignReqCertName)")
                       foreach ($cert in $certs) {
                         $path = "$(Agent.TempDirectory)\$cert.pfx"
                         Write-Host "Importing certificate: $cert"
