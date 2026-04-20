@@ -56,6 +56,7 @@
 static int diff_detect_rename_default;
 static int diff_indent_heuristic = 1;
 static int diff_rename_limit_default = 1000;
+static int diff_rename_score_default;
 static int diff_suppress_blank_empty;
 static enum git_colorbool diff_use_color_default = GIT_COLOR_UNKNOWN;
 static int diff_color_moved_default;
@@ -482,6 +483,16 @@ int git_diff_basic_config(const char *var, const char *value,
 
 	if (!strcmp(var, "diff.renamelimit")) {
 		diff_rename_limit_default = git_config_int(var, value, ctx->kvi);
+		return 0;
+	}
+
+	if (!strcmp(var, "diff.renamethreshold")) {
+		const char *arg = value;
+		if (!value)
+			return config_error_nonbool(var);
+		diff_rename_score_default = parse_rename_score(&arg);
+		if (*arg)
+			return error(_("invalid value for '%s': '%s'"), var, value);
 		return 0;
 	}
 
@@ -5166,6 +5177,7 @@ void repo_diff_setup(struct repository *r, struct diff_options *options)
 	options->add_remove = diff_addremove;
 	options->use_color = diff_use_color_default;
 	options->detect_rename = diff_detect_rename_default;
+	options->rename_score = diff_rename_score_default;
 	options->xdl_opts |= diff_algorithm;
 	if (diff_indent_heuristic)
 		DIFF_XDL_SET(options, INDENT_HEURISTIC);
