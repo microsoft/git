@@ -35,3 +35,21 @@ blame.markUnblamableLines::
 blame.markIgnoredLines::
 	Mark lines that were changed by an ignored revision that we attributed to
 	another commit with a '?' in the output of linkgit:git-blame[1].
+
+blame.renames::
+	If set to `false`, disable rename following in
+	linkgit:git-blame[1].  This option defaults to `true`.
+
+blame.renameThreshold::
+	The minimum similarity threshold for rename detection in
+	linkgit:git-blame[1]; equivalent to the `-M` option of
+	linkgit:git-diff[1].  The value is a percentage (e.g. `50%`),
+	or a fraction between 0 and 1 (e.g. `0.5`).  If not set, the
+	default is 50%.  To limit blame to only follow exact renames,
+	set `blame.renameThreshold = 100%`.
+
+blame.renameLimit::
+	The number of files to consider when performing rename
+	detection in linkgit:git-blame[1]; equivalent to the `-l`
+	option of linkgit:git-diff[1].  If not set, the default
+	value is currently 1000.
