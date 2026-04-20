@@ -172,21 +172,27 @@ extends:
                       Write-Host "Found ESRP client: $($esrpTool.FullName)"
                       Write-Host "##vso[task.setvariable variable=ESRP_TOOL]$($esrpTool.FullName)"
                     displayName: 'Locate ESRP client'
-                  - task: AzureKeyVault@2
-                    displayName: 'Download ESRP certificates'
+                  - task: AzureCLI@2
+                    displayName: 'Download and install ESRP certificates'
                     inputs:
                       azureSubscription: $(esrpMIConnectionName)
-                      KeyVaultName: $(esrpKeyVaultName)
-                      SecretsFilter: '$(esrpAuthCertName),$(esrpSignReqCertName)'
-                  - powershell: |
-                      $certs = @("$(esrpAuthCertName)", "$(esrpSignReqCertName)")
-                      foreach ($cert in $certs) {
-                        $path = "$(Agent.TempDirectory)\$cert.pfx"
-                        Write-Host "Importing certificate: $cert"
-                        $pfx = Import-PfxCertificate -FilePath $path -CertStoreLocation "Cert:\LocalMachine\My"
-                        Write-Host "  Thumbprint: $($pfx.Thumbprint)"
-                      }
-                    displayName: 'Install ESRP certificates'
+                      scriptType: pscore
+                      scriptLocation: inlineScript
+                      inlineScript: |
+                        $certs = @("$(esrpAuthCertName)", "$(esrpSignReqCertName)")
+                        foreach ($name in $certs) {
+                          $pfxPath = "$(Agent.TempDirectory)\$name.pfx"
+                          try {
+                            Write-Host "Downloading certificate: $name"
+                            az keyvault secret download --vault-name "$(esrpKeyVaultName)" --name $name --file $pfxPath --encoding base64
+                            if ($LASTEXITCODE -ne 0) { throw "Failed to download certificate '$name'" }
+                            Write-Host "Importing certificate: $name"
+                            $cert = Import-PfxCertificate -FilePath $pfxPath -CertStoreLocation "Cert:\LocalMachine\My"
+                            Write-Host "  Thumbprint: $($cert.Thumbprint)"
+                          } finally {
+                            if (Test-Path $pfxPath) { Remove-Item $pfxPath -Force }
+                          }
+                        }
                 # TODO: add tasks to set up Git for Windows SDK
                 # TODO: add tasks to build Git and installers
                 - script: |
