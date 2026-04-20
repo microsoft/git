@@ -47,6 +47,13 @@ include::fmt-merge-msg.adoc[]
 	currently defaults to 7000.  This setting has no effect if
 	rename detection is turned off.
 
+`merge.renameThreshold`::
+	The minimum similarity threshold for rename detection during
+	a merge.  If not specified, defaults to the value of
+	`diff.renameThreshold`.  See `diff.renameThreshold` for the
+	accepted value format.  This setting has no effect if rename
+	detection is turned off.
+
 `merge.renames`::
 	Whether Git detects renames.  If set to `false`, rename detection
 	is disabled. If set to `true`, basic rename detection is enabled.
