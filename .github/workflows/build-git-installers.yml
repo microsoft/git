@@ -109,7 +109,7 @@ jobs:
           git fetch "https://github.com/${{github.repository}}" refs/tags/${tag_name}:refs/tags/${tag_name} &&
           git reset --hard ${tag_name}
       - name: Log in to Azure
-        uses: azure/login@v2
+        uses: azure/login@v3
         with:
           client-id: ${{ secrets.AZURE_CLIENT_ID }}
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
@@ -178,7 +178,7 @@ jobs:
           git commit -s -m "mingw-w64-git: new version ($version)" PKGBUILD &&
           git bundle create "$b"/MINGW-packages.bundle origin/main..main)
       - name: Publish mingw-w64-${{matrix.arch.toolchain}}-git
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: "${{ matrix.arch.artifact }}"
           path: artifacts
@@ -222,7 +222,7 @@ jobs:
         run: |
           git clone --filter=blob:none --single-branch -b main https://github.com/git-for-windows/build-extra /usr/src/build-extra
       - name: Log in to Azure
-        uses: azure/login@v2
+        uses: azure/login@v3
         if: env.DO_WIN_CODESIGN == 'true'
         with:
           client-id: ${{ secrets.AZURE_CLIENT_ID }}
@@ -376,7 +376,7 @@ jobs:
           }
           exit $ret
       - name: Publish ${{matrix.type.name}}-${{matrix.arch.name}}
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: win-${{matrix.type.name}}-${{matrix.arch.name}}
           path: artifacts
@@ -414,7 +414,7 @@ jobs:
           lipo -create -output libintl.a /usr/local/opt/gettext/lib/libintl.a /opt/homebrew/opt/gettext/lib/libintl.a
 
       - name: Log in to Azure
-        uses: azure/login@v2
+        uses: azure/login@v3
         with:
           client-id: ${{ secrets.AZURE_CLIENT_ID }}
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
@@ -566,7 +566,7 @@ jobs:
           mv git/.github/macos-installer/disk-image/*.pkg git/.github/macos-installer/
 
       - name: Upload artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: macos-artifacts
           path: |
@@ -683,7 +683,7 @@ jobs:
           mv "$PKGNAME.deb" "$GITHUB_WORKSPACE"
 
       - name: Upload artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: linux-unsigned-${{ matrix.arch.name }}
           path: |
@@ -698,7 +698,7 @@ jobs:
     environment: release
     steps:
       - name: Log into Azure
-        uses: azure/login@v2
+        uses: azure/login@v3
         with:
           client-id: ${{ secrets.AZURE_CLIENT_ID }}
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
@@ -753,7 +753,7 @@ jobs:
           debsigs --sign=origin --verify --check microsoft-git_"$version"_${{ matrix.arch }}.deb
 
       - name: Upload artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: linux-${{ matrix.arch }}
           path: |
@@ -894,7 +894,7 @@ jobs:
           path: deb-package
 
       - name: Log into Azure
-        uses: azure/login@v2
+        uses: azure/login@v3
         with:
           client-id: ${{ secrets.AZURE_CLIENT_ID }}
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}

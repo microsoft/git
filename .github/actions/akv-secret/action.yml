@@ -50,5 +50,5 @@ inputs:
         encoded-secret base64> $env:ENV_SECRET
 
 runs:
-  using: node20
+  using: node24
   main: index.js
