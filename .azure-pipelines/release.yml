@@ -163,7 +163,7 @@ extends:
                 - task: BatchScript@1
                   displayName: 'Add Git Bash to PATH'
                   inputs:
-                    filename: ./.azure-pipelines/scripts/setup-git-bash.cmd
+                    filename: ./.azure-pipelines/scripts/windows/setup-git-bash.cmd
                 # Setup ESRP code signing for Windows (sets ESRP_TOOL)
                 - ${{ if eq(parameters.esrp, true) }}:
                   - template: .azure-pipelines/esrp/windows/setup.yml@self
