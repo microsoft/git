@@ -7,8 +7,6 @@
 #   ESRP_TOOL             - Path to ESRPClient.exe
 #   ESRP_CLIENT_ID        - Entra App ID for ESRP authentication
 #   ESRP_TENANT_ID        - Entra Tenant ID
-#   ESRP_AUTH_CERT_NAME   - Subject name of the authentication certificate
-#   ESRP_SIGN_CERT_NAME   - Subject name of the request signing certificate
 #
 # The script generates the auth and input JSON files and sets the
 # following ESRP client environment variables automatically:
@@ -33,14 +31,6 @@ if [ -z "${ESRP_CLIENT_ID:-}" ]; then
 fi
 if [ -z "${ESRP_TENANT_ID:-}" ]; then
 	echo "error: ESRP_TENANT_ID environment variable must be set" >&2
-	exit 1
-fi
-if [ -z "${ESRP_AUTH_CERT_NAME:-}" ]; then
-	echo "error: ESRP_AUTH_CERT_NAME environment variable must be set" >&2
-	exit 1
-fi
-if [ -z "${ESRP_SIGN_CERT_NAME:-}" ]; then
-	echo "error: ESRP_SIGN_CERT_NAME environment variable must be set" >&2
 	exit 1
 fi
 
@@ -70,12 +60,12 @@ cat > "$auth_json" <<EOF
   "TenantId": "$ESRP_TENANT_ID",
   "ClientId": "$ESRP_CLIENT_ID",
   "AuthCert": {
-    "SubjectName": "$ESRP_AUTH_CERT_NAME",
+    "SubjectName": "CN=$ESRP_CLIENT_ID.microsoft.com",
     "StoreLocation": "LocalMachine",
     "StoreName": "My"
   },
   "RequestSigningCert": {
-    "SubjectName": "$ESRP_SIGN_CERT_NAME",
+    "SubjectName": "CN=$ESRP_CLIENT_ID",
     "StoreLocation": "LocalMachine",
     "StoreName": "My"
   }

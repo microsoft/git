@@ -177,9 +177,10 @@ extends:
                 - script: |
                     echo $(mingwprefix)
                     echo $(toolchain)
-                    cp /c/Windows/System32/calc.exe $(Build.ArtifactStagingDirectory)/app/example1.exe
-                    cp /c/Windows/System32/calc.exe $(Build.ArtifactStagingDirectory)/app/example2.exe
-                    cp /c/Windows/System32/calc.exe $(Build.ArtifactStagingDirectory)/app/example3.exe
+                    mkdir $(Build.ArtifactStagingDirectory)\app
+                    copy C:\Windows\System32\calc.exe $(Build.ArtifactStagingDirectory)\app\example1.exe
+                    copy C:\Windows\System32\calc.exe $(Build.ArtifactStagingDirectory)\app\example2.exe
+                    copy C:\Windows\System32\calc.exe $(Build.ArtifactStagingDirectory)\app\example3.exe
                   displayName: 'Dummy build'
                 #
                 # To sign Windows binaries with ESRP, call esrpsign.sh
@@ -188,8 +189,6 @@ extends:
                 #   ESRP_TOOL           - set by the setup template above
                 #   ESRP_CLIENT_ID      - $(esrpClientId)
                 #   ESRP_TENANT_ID      - $(esrpTenantId)
-                #   ESRP_AUTH_CERT_NAME - $(esrpAuthCertName)
-                #   ESRP_SIGN_CERT_NAME - $(esrpSignCertName)
                 #
                 - ${{ if eq(parameters.esrp, true) }}:
                   - bash: |
@@ -202,8 +201,6 @@ extends:
                       ESRP_TOOL: $(ESRP_TOOL)
                       ESRP_CLIENT_ID: $(esrpClientId)
                       ESRP_TENANT_ID: $(esrpTenantId)
-                      ESRP_AUTH_CERT_NAME: $(esrpAuthCertName)
-                      ESRP_SIGN_CERT_NAME: $(esrpSignCertName)
                 # TODO: put final artifacts under $(Build.ArtifactStagingDirectory)/_final
                 - script: |
                     mkdir $(Build.ArtifactStagingDirectory)\_final
