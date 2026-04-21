@@ -172,35 +172,19 @@ extends:
                         -source https://pkgs.dev.azure.com/mseng/1ES/_packaging/GitClient/nuget/v3/index.json
                         -OutputDirectory $(Agent.TempDirectory)/esrp
                   - powershell: |
-                      $esrpTool = Get-ChildItem -Path "$(Agent.TempDirectory)\esrp" -Filter "ESRPClient.exe" -Recurse | Select-Object -First 1
-                      if (-not $esrpTool) {
-                        Write-Error "ESRPClient.exe not found"
-                        exit 1
-                      }
-                      Write-Host "Found ESRP client: $($esrpTool.FullName)"
-                      Write-Host "##vso[task.setvariable variable=ESRP_TOOL]$($esrpTool.FullName)"
+                      .\.azure-pipelines\esrp\windows\find-esrpclient.ps1 -SearchPath "$(Agent.TempDirectory)\esrp"
                     displayName: 'Locate ESRP client'
                   - task: AzureCLI@2
                     displayName: 'Download and install ESRP certificates'
                     inputs:
                       azureSubscription: $(esrpMIConnectionName)
                       scriptType: pscore
-                      scriptLocation: inlineScript
-                      inlineScript: |
-                        $certs = @("$(esrpAuthCertName)", "$(esrpSignReqCertName)")
-                        foreach ($name in $certs) {
-                          $pfxPath = "$(Agent.TempDirectory)\$name.pfx"
-                          try {
-                            Write-Host "Downloading certificate: $name"
-                            az keyvault secret download --vault-name "$(esrpKeyVaultName)" --name $name --file $pfxPath --encoding base64
-                            if ($LASTEXITCODE -ne 0) { throw "Failed to download certificate '$name'" }
-                            Write-Host "Importing certificate: $name"
-                            $cert = Import-PfxCertificate -FilePath $pfxPath -CertStoreLocation "Cert:\LocalMachine\My"
-                            Write-Host "  Thumbprint: $($cert.Thumbprint)"
-                          } finally {
-                            if (Test-Path $pfxPath) { Remove-Item $pfxPath -Force }
-                          }
-                        }
+                      scriptLocation: scriptPath
+                      scriptPath: .azure-pipelines/esrp/windows/import-esrpcerts.ps1
+                      arguments: >-
+                        -VaultName "$(esrpKeyVaultName)"
+                        -TempDir "$(Agent.TempDirectory)"
+                        -CertNames "$(esrpAuthCertName)","$(esrpSignReqCertName)"
                 # TODO: add tasks to set up Git for Windows SDK
                 # TODO: add tasks to build Git and installers
                 - script: |
