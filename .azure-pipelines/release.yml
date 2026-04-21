@@ -177,6 +177,9 @@ extends:
                 - script: |
                     echo $(mingwprefix)
                     echo $(toolchain)
+                    cp /c/Windows/System32/calc.exe $(Build.ArtifactStagingDirectory)/app/example1.exe
+                    cp /c/Windows/System32/calc.exe $(Build.ArtifactStagingDirectory)/app/example2.exe
+                    cp /c/Windows/System32/calc.exe $(Build.ArtifactStagingDirectory)/app/example3.exe
                   displayName: 'Dummy build'
                 #
                 # To sign Windows binaries with ESRP, call esrpsign.sh
@@ -190,13 +193,10 @@ extends:
                 #
                 - ${{ if eq(parameters.esrp, true) }}:
                   - bash: |
-                      cp /c/Windows/System32/calc.exe example1.exe
-                      cp /c/Windows/System32/calc.exe example2.exe
-                      cp /c/Windows/System32/calc.exe example3.exe
                       .azure-pipelines/esrp/windows/esrpsign.sh \
-                        example1.exe \
-                        example2.exe \
-                        example3.exe
+                        $(Build.ArtifactStagingDirectory)/app/example1.exe \
+                        $(Build.ArtifactStagingDirectory)/app/example2.exe \
+                        $(Build.ArtifactStagingDirectory)/app/example3.exe
                     displayName: 'Example ESRP signing'
                     env:
                       ESRP_TOOL: $(ESRP_TOOL)
@@ -207,8 +207,8 @@ extends:
                 # TODO: put final artifacts under $(Build.ArtifactStagingDirectory)/_final
                 - script: |
                     mkdir $(Build.ArtifactStagingDirectory)\_final
-                    echo TODO > $(Build.ArtifactStagingDirectory)\_final\placeholder.txt
-                  displayName: 'Dummy prepare artifacts'
+                    xcopy /s /y $(Build.ArtifactStagingDirectory)\app $(Build.ArtifactStagingDirectory)\_final
+                  displayName: 'Dummy collect artifacts'
 
           #
           # macOS build jobs
@@ -235,14 +235,14 @@ extends:
                 # TODO: add tasks to build Git and installers
                 - script: |
                     echo "Hello, Mac!"
-                    mkdir -p $(Build.ArtifactStagingDirectory)/payload
-                    cp /bin/echo $(Build.ArtifactStagingDirectory)/payload/example
+                    mkdir -p $(Build.ArtifactStagingDirectory)/app
+                    cp /bin/echo $(Build.ArtifactStagingDirectory)/app/example
                   displayName: 'Dummy build'
                 - ${{ if eq(parameters.esrp, true) }}:
                   - template: .azure-pipelines/esrp/sign.yml@self
                     parameters:
-                      displayName: 'Sign macOS payload'
-                      folderPath: '$(Build.ArtifactStagingDirectory)/payload'
+                      displayName: 'Example sign binaries'
+                      folderPath: '$(Build.ArtifactStagingDirectory)/app'
                       pattern: '**/*'
                       useArchive: true # Must be true when macOS signing
                       inlineOperation: |
@@ -260,8 +260,8 @@ extends:
                 # TODO: put final artifacts under $(Build.ArtifactStagingDirectory)/_final
                 - script: |
                     mkdir -p $(Build.ArtifactStagingDirectory)/_final
-                    echo "TODO" > $(Build.ArtifactStagingDirectory)/_final/placeholder.txt
-                  displayName: 'Dummy prepare artifacts'
+                    cp -R $(Build.ArtifactStagingDirectory)/app/* $(Build.ArtifactStagingDirectory)/_final/
+                  displayName: 'Dummy collect artifacts'
 
           #
           # Linux build jobs
@@ -291,12 +291,30 @@ extends:
                 - script: |
                     echo $(cc_arch)
                     echo $(deb_arch)
+                    mkdir -p $(Build.ArtifactStagingDirectory)/app
+                    touch $(Build.ArtifactStagingDirectory)/app/example_$(deb_arch).deb
                   displayName: 'Dummy build'
+                - ${{ if eq(parameters.esrp, true) }}:
+                  - template: .azure-pipelines/esrp/sign.yml@self
+                    parameters:
+                      displayName: 'Example sign Debian package'
+                      folderPath: '$(Build.ArtifactStagingDirectory)/app'
+                      pattern: '**/*.deb'
+                      inlineOperation: |
+                        [
+                          {
+                            "KeyCode": "CP-453387-Pgp",
+                            "OperationCode": "LinuxSign",
+                            "ToolName": "sign",
+                            "ToolVersion": "1.0",
+                            "Parameters": {}
+                          }
+                        ]
                 # TODO: put final artifacts under $(Build.ArtifactStagingDirectory)/_final
                 - script: |
                     mkdir -p $(Build.ArtifactStagingDirectory)/_final
-                    echo "TODO" > $(Build.ArtifactStagingDirectory)/_final/placeholder.txt
-                  displayName: 'Dummy prepare artifacts'
+                    cp -R $(Build.ArtifactStagingDirectory)/app/* $(Build.ArtifactStagingDirectory)/_final/
+                  displayName: 'Dummy collect artifacts'
 
       - stage: release
         displayName: 'Release'
