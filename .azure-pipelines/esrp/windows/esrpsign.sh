@@ -60,34 +60,31 @@ to_windows_path () {
 	cygpath -w "$1" 2>/dev/null || echo "$1"
 }
 
-# Generate auth JSON and set ESRP_AUTH_CONFIG
+# Generate auth JSON
 echo "==> Generating auth JSON..."
 auth_json="$WORK_DIR/auth.json"
-jq -n \
-	--arg tenant "$ESRP_TENANT_ID" \
-	--arg client "$ESRP_CLIENT_ID" \
-	--arg authCert "$ESRP_AUTH_CERT_NAME" \
-	--arg signCert "$ESRP_SIGN_CERT_NAME" \
-	'{
-		Version: "1.0.0",
-		AuthenticationType: "AAD_CERT",
-		TenantId: $tenant,
-		ClientId: $client,
-		AuthCert: {
-			SubjectName: $authCert,
-			StoreLocation: "LocalMachine",
-			StoreName: "My"
-		},
-		RequestSigningCert: {
-			SubjectName: $signCert,
-			StoreLocation: "LocalMachine",
-			StoreName: "My"
-		}
-	}' > "$auth_json"
+cat > "$auth_json" <<EOF
+{
+  "Version": "1.0.0",
+  "AuthenticationType": "AAD_CERT",
+  "TenantId": "$ESRP_TENANT_ID",
+  "ClientId": "$ESRP_CLIENT_ID",
+  "AuthCert": {
+    "SubjectName": "$ESRP_AUTH_CERT_NAME",
+    "StoreLocation": "LocalMachine",
+    "StoreName": "My"
+  },
+  "RequestSigningCert": {
+    "SubjectName": "$ESRP_SIGN_CERT_NAME",
+    "StoreLocation": "LocalMachine",
+    "StoreName": "My"
+  }
+}
+EOF
 
 # Build the SignRequestFiles JSON array
 echo "==> Preparing files for signing ($# file(s))..."
-files_json="[]"
+files_json=""
 for file in "$@"; do
 	if [ ! -f "$file" ]; then
 		echo "error: file not found: $file" >&2
@@ -96,10 +93,18 @@ for file in "$@"; do
 
 	abs_path="$(cd "$(dirname "$file")" && pwd)/$(basename "$file")"
 	win_path="$(to_windows_path "$abs_path")"
+	# Escape backslashes for JSON
+	win_path_escaped="${win_path//\\/\\\\}"
 	echo "    - $win_path"
-	files_json="$(echo "$files_json" | jq \
-		--arg path "$win_path" \
-		'. + [{SourceLocation: $path, DestinationLocation: $path}]')"
+
+	if [ -n "$files_json" ]; then
+		files_json+=","
+	fi
+	files_json+="
+      {
+        \"SourceLocation\": \"$win_path_escaped\",
+        \"DestinationLocation\": \"$win_path_escaped\"
+      }"
 done
 
 # Generate the input JSON
@@ -107,53 +112,57 @@ input_json="$WORK_DIR/input.json"
 output_json="$WORK_DIR/output.json"
 
 echo "==> Generating input JSON: $input_json"
-jq -n \
-	--argjson files "$files_json" \
-	'{
-		Version: "1.0.0",
-		SignBatches: [{
-			SourceLocationType: "UNC",
-			DestinationLocationType: "UNC",
-			SignRequestFiles: $files,
-			SigningInfo: {
-				Operations: [
-					{
-						KeyCode: "CP-231522",
-						OperationCode: "SigntoolSign",
-						ToolName: "sign",
-						ToolVersion: "1.0",
-						Parameters: {
-							OpusName: "Microsoft",
-							OpusInfo: "https://www.microsoft.com",
-							FileDigest: "/fd SHA256",
-							PageHash: "/NPH",
-							TimeStamp: "/tr \"http://rfc3161.gtm.corp.microsoft.com/TSS/HttpTspServer\" /td sha256"
-						}
-					},
-					{
-						KeyCode: "CP-231522",
-						OperationCode: "SigntoolVerify",
-						ToolName: "sign",
-						ToolVersion: "1.0",
-						Parameters: {}
-					}
-				]
-			}
-		}]
-	}' > "$input_json"
+cat > "$input_json" <<EOF
+{
+  "Version": "1.0.0",
+  "SignBatches": [
+    {
+      "SourceLocationType": "UNC",
+      "DestinationLocationType": "UNC",
+      "SignRequestFiles": [$files_json
+      ],
+      "SigningInfo": {
+        "Operations": [
+          {
+            "KeyCode": "CP-231522",
+            "OperationCode": "SigntoolSign",
+            "ToolName": "sign",
+            "ToolVersion": "1.0",
+            "Parameters": {
+              "OpusName": "Microsoft",
+              "OpusInfo": "https://www.microsoft.com",
+              "FileDigest": "/fd SHA256",
+              "PageHash": "/NPH",
+              "TimeStamp": "/tr \"http://rfc3161.gtm.corp.microsoft.com/TSS/HttpTspServer\" /td sha256"
+            }
+          },
+          {
+            "KeyCode": "CP-231522",
+            "OperationCode": "SigntoolVerify",
+            "ToolName": "sign",
+            "ToolVersion": "1.0",
+            "Parameters": {}
+          }
+        ]
+      }
+    }
+  ]
+}
+EOF
 
-# Generate policy JSON and set ESRP_POLICY_CONFIG
+# Generate policy JSON
 echo "==> Generating policy JSON..."
 policy_json="$WORK_DIR/policy.json"
-jq -n \
-	'{
-		Version: "1.0.0",
-		Intent: "ProductRelease",
-		ContentType: "Binaries",
-		ContentOrigin: "1stParty",
-		ProductState: "Current",
-		Audience: "ExternalBroad"
-	}' > "$policy_json"
+cat > "$policy_json" <<EOF
+{
+  "Version": "1.0.0",
+  "Intent": "ProductRelease",
+  "ContentType": "Binaries",
+  "ContentOrigin": "1stParty",
+  "ProductState": "Current",
+  "Audience": "ExternalBroad"
+}
+EOF
 
 # Export environment variables for ESRP client
 export ESRP_AUTH_CONFIG="$(to_windows_path "$auth_json")"
