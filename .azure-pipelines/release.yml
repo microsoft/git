@@ -235,7 +235,28 @@ extends:
                 # TODO: add tasks to build Git and installers
                 - script: |
                     echo "Hello, Mac!"
+                    mkdir -p $(Build.ArtifactStagingDirectory)/payload
+                    cp /bin/echo $(Build.ArtifactStagingDirectory)/payload/example
                   displayName: 'Dummy build'
+                - ${{ if eq(parameters.esrp, true) }}:
+                  - template: .azure-pipelines/esrp/sign.yml@self
+                    parameters:
+                      displayName: 'Sign macOS payload'
+                      folderPath: '$(Build.ArtifactStagingDirectory)/payload'
+                      pattern: '**/*'
+                      useArchive: true # Must be true when macOS signing
+                      inlineOperation: |
+                        [
+                          {
+                            "KeyCode": "CP-401337-Apple",
+                            "OperationCode": "MacAppDeveloperSign",
+                            "ToolName": "sign",
+                            "ToolVersion": "1.0",
+                            "Parameters": {
+                              "Hardening": "Enable"
+                            }
+                          }
+                        ]
                 # TODO: put final artifacts under $(Build.ArtifactStagingDirectory)/_final
                 - script: |
                     mkdir -p $(Build.ArtifactStagingDirectory)/_final
