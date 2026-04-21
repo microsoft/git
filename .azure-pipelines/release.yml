@@ -193,9 +193,9 @@ extends:
                 - ${{ if eq(parameters.esrp, true) }}:
                   - bash: |
                       .azure-pipelines/esrp/windows/esrpsign.sh \
-                        $(Build.ArtifactStagingDirectory)/app/example1.exe \
-                        $(Build.ArtifactStagingDirectory)/app/example2.exe \
-                        $(Build.ArtifactStagingDirectory)/app/example3.exe
+                        "$BUILD_ARTIFACTSTAGINGDIRECTORY/app/example1.exe" \
+                        "$BUILD_ARTIFACTSTAGINGDIRECTORY/app/example2.exe" \
+                        "$BUILD_ARTIFACTSTAGINGDIRECTORY/app/example3.exe"
                     displayName: 'Example ESRP signing'
                     env:
                       ESRP_TOOL: $(ESRP_TOOL)
