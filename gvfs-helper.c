@@ -388,6 +388,8 @@ static struct gh__global {
 	int main_creds_need_approval; /* try to only approve them once */
 
 	unsigned long connect_timeout_ms;
+
+	int prefetch_threads;
 } gh__global;
 
 enum gh__server_type {
@@ -2405,8 +2407,6 @@ static void finalize_prefetch_packfile(struct gh__request_params *params,
 	strbuf_release(&final_filename);
 }
 
-#define PREFETCH_MAX_WORKERS 4
-
 /*
  * Context for parallel index-pack execution.
  *
@@ -2623,29 +2623,44 @@ static void install_prefetch(struct gh__request_params *params,
 		goto cleanup;
 
 	/*
-	 * Phase 2: run index-pack on the extracted packfiles in
-	 * parallel and finalize each into the ODB.
+	 * Phase 2: run index-pack on the extracted packfiles and
+	 * finalize each into the ODB.
 	 *
-	 * Use up to PREFETCH_MAX_WORKERS concurrent index-pack
-	 * processes.  The entries are already in timestamp order
-	 * (oldest first), so the largest pack—the one that takes
-	 * the longest—starts immediately while the remaining
-	 * workers cycle through the smaller daily/hourly packs.
+	 * When gvfs.prefetchThreads is 1 (the default), process
+	 * packfiles sequentially without any thread infrastructure.
+	 * When set to a higher value, use up to that many concurrent
+	 * index-pack processes.
 	 *
-	 * When there is only one packfile there is no benefit from
-	 * the parallel infrastructure, so fall through to a simple
-	 * sequential index-pack + finalize.
+	 * The entries are already in timestamp order (oldest first),
+	 * so the largest pack—the one that takes the longest—starts
+	 * immediately while the remaining workers cycle through the
+	 * smaller daily/hourly packs.
 	 */
-	if (np == 1) {
-		my_run_index_pack(params, status,
-				  &entries[0].temp_path_pack,
-				  &entries[0].temp_path_idx,
-				  NULL);
-		if (status->ec == GH__ERROR_CODE__OK) {
-			finalize_prefetch_packfile(params, status, &entries[0]);
-			if (status->ec == GH__ERROR_CODE__OK)
-				nr_installed++;
+	if (gh__global.prefetch_threads <= 1) {
+		trace2_data_intmax(TR2_CAT, NULL,
+				   "prefetch/install_mode", 1);
+
+		if (gh__cmd_opts.show_progress)
+			params->progress = start_progress(
+				the_repository,
+				"Installing prefetch packfiles", np);
+
+		for (k = 0; k < np; k++) {
+			my_run_index_pack(params, status,
+					  &entries[k].temp_path_pack,
+					  &entries[k].temp_path_idx,
+					  NULL);
+			if (status->ec == GH__ERROR_CODE__OK) {
+				finalize_prefetch_packfile(params, status,
+							  &entries[k]);
+				if (status->ec == GH__ERROR_CODE__OK)
+					nr_installed++;
+			}
+			display_progress(params->progress, k + 1);
+			if (status->ec != GH__ERROR_CODE__OK)
+				break;
 		}
+		stop_progress(&params->progress);
 	} else {
 		struct prefetch_parallel_ctx pctx = {
 			.entries = entries,
@@ -2659,11 +2674,15 @@ static void install_prefetch(struct gh__request_params *params,
 		struct run_process_parallel_opts pp_opts = {
 			.tr2_category = TR2_CAT,
 			.tr2_label = "prefetch/index-pack",
-			.processes = MY_MIN(np, PREFETCH_MAX_WORKERS),
+			.processes = MY_MIN(np, gh__global.prefetch_threads),
 			.get_next_task = prefetch_get_next_task,
 			.task_finished = prefetch_task_finished,
 			.data = &pctx,
 		};
+
+		trace2_data_intmax(TR2_CAT, NULL,
+				   "prefetch/install_mode",
+				   gh__global.prefetch_threads);
 
 		if (gh__cmd_opts.show_progress)
 			pctx.progress = start_progress(
@@ -4660,6 +4679,16 @@ int cmd_main(int argc, const char **argv)
 	// TODO See "scalar.max-retries" (and maybe "gvfs.max-retries")
 
 	repo_config(the_repository, git_default_config, NULL);
+
+	/*
+	 * Read gvfs.prefetchThreads to control parallel index-pack
+	 * during prefetch.  Default to 1 (sequential) for safety.
+	 */
+	gh__global.prefetch_threads = 1;
+	repo_config_get_int(the_repository, "gvfs.prefetchthreads",
+			    &gh__global.prefetch_threads);
+	if (gh__global.prefetch_threads < 1)
+		gh__global.prefetch_threads = 1;
 
 	argc = parse_options(argc, argv, NULL, main_options, main_usage,
 			     PARSE_OPT_STOP_AT_NON_OPTION);
