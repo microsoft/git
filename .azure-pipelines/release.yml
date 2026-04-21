@@ -156,6 +156,10 @@ extends:
                     artifactName: '${{ dim.id }}'
               steps:
                 - checkout: self
+                - task: BatchScript@1
+                  displayName: 'Add Git Bash to PATH'
+                  inputs:
+                    filename: ./.azure-pipelines/scripts/setup-git-bash.cmd
                 - ${{ if eq(parameters.esrp, true) }}:
                   - task: NuGetAuthenticate@1
                     displayName: 'Authenticate NuGet (ESRP)'
