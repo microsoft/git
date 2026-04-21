@@ -113,21 +113,8 @@ extends:
                 displayName: 'Resolve version and tag information'
                 name: info
                 inputs:
-                  targetType: inline
-                  script: |
-                    set -euo pipefail
-
-                    tag_name="v2.53.0.vfs.0.0"
-                    tag_sha="$(git rev-parse HEAD)"
-                    git_version="2.53.0.vfs.0.0"
-
-                    echo "Git version: $git_version"
-                    echo "Tag name: $tag_name"
-                    echo "Tag SHA: $tag_sha"
-                    echo "##vso[task.setvariable variable=git_version;isOutput=true;isReadOnly=true]$git_version"
-                    echo "##vso[task.setvariable variable=tag_name;isOutput=true;isReadOnly=true]$tag_name"
-                    echo "##vso[task.setvariable variable=tag_sha;isOutput=true;isReadOnly=true]$tag_sha"
-                    echo "##vso[build.updatebuildnumber]${tag_name} ($(Build.BuildNumber))"
+                  targetType: filePath
+                  filePath: .azure-pipelines/scripts/resolve-version.sh
 
       - stage: build
         displayName: 'Build'
