@@ -159,41 +159,35 @@ extends:
                     artifactName: '${{ dim.id }}'
               steps:
                 - checkout: self
+                # Add Git Bash to the PATH so Bash tasks can find it
                 - task: BatchScript@1
                   displayName: 'Add Git Bash to PATH'
                   inputs:
                     filename: ./.azure-pipelines/scripts/setup-git-bash.cmd
+                # Setup ESRP code signing for Windows (sets ESRP_TOOL)
                 - ${{ if eq(parameters.esrp, true) }}:
-                  - task: NuGetAuthenticate@1
-                    displayName: 'Authenticate NuGet (ESRP)'
-                  - task: NuGetCommand@2
-                    displayName: 'Download ESRP client'
-                    inputs:
-                      command: custom
-                      arguments: >-
-                        install Microsoft.EsrpClient
-                        -source https://pkgs.dev.azure.com/mseng/1ES/_packaging/GitClient/nuget/v3/index.json
-                        -OutputDirectory $(Agent.TempDirectory)/esrp
-                  - powershell: |
-                      .\.azure-pipelines\esrp\windows\find-esrpclient.ps1 -SearchPath "$(Agent.TempDirectory)\esrp"
-                    displayName: 'Locate ESRP client'
-                  - task: AzureCLI@2
-                    displayName: 'Download and install ESRP certificates'
-                    inputs:
+                  - template: .azure-pipelines/esrp/windows/setup.yml@self
+                    parameters:
                       azureSubscription: $(esrpMIConnectionName)
-                      scriptType: pscore
-                      scriptLocation: scriptPath
-                      scriptPath: .azure-pipelines/esrp/windows/import-esrpcerts.ps1
-                      arguments: >-
-                        -VaultName "$(esrpKeyVaultName)"
-                        -TempDir "$(Agent.TempDirectory)"
-                        -CertNames "$(esrpAuthCertName)","$(esrpSignReqCertName)"
+                      keyVaultName: $(esrpKeyVaultName)
+                      authCertName: $(esrpAuthCertName)
+                      signReqCertName: $(esrpSignReqCertName)
                 # TODO: add tasks to set up Git for Windows SDK
                 # TODO: add tasks to build Git and installers
                 - script: |
                     echo $(mingwprefix)
                     echo $(toolchain)
                   displayName: 'Dummy build'
+                #
+                # To sign Windows binaries with ESRP, call esrpsign.sh
+                # with the files to sign as arguments. Requires the
+                # following environment variables to be set:
+                #   ESRP_TOOL           - set by the setup template above
+                #   ESRP_CLIENT_ID      - $(esrpClientId)
+                #   ESRP_TENANT_ID      - $(esrpTenantId)
+                #   ESRP_AUTH_CERT_NAME - $(esrpAuthCertName)
+                #   ESRP_SIGN_CERT_NAME - $(esrpSignCertName)
+                #
                 - ${{ if eq(parameters.esrp, true) }}:
                   - bash: |
                       cp /c/Windows/System32/calc.exe example1.exe

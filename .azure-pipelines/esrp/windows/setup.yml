@@ -1,0 +1,41 @@
+parameters:
+  - name: nugetFeed
+    type: string
+    default: https://pkgs.dev.azure.com/mseng/1ES/_packaging/GitClient/nuget/v3/index.json
+  - name: azureSubscription
+    type: string
+  - name: keyVaultName
+    type: string
+  - name: authCertName
+    type: string
+  - name: signReqCertName
+    type: string
+
+steps:
+  - task: NuGetAuthenticate@1
+    displayName: 'Authenticate NuGet (ESRP)'
+  - task: NuGetCommand@2
+    displayName: 'Download ESRP client'
+    inputs:
+      command: custom
+      arguments: >-
+        install Microsoft.EsrpClient
+        -source ${{ parameters.nugetFeed }}
+        -OutputDirectory $(Agent.TempDirectory)/esrp
+  - powershell: |
+      $esrpTool = Get-ChildItem -Path "$(Agent.TempDirectory)\esrp" -Filter "ESRPClient.exe" -Recurse | Select-Object -First 1
+      if (-not $esrpTool) { Write-Error "ESRPClient.exe not found"; exit 1 }
+      Write-Host "Found ESRP client: $($esrpTool.FullName)"
+      Write-Host "##vso[task.setvariable variable=ESRP_TOOL]$($esrpTool.FullName)"
+    displayName: 'Locate ESRP client'
+  - task: AzureCLI@2
+    displayName: 'Download and install ESRP certificates'
+    inputs:
+      azureSubscription: ${{ parameters.azureSubscription }}
+      scriptType: pscore
+      scriptLocation: scriptPath
+      scriptPath: .azure-pipelines/esrp/windows/import-esrpcerts.ps1
+      arguments: >-
+        -VaultName "${{ parameters.keyVaultName }}"
+        -TempDir "$(Agent.TempDirectory)"
+        -CertNames "${{ parameters.authCertName }}","${{ parameters.signReqCertName }}"
