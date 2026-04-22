@@ -399,15 +399,6 @@ int git_diff_ui_config(const char *var, const char *value,
 		diff_detect_rename_default = git_config_rename(var, value);
 		return 0;
 	}
-	if (!strcmp(var, "diff.renamethreshold")) {
-		const char *arg = value;
-		if (!value)
-			return config_error_nonbool(var);
-		diff_rename_score_default = parse_rename_score(&arg);
-		if (*arg)
-			return error(_("invalid value for '%s': '%s'"), var, value);
-		return 0;
-	}
 	if (!strcmp(var, "diff.autorefreshindex")) {
 		diff_auto_refresh_index = git_config_bool(var, value);
 		return 0;
@@ -491,6 +482,16 @@ int git_diff_basic_config(const char *var, const char *value,
 
 	if (!strcmp(var, "diff.renamelimit")) {
 		diff_rename_limit_default = git_config_int(var, value, ctx->kvi);
+		return 0;
+	}
+
+	if (!strcmp(var, "diff.renamethreshold")) {
+		const char *arg = value;
+		if (!value)
+			return config_error_nonbool(var);
+		diff_rename_score_default = parse_rename_score(&arg);
+		if (*arg)
+			return error(_("invalid value for '%s': '%s'"), var, value);
 		return 0;
 	}
 
