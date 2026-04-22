@@ -5,8 +5,10 @@
 #
 # Required environment variables:
 #   ESRP_TOOL             - Path to ESRPClient.exe
-#   ESRP_CLIENT_ID        - Entra App ID for ESRP authentication
-#   ESRP_TENANT_ID        - Entra Tenant ID
+#   ESRP_MI               - Managed identity client ID (for authentication)
+#   ESRP_CLIENT_ID        - ESRP app registration client ID
+#   ESRP_KV_NAME          - Key Vault name storing the signing request certificate
+#   ESRP_KV_SIGN_CERTNAME - Signing request certificate name in Key Vault
 #
 # Optional environment variables:
 #   ESRP_KEYCODE          - Signing key code (default: CP-231522)
@@ -28,12 +30,20 @@ if [ -z "${ESRP_TOOL:-}" ]; then
 	echo "error: ESRP_TOOL environment variable must be set" >&2
 	exit 1
 fi
+if [ -z "${ESRP_MI:-}" ]; then
+	echo "error: ESRP_MI environment variable must be set" >&2
+	exit 1
+fi
 if [ -z "${ESRP_CLIENT_ID:-}" ]; then
 	echo "error: ESRP_CLIENT_ID environment variable must be set" >&2
 	exit 1
 fi
-if [ -z "${ESRP_TENANT_ID:-}" ]; then
-	echo "error: ESRP_TENANT_ID environment variable must be set" >&2
+if [ -z "${ESRP_KV_NAME:-}" ]; then
+	echo "error: ESRP_KV_NAME environment variable must be set" >&2
+	exit 1
+fi
+if [ -z "${ESRP_KV_SIGN_CERTNAME:-}" ]; then
+	echo "error: ESRP_KV_SIGN_CERTNAME environment variable must be set" >&2
 	exit 1
 fi
 
@@ -86,18 +96,13 @@ auth_json="$WORK_DIR/auth.json"
 cat > "$auth_json" <<EOF
 {
   "Version": "1.0.0",
-  "AuthenticationType": "AAD_CERT",
-  "TenantId": "$ESRP_TENANT_ID",
-  "ClientId": "$ESRP_CLIENT_ID",
-  "AuthCert": {
-    "SubjectName": "CN=$ESRP_CLIENT_ID.microsoft.com",
-    "StoreLocation": "LocalMachine",
-    "StoreName": "My"
-  },
+  "AuthenticationType": "AAD_MSI",
+  "ClientId": "$ESRP_MI",
+  "EsrpClientId": "$ESRP_CLIENT_ID",
   "RequestSigningCert": {
-    "SubjectName": "CN=$ESRP_CLIENT_ID",
-    "StoreLocation": "LocalMachine",
-    "StoreName": "My"
+    "GetCertFromKeyVault": true,
+    "KeyVaultName": "$ESRP_KV_NAME",
+    "KeyVaultCertName": "$ESRP_KV_SIGN_CERTNAME"
   }
 }
 EOF

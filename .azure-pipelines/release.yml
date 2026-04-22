@@ -84,6 +84,7 @@ variables:
     value: 'GitHub-MicrosoftGit'
   # ESRP signing variables set in the pipeline settings:
   # - esrpEndpointUrl
+  # - esrpMI
   # - esrpClientId
   # - esrpTenantId
   # - esrpKeyVaultName
@@ -192,8 +193,10 @@ extends:
                 # with the files to sign as arguments. Requires the
                 # following environment variables to be set:
                 #   ESRP_TOOL           - set by the setup template above
+                #   ESRP_MI             - $(esrpMI)
                 #   ESRP_CLIENT_ID      - $(esrpClientId)
-                #   ESRP_TENANT_ID      - $(esrpTenantId)
+                #   ESRP_KV_NAME        - $(esrpKeyVaultName)
+                #   ESRP_KV_SIGN_CERTNAME - $(esrpSignReqCertName)
                 #
                 - ${{ if eq(parameters.esrp, true) }}:
                   - bash: |
@@ -204,8 +207,10 @@ extends:
                     displayName: 'Example ESRP signing'
                     env:
                       ESRP_TOOL: $(ESRP_TOOL)
+                      ESRP_MI: $(esrpMI)
                       ESRP_CLIENT_ID: $(esrpClientId)
-                      ESRP_TENANT_ID: $(esrpTenantId)
+                      ESRP_KV_NAME: $(esrpKeyVaultName)
+                      ESRP_KV_SIGN_CERTNAME: $(esrpSignReqCertName)
                       ESRP_KEYCODE: CP-230012 # TODO: remove once approved for 231522
                 # TODO: put final artifacts under $(Build.ArtifactStagingDirectory)/_final
                 - script: |
