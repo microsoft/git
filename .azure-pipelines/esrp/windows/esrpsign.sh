@@ -158,10 +158,29 @@ EOF
 export ESRP_AUTH_CONFIG="$(to_windows_path "$auth_json")"
 export ESRP_POLICY_CONFIG="$(to_windows_path "$policy_json")"
 
-# Sign the files
-echo "==> Invoking ESRP client..."
-"$(to_windows_path "$ESRP_TOOL")" sign \
-	-i "$(to_windows_path "$input_json")" \
-	-o "$(to_windows_path "$output_json")"
+# Print generated JSON files for debugging
+echo "==> Auth JSON:"
+cat "$auth_json"
+echo ""
+echo "==> Policy JSON:"
+cat "$policy_json"
+echo ""
+echo "==> Input JSON:"
+cat "$input_json"
+echo ""
 
-echo "==> Signing complete. Output: $output_json"
+# Sign the files
+esrp_tool_win="$(to_windows_path "$ESRP_TOOL")"
+input_json_win="$(to_windows_path "$input_json")"
+output_json_win="$(to_windows_path "$output_json")"
+
+echo "==> ESRP_AUTH_CONFIG=$ESRP_AUTH_CONFIG"
+echo "==> ESRP_POLICY_CONFIG=$ESRP_POLICY_CONFIG"
+echo "==> Running: $esrp_tool_win sign -i $input_json_win -o $output_json_win"
+"$esrp_tool_win" sign \
+	-i "$input_json_win" \
+	-o "$output_json_win"
+
+echo "==> Signing complete."
+echo "==> Output JSON:"
+cat "$output_json"
