@@ -30,6 +30,7 @@ parameters:
       - id: windows_x64
         jobName: 'Windows (x64)'
         pool: GitClientPME-1ESHostedPool-intel-pc
+        pool_arch: amd64
         image: win-x86_64-ado1es
         os: windows
         toolchain: x86_64
@@ -38,6 +39,7 @@ parameters:
       - id: windows_arm64
         jobName: 'Windows (ARM64)'
         pool: GitClientPME-1ESHostedPool-arm64-pc
+        pool_arch: arm64
         image: win-arm64-ado1es
         os: windows
         toolchain: clang-aarch64
@@ -58,6 +60,7 @@ parameters:
       - id: linux_x64
         jobName: 'Linux (x64)'
         pool: GitClientPME-1ESHostedPool-intel-pc
+        pool_arch: amd64
         image: ubuntu-x86_64-ado1es
         os: linux
         cc_arch: x86_64
@@ -66,6 +69,7 @@ parameters:
       - id: linux_arm64
         jobName: 'Linux (ARM64)'
         pool: GitClientPME-1ESHostedPool-arm64-pc
+        pool_arch: arm64
         image: ubuntu-arm64-ado1es
         os: linux
         cc_arch: aarch64
@@ -146,6 +150,7 @@ extends:
                 name: ${{ dim.pool }}
                 image: ${{ dim.image }}
                 os: ${{ dim.os }}
+                hostArchitecture: ${{ dim.pool_arch }}
               variables:
                 tag_name: $[stageDependencies.prereqs.prebuild.outputs['info.tag_name']]
                 tag_sha: $[stageDependencies.prereqs.prebuild.outputs['info.tag_sha']]
@@ -270,6 +275,7 @@ extends:
                 name: ${{ dim.pool }}
                 image: ${{ dim.image }}
                 os: ${{ dim.os }}
+                hostArchitecture: ${{ dim.pool_arch }}
               variables:
                 tag_name: $[stageDependencies.prereqs.prebuild.outputs['info.tag_name']]
                 tag_sha: $[stageDependencies.prereqs.prebuild.outputs['info.tag_sha']]
@@ -334,6 +340,7 @@ extends:
                 name: ${{ dim.pool }}
                 image: ${{ dim.image }}
                 os: ${{ dim.os }}
+                hostArchitecture: ${{ dim.pool_arch }}
               templateContext:
                 inputs:
                   - input: pipelineArtifact
@@ -376,6 +383,7 @@ extends:
                 name: ${{ dim.pool }}
                 image: ${{ dim.image }}
                 os: ${{ dim.os }}
+                hostArchitecture: ${{ dim.pool_arch }}
               templateContext:
                 inputs:
                   - input: pipelineArtifact
