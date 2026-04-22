@@ -37,7 +37,7 @@ fi
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # Create work dir and resolve its Windows path by cd-ing into it.
 WORK_DIR="$(mktemp -d)"
-WORK_DIR_WIN="$(cd "$WORK_DIR" && pwd -W)"
+WORK_DIR_WIN="$(cd "$WORK_DIR" && pwd -W | sed 's|/|\\|g')"
 
 echo "==> ESRP signing tool: $ESRP_TOOL"
 echo "==> Working directory: $WORK_DIR"
