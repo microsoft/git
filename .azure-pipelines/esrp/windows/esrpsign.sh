@@ -35,7 +35,9 @@ if [ -z "${ESRP_TENANT_ID:-}" ]; then
 fi
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# Create work dir and resolve its Windows path by cd-ing into it.
 WORK_DIR="$(mktemp -d)"
+WORK_DIR_WIN="$(cd "$WORK_DIR" && pwd -W)"
 
 echo "==> ESRP signing tool: $ESRP_TOOL"
 echo "==> Working directory: $WORK_DIR"
@@ -175,9 +177,9 @@ cat > "$policy_json" <<EOF
 }
 EOF
 
-# Export environment variables for ESRP client
-export ESRP_AUTH_CONFIG="$(to_windows_path "$auth_json")"
-export ESRP_POLICY_CONFIG="$(to_windows_path "$policy_json")"
+# Export environment variables for ESRP client (Windows paths)
+export ESRP_AUTH_CONFIG="$WORK_DIR_WIN\\auth.json"
+export ESRP_POLICY_CONFIG="$WORK_DIR_WIN\\policy.json"
 
 # Print generated JSON files for debugging
 echo "==> Auth JSON:"
@@ -192,8 +194,8 @@ echo ""
 
 # Sign the files
 esrp_tool_win="$(to_windows_path "$ESRP_TOOL")"
-input_json_win="$(to_windows_path "$input_json")"
-output_json_win="$(to_windows_path "$output_json")"
+input_json_win="$WORK_DIR_WIN\\input.json"
+output_json_win="$WORK_DIR_WIN\\output.json"
 
 echo "==> ESRP_AUTH_CONFIG=$ESRP_AUTH_CONFIG"
 echo "==> ESRP_POLICY_CONFIG=$ESRP_POLICY_CONFIG"
