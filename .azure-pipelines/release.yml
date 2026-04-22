@@ -303,7 +303,7 @@ extends:
                   - task: UseDotNet@2
                     displayName: 'Install .NET for ESRP'
                     inputs:
-                      packageType: runtime
+                      packageType: sdk
                       version: '8.x'
                   - template: .azure-pipelines/esrp/sign.yml@self
                     parameters:
