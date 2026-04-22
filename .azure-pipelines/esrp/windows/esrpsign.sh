@@ -35,7 +35,9 @@ if [ -z "${ESRP_TENANT_ID:-}" ]; then
 fi
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-WORK_DIR="$(mktemp -d)"
+# Use Windows temp dir for work files (avoids /tmp path issues with ESRPClient.exe)
+WORK_DIR="${TEMP:-${AGENT_TEMPDIRECTORY:-/tmp}}/esrpsign-$$"
+mkdir -p "$WORK_DIR"
 
 echo "==> ESRP signing tool: $ESRP_TOOL"
 echo "==> Working directory: $WORK_DIR"
@@ -49,13 +51,13 @@ fi
 to_windows_path () {
 	if command -v cygpath >/dev/null 2>&1; then
 		cygpath -w "$1"
-	elif [ "${1:0:1}" = "/" ]; then
-		# Manual MSYS/Git Bash path conversion: /d/path -> D:\path
-		drive="${1:1:1}"
+	elif [[ "$1" =~ ^/([a-zA-Z])/ ]]; then
+		# MSYS/Git Bash drive path: /d/path -> D:\path
+		drive="${BASH_REMATCH[1]}"
 		rest="${1:2}"
 		echo "${drive^^}:${rest//\//\\}"
 	else
-		echo "$1"
+		echo "${1//\//\\}"
 	fi
 }
 
