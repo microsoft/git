@@ -47,7 +47,16 @@ fi
 
 # Convert a path to Windows format (for ESRPClient.exe)
 to_windows_path () {
-	cygpath -w "$1" 2>/dev/null || echo "$1"
+	if command -v cygpath >/dev/null 2>&1; then
+		cygpath -w "$1"
+	elif [ "${1:0:1}" = "/" ]; then
+		# Manual MSYS/Git Bash path conversion: /d/path -> D:\path
+		drive="${1:1:1}"
+		rest="${1:2}"
+		echo "${drive^^}:${rest//\//\\}"
+	else
+		echo "$1"
+	fi
 }
 
 # Generate auth JSON
