@@ -35,9 +35,7 @@ if [ -z "${ESRP_TENANT_ID:-}" ]; then
 fi
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-# Use Windows temp dir for work files (avoids /tmp path issues with ESRPClient.exe)
-WORK_DIR="${TEMP:-${AGENT_TEMPDIRECTORY:-/tmp}}/esrpsign-$$"
-mkdir -p "$WORK_DIR"
+WORK_DIR="$(mktemp -d)"
 
 echo "==> ESRP signing tool: $ESRP_TOOL"
 echo "==> Working directory: $WORK_DIR"
@@ -47,18 +45,30 @@ if [ ! -f "$ESRP_TOOL" ]; then
 	exit 1
 fi
 
-# Convert a path to Windows format (for ESRPClient.exe)
+# Convert an MSYS2 path to Windows format for ESRPClient.exe.
 to_windows_path () {
+	# Prefer cygpath if available (full Git for Windows)
 	if command -v cygpath >/dev/null 2>&1; then
 		cygpath -w "$1"
-	elif [[ "$1" =~ ^/([a-zA-Z])/ ]]; then
-		# MSYS/Git Bash drive path: /d/path -> D:\path
-		drive="${BASH_REMATCH[1]}"
-		rest="${1:2}"
-		echo "${drive^^}:${rest//\//\\}"
-	else
-		echo "${1//\//\\}"
+		return
 	fi
+	case "$1" in
+	/[a-zA-Z]/*)
+		# Drive path: /d/path -> D:\path
+		drive=$(echo "$1" | cut -c2 | tr 'a-z' 'A-Z')
+		rest=$(echo "$1" | cut -c3-)
+		echo "${drive}:${rest}" | sed 's|/|\\|g'
+		;;
+	/*)
+		# Absolute path under MSYS2 root
+		root=$(cd / && pwd -W)
+		echo "${root}${1}" | sed 's|/|\\|g'
+		;;
+	# Relative or already-Windows path: just flip slashes
+	*)
+		echo "$1" | sed 's|/|\\|g'
+		;;
+	esac
 }
 
 # Generate auth JSON
