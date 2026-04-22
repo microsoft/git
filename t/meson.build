@@ -1002,6 +1002,7 @@ integration_tests = [
   't8013-blame-ignore-revs.sh',
   't8014-blame-ignore-fuzzy.sh',
   't8015-blame-diff-algorithm.sh',
+  't8016-blame-rename-config.sh',
   't8020-last-modified.sh',
   't8100-git-survey.sh',
   't9001-send-email.sh',
