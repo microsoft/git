@@ -295,7 +295,16 @@ extends:
                     echo $(cc_arch)
                     echo $(deb_arch)
                     mkdir -p $(Build.ArtifactStagingDirectory)/app
-                    touch $(Build.ArtifactStagingDirectory)/app/example_$(deb_arch).deb
+                    debroot=$(Build.ArtifactStagingDirectory)/pkgroot
+                    mkdir -p $debroot/DEBIAN
+                    cat > $debroot/DEBIAN/control <<CTRL
+                    Package: example
+                    Version: 1.0
+                    Architecture: $(deb_arch)
+                    Maintainer: test
+                    Description: dummy
+                    CTRL
+                    dpkg-deb --build $debroot $(Build.ArtifactStagingDirectory)/app/example_$(deb_arch).deb
                   displayName: 'Dummy build'
                 - ${{ if eq(parameters.esrp, true) }}:
                   # ESRP ADO tasks require .NET, so we install it here since the
