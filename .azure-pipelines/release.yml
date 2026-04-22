@@ -206,6 +206,7 @@ extends:
                       ESRP_TOOL: $(ESRP_TOOL)
                       ESRP_CLIENT_ID: $(esrpClientId)
                       ESRP_TENANT_ID: $(esrpTenantId)
+                      ESRP_KEYCODE: CP-230012 # TODO: remove once approved for 231522
                 # TODO: put final artifacts under $(Build.ArtifactStagingDirectory)/_final
                 - script: |
                     mkdir $(Build.ArtifactStagingDirectory)\_final
