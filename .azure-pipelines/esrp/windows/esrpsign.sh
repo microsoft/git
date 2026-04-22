@@ -8,6 +8,9 @@
 #   ESRP_CLIENT_ID        - Entra App ID for ESRP authentication
 #   ESRP_TENANT_ID        - Entra Tenant ID
 #
+# Optional environment variables:
+#   ESRP_KEYCODE          - Signing key code (default: CP-231522)
+#
 # The script generates the auth and input JSON files and sets the
 # following ESRP client environment variables automatically:
 #   ESRP_AUTH_CONFIG       - Path to the generated auth JSON
@@ -35,6 +38,10 @@ if [ -z "${ESRP_TENANT_ID:-}" ]; then
 fi
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# Check for overriden key code, otherwise use default (Microsoft Third-Party/OSS)
+ESRP_KEYCODE="${ESRP_KEYCODE:-CP-231522}"
+
 # Create work dir and resolve its Windows path by cd-ing into it.
 WORK_DIR="$(mktemp -d)"
 WORK_DIR_WIN="$(cd "$WORK_DIR" && pwd -W | sed 's|/|\\|g')"
@@ -137,7 +144,7 @@ cat > "$input_json" <<EOF
       "SigningInfo": {
         "Operations": [
           {
-            "KeyCode": "CP-231522",
+            "KeyCode": "$ESRP_KEYCODE",
             "OperationCode": "SigntoolSign",
             "ToolName": "sign",
             "ToolVersion": "1.0",
@@ -150,7 +157,7 @@ cat > "$input_json" <<EOF
             }
           },
           {
-            "KeyCode": "CP-231522",
+            "KeyCode": "$ESRP_KEYCODE",
             "OperationCode": "SigntoolVerify",
             "ToolName": "sign",
             "ToolVersion": "1.0",
