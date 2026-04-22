@@ -2,14 +2,6 @@ parameters:
   - name: nugetFeed
     type: string
     default: https://pkgs.dev.azure.com/mseng/1ES/_packaging/GitClient/nuget/v3/index.json
-  - name: azureSubscription
-    type: string
-  - name: keyVaultName
-    type: string
-  - name: authCertName
-    type: string
-  - name: signReqCertName
-    type: string
 
 steps:
   - task: NuGetAuthenticate@1
@@ -28,14 +20,3 @@ steps:
       Write-Host "Found ESRP client: $($esrpTool.FullName)"
       Write-Host "##vso[task.setvariable variable=ESRP_TOOL]$($esrpTool.FullName)"
     displayName: 'Locate ESRP client'
-  - task: AzureCLI@2
-    displayName: 'Download and install ESRP certificates'
-    inputs:
-      azureSubscription: ${{ parameters.azureSubscription }}
-      scriptType: pscore
-      scriptLocation: scriptPath
-      scriptPath: .azure-pipelines/esrp/windows/import-esrpcerts.ps1
-      arguments: >-
-        -VaultName "${{ parameters.keyVaultName }}"
-        -TempDir "$(Agent.TempDirectory)"
-        -CertNames "${{ parameters.authCertName }}","${{ parameters.signReqCertName }}"

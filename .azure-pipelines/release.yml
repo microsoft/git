@@ -88,7 +88,6 @@ variables:
   # - esrpClientId
   # - esrpTenantId
   # - esrpKeyVaultName
-  # - esrpAuthCertName
   # - esrpSignReqCertName
 
 extends:
@@ -173,11 +172,6 @@ extends:
                 # Setup ESRP code signing for Windows (sets ESRP_TOOL)
                 - ${{ if eq(parameters.esrp, true) }}:
                   - template: .azure-pipelines/esrp/windows/setup.yml@self
-                    parameters:
-                      azureSubscription: $(esrpMIConnectionName)
-                      keyVaultName: $(esrpKeyVaultName)
-                      authCertName: $(esrpAuthCertName)
-                      signReqCertName: $(esrpSignReqCertName)
                 # TODO: add tasks to set up Git for Windows SDK
                 # TODO: add tasks to build Git and installers
                 - script: |
