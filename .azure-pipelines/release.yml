@@ -80,6 +80,8 @@ variables:
     value: '1ESGitClient-ESRP-App'
   - name: 'esrpMIConnectionName'
     value: '1ESGitClient-ESRP-MI'
+  - name: 'esrpMIConnectionId'
+    value: '4d9dfb25-048b-42c8-a3cf-8d795d0c8a75'
   - name: 'githubConnectionName'
     value: 'GitHub-MicrosoftGit'
   # ESRP signing variables set in the pipeline settings:
@@ -176,7 +178,7 @@ extends:
                       managedIdentity: $(esrpMI)
                       esrpClientId: $(esrpClientId)
                       tenantId: $(esrpTenantId)
-                      serviceConnectionName: $(esrpMIConnectionName)
+                      serviceConnectionId: $(esrpMIConnectionId)
                       keyVaultName: $(esrpKeyVaultName)
                       signCertName: $(esrpSignReqCertName)
                 # TODO: add tasks to set up Git for Windows SDK
