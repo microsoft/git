@@ -197,6 +197,7 @@ extends:
                 # following environment variables to be set:
                 #   ESRP_TOOL           - set by the setup template above
                 #   ESRP_AUTH           - set by the setup template above
+                #   SYSTEM_ACCESSTOKEN  - $(System.AccessToken)
                 #
                 - ${{ if eq(parameters.esrp, true) }}:
                   - bash: |
@@ -208,6 +209,7 @@ extends:
                     env:
                       ESRP_TOOL: $(ESRP_TOOL)
                       ESRP_AUTH: $(ESRP_AUTH)
+                      SYSTEM_ACCESSTOKEN: $(System.AccessToken)
                 # TODO: put final artifacts under $(Build.ArtifactStagingDirectory)/_final
                 - script: |
                     mkdir $(Build.ArtifactStagingDirectory)\_final
