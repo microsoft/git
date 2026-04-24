@@ -33,13 +33,24 @@ steps:
       Write-Host "##vso[task.setvariable variable=ESRP_TOOL]$($esrpTool.FullName)"
     displayName: 'Locate ESRP client'
   - powershell: |
-      $url = "$(System.CollectionUri)$(System.TeamProject)/_apis/serviceendpoint/endpoints?endpointNames=${{ parameters.serviceConnectionName }}&api-version=7.1"
-      Write-Host "Resolving service connection: ${{ parameters.serviceConnectionName }}"
-      $response = Invoke-RestMethod -Uri $url -Headers @{
-        Authorization = "Bearer $env:SYSTEM_ACCESSTOKEN"
+      $name = "${{ parameters.serviceConnectionName }}"
+      $encodedName = [Uri]::EscapeDataString($name)
+      $url = "$(System.CollectionUri)$(System.TeamProject)/_apis/serviceendpoint/endpoints?endpointNames=$encodedName&api-version=7.1"
+      Write-Host "Resolving service connection: $name"
+      Write-Host "URL: $url"
+      try {
+        $response = Invoke-RestMethod -Uri $url -Headers @{
+          Authorization = "Bearer $env:SYSTEM_ACCESSTOKEN"
+        }
+      } catch {
+        Write-Host "HTTP request failed: $_"
+        Write-Host "Status code: $($_.Exception.Response.StatusCode)"
+        throw
       }
+      Write-Host "Response count: $($response.count)"
+      Write-Host "Response: $($response | ConvertTo-Json -Depth 3)"
       if ($response.count -eq 0) {
-        Write-Error "Service connection '${{ parameters.serviceConnectionName }}' not found"
+        Write-Error "Service connection '$name' not found"
         exit 1
       }
       $id = $response.value[0].id
