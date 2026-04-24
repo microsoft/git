@@ -176,7 +176,7 @@ extends:
                       managedIdentity: $(esrpMI)
                       esrpClientId: $(esrpClientId)
                       tenantId: $(esrpTenantId)
-                      serviceConnectionId: $(esrpMIConnectionId)
+                      serviceConnectionName: $(esrpMIConnectionName)
                       keyVaultName: $(esrpKeyVaultName)
                       signCertName: $(esrpSignReqCertName)
                 # TODO: add tasks to set up Git for Windows SDK

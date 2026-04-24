@@ -8,7 +8,7 @@ parameters:
     type: string
   - name: tenantId
     type: string
-  - name: serviceConnectionId
+  - name: serviceConnectionName
     type: string
   - name: keyVaultName
     type: string
@@ -33,6 +33,22 @@ steps:
       Write-Host "##vso[task.setvariable variable=ESRP_TOOL]$($esrpTool.FullName)"
     displayName: 'Locate ESRP client'
   - powershell: |
+      $url = "$(System.CollectionUri)$(System.TeamProject)/_apis/serviceendpoint/endpoints?endpointNames=${{ parameters.serviceConnectionName }}&api-version=7.1"
+      Write-Host "Resolving service connection: ${{ parameters.serviceConnectionName }}"
+      $response = Invoke-RestMethod -Uri $url -Headers @{
+        Authorization = "Bearer $env:SYSTEM_ACCESSTOKEN"
+      }
+      if ($response.count -eq 0) {
+        Write-Error "Service connection '${{ parameters.serviceConnectionName }}' not found"
+        exit 1
+      }
+      $id = $response.value[0].id
+      Write-Host "Service connection ID: $id"
+      Write-Host "##vso[task.setvariable variable=ESRP_SERVICE_CONNECTION_ID]$id"
+    displayName: 'Resolve ESRP service connection ID'
+    env:
+      SYSTEM_ACCESSTOKEN: $(System.AccessToken)
+  - powershell: |
       $authJson = @{
         Version = "1.0.0"
         AuthenticationType = "AAD_MSI_WIF"
@@ -46,7 +62,7 @@ steps:
           ProjectId = "$(System.TeamProjectId)"
           Hub = "$(System.HostType)"
           Uri = "$(System.CollectionUri)"
-          ServiceConnectionId = "${{ parameters.serviceConnectionId }}"
+          ServiceConnectionId = "$(ESRP_SERVICE_CONNECTION_ID)"
           SystemAccessToken = "SYSTEM_ACCESSTOKEN"
         }
         RequestSigningCert = @{
