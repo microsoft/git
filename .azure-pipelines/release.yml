@@ -169,9 +169,16 @@ extends:
                   displayName: 'Add Git Bash to PATH'
                   inputs:
                     filename: ./.azure-pipelines/scripts/windows/setup-git-bash.cmd
-                # Setup ESRP code signing for Windows (sets ESRP_TOOL)
+                # Setup ESRP code signing for Windows (sets ESRP_TOOL, ESRP_AUTH)
                 - ${{ if eq(parameters.esrp, true) }}:
                   - template: .azure-pipelines/esrp/windows/setup.yml@self
+                    parameters:
+                      managedIdentity: $(esrpMI)
+                      esrpClientId: $(esrpClientId)
+                      tenantId: $(esrpTenantId)
+                      serviceConnectionId: $(esrpMIConnectionId)
+                      keyVaultName: $(esrpKeyVaultName)
+                      signCertName: $(esrpSignReqCertName)
                 # TODO: add tasks to set up Git for Windows SDK
                 # TODO: add tasks to build Git and installers
                 - script: |
@@ -187,10 +194,7 @@ extends:
                 # with the files to sign as arguments. Requires the
                 # following environment variables to be set:
                 #   ESRP_TOOL           - set by the setup template above
-                #   ESRP_MI             - $(esrpMI)
-                #   ESRP_CLIENT_ID      - $(esrpClientId)
-                #   ESRP_KV_NAME        - $(esrpKeyVaultName)
-                #   ESRP_KV_SIGN_CERTNAME - $(esrpSignReqCertName)
+                #   ESRP_AUTH           - set by the setup template above
                 #
                 - ${{ if eq(parameters.esrp, true) }}:
                   - bash: |
@@ -201,10 +205,7 @@ extends:
                     displayName: 'Example ESRP signing'
                     env:
                       ESRP_TOOL: $(ESRP_TOOL)
-                      ESRP_MI: $(esrpMI)
-                      ESRP_CLIENT_ID: $(esrpClientId)
-                      ESRP_KV_NAME: $(esrpKeyVaultName)
-                      ESRP_KV_SIGN_CERTNAME: $(esrpSignReqCertName)
+                      ESRP_AUTH: $(ESRP_AUTH)
                 # TODO: put final artifacts under $(Build.ArtifactStagingDirectory)/_final
                 - script: |
                     mkdir $(Build.ArtifactStagingDirectory)\_final

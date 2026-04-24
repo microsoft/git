@@ -2,6 +2,18 @@ parameters:
   - name: nugetFeed
     type: string
     default: https://pkgs.dev.azure.com/mseng/1ES/_packaging/GitClient/nuget/v3/index.json
+  - name: managedIdentity
+    type: string
+  - name: esrpClientId
+    type: string
+  - name: tenantId
+    type: string
+  - name: serviceConnectionId
+    type: string
+  - name: keyVaultName
+    type: string
+  - name: signCertName
+    type: string
 
 steps:
   - task: NuGetAuthenticate@1
@@ -20,3 +32,34 @@ steps:
       Write-Host "Found ESRP client: $($esrpTool.FullName)"
       Write-Host "##vso[task.setvariable variable=ESRP_TOOL]$($esrpTool.FullName)"
     displayName: 'Locate ESRP client'
+  - powershell: |
+      $authJson = @{
+        Version = "1.0.0"
+        AuthenticationType = "AAD_MSI_WIF"
+        EsrpClientId = "${{ parameters.esrpClientId }}"
+        ClientId = "${{ parameters.managedIdentity }}"
+        TenantId = "${{ parameters.tenantId }}"
+        AADAuthorityBaseUri = "https://login.microsoftonline.com/"
+        FederatedTokenData = @{
+          JobId = "$(System.JobId)"
+          PlanId = "$(System.PlanId)"
+          ProjectId = "$(System.TeamProjectId)"
+          Hub = "$(System.HostType)"
+          Uri = "$(System.CollectionUri)"
+          ServiceConnectionId = "${{ parameters.serviceConnectionId }}"
+          SystemAccessToken = "SYSTEM_ACCESSTOKEN"
+        }
+        RequestSigningCert = @{
+          GetCertFromKeyVault = $true
+          KeyVaultName = "${{ parameters.keyVaultName }}"
+          KeyVaultCertName = "${{ parameters.signCertName }}"
+        }
+      } | ConvertTo-Json -Depth 4
+
+      $authPath = "$(Agent.TempDirectory)\esrp-auth.json"
+      $authJson | Set-Content -Path $authPath -Encoding UTF8
+      Write-Host "Generated ESRP auth JSON: $authPath"
+      Write-Host "##vso[task.setvariable variable=ESRP_AUTH]$authPath"
+    displayName: 'Generate ESRP auth JSON'
+    env:
+      SYSTEM_ACCESSTOKEN: $(System.AccessToken)

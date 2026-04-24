@@ -5,18 +5,15 @@
 #
 # Required environment variables:
 #   ESRP_TOOL             - Path to ESRPClient.exe
-#   ESRP_MI               - Managed identity client ID (for authentication)
-#   ESRP_CLIENT_ID        - ESRP app registration client ID
-#   ESRP_KV_NAME          - Key Vault name storing the signing request certificate
-#   ESRP_KV_SIGN_CERTNAME - Signing request certificate name in Key Vault
+#   ESRP_AUTH             - Path to the ESRP auth JSON file
 #
 # Optional environment variables:
 #   ESRP_KEYCODE          - Signing key code (default: CP-231522)
 #
 # The script generates the auth and input JSON files and sets the
 # following ESRP client environment variables automatically:
-#   ESRP_AUTH_CONFIG       - Path to the generated auth JSON
-#   ESRP_POLICY_CONFIG     - Path to the generated policy JSON
+#   ESRP_AUTH_CONFIG       - Path to the auth JSON file
+#   ESRP_POLICY_CONFIG     - Path to the policy JSON file
 #   ESRP_SESSION_CONFIG    - Not set; ESRP client defaults are used
 #
 set -euo pipefail
@@ -30,20 +27,8 @@ if [ -z "${ESRP_TOOL:-}" ]; then
 	echo "error: ESRP_TOOL environment variable must be set" >&2
 	exit 1
 fi
-if [ -z "${ESRP_MI:-}" ]; then
-	echo "error: ESRP_MI environment variable must be set" >&2
-	exit 1
-fi
-if [ -z "${ESRP_CLIENT_ID:-}" ]; then
-	echo "error: ESRP_CLIENT_ID environment variable must be set" >&2
-	exit 1
-fi
-if [ -z "${ESRP_KV_NAME:-}" ]; then
-	echo "error: ESRP_KV_NAME environment variable must be set" >&2
-	exit 1
-fi
-if [ -z "${ESRP_KV_SIGN_CERTNAME:-}" ]; then
-	echo "error: ESRP_KV_SIGN_CERTNAME environment variable must be set" >&2
+if [ -z "${ESRP_AUTH:-}" ]; then
+	echo "error: ESRP_AUTH environment variable must be set" >&2
 	exit 1
 fi
 
@@ -89,23 +74,6 @@ to_windows_path () {
 		;;
 	esac
 }
-
-# Generate auth JSON
-echo "==> Generating auth JSON..."
-auth_json="$WORK_DIR/auth.json"
-cat > "$auth_json" <<EOF
-{
-  "Version": "1.0.0",
-  "AuthenticationType": "AAD_MSI",
-  "ClientId": "$ESRP_MI",
-  "EsrpClientId": "$ESRP_CLIENT_ID",
-  "RequestSigningCert": {
-    "GetCertFromKeyVault": true,
-    "KeyVaultName": "$ESRP_KV_NAME",
-    "KeyVaultCertName": "$ESRP_KV_SIGN_CERTNAME"
-  }
-}
-EOF
 
 # Build the SignRequestFiles JSON array
 echo "==> Preparing files for signing ($# file(s))..."
@@ -189,13 +157,13 @@ cat > "$policy_json" <<EOF
 }
 EOF
 
-# Export environment variables for ESRP client (Windows paths)
-export ESRP_AUTH_CONFIG="$WORK_DIR_WIN\\auth.json"
+# Use auth JSON from ESRP_AUTH
+export ESRP_AUTH_CONFIG="$(to_windows_path "$ESRP_AUTH")"
 export ESRP_POLICY_CONFIG="$WORK_DIR_WIN\\policy.json"
 
 # Print generated JSON files for debugging
 echo "==> Auth JSON:"
-cat "$auth_json"
+cat "$ESRP_AUTH"
 echo ""
 echo "==> Policy JSON:"
 cat "$policy_json"
