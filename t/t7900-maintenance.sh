@@ -582,7 +582,16 @@ run_and_verify_geometric_pack () {
 
 	# And verify that there are no loose objects anymore.
 	git count-objects -v >count &&
-	test_grep '^count: 0$' count
+	test_grep '^count: 0$' count &&
+
+	# Verify that no orphaned .idx files were left behind. On
+	# Windows, a missing odb_to_close causes the parent to hold
+	# mmap handles on .idx files, silently preventing their
+	# deletion by the child git-repack process.
+	ls .git/objects/pack/pack-*.idx .git/objects/pack/pack-*.pack |
+	sed "s/\.pack$/.idx/" |
+	sort | uniq -u >orphaned-idx &&
+	test_must_be_empty orphaned-idx
 }
 
 test_expect_success 'geometric repacking task' '
@@ -630,7 +639,18 @@ test_expect_success 'geometric repacking task' '
 
 		# And these two small packs should now be merged via the
 		# geometric repack. The large packfile should remain intact.
+		cp -R .git/objects .git/objects.save &&
 		run_and_verify_geometric_pack 2 &&
+
+		# On Windows, verify the same with legacy delete semantics
+		# that reject deletion of mmap-held .idx files.
+		if test_have_prereq MINGW
+		then
+			rm -rf .git/objects &&
+			mv .git/objects.save .git/objects &&
+			test_env GIT_TEST_LEGACY_DELETE=1 \
+				run_and_verify_geometric_pack 2
+		fi &&
 
 		# If we now add two more objects and repack twice we should
 		# then see another all-into-one repack. This time around

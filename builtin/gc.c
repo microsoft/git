@@ -1621,6 +1621,7 @@ static int maintenance_task_geometric_repack(struct maintenance_run_opts *opts,
 	pack_geometry_split(&geometry);
 
 	child.git_cmd = 1;
+	child.odb_to_close = the_repository->objects;
 
 	strvec_pushl(&child.args, "repack", "-d", "-l", NULL);
 	if (geometry.split < geometry.pack_nr)
