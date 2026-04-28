@@ -130,20 +130,14 @@ static char *get_post_index_change_sentinel_name(struct repository *r)
 {
 	struct strbuf path = STRBUF_INIT;
 	const char *sid = tr2_sid_get();
-	char *slash = strchr(sid, '/');
-
-	/*
-	 * Name is based on top-level SID, so children can indicate that
-	 * the top-level process should run the post-command hook.
-	 */
-	if (slash)
-		*slash = 0;
+	const char *slash = strchrnul(sid, '/');
 
 	/*
 	 * Do not write to hooks directory, as it could be redirected
 	 * somewhere like the source tree.
 	 */
-	repo_git_path_replace(r, &path, "info/index-change-%s.snt", sid);
+	repo_git_path_replace(r, &path, "info/index-change-%.*s.snt",
+			      (int)(slash - sid), sid);
 
 	return strbuf_detach(&path, NULL);
 }
