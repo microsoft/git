@@ -148,7 +148,7 @@ int is_included_in_virtualfilesystem(const char *pathname, int pathlen)
 
 static void parent_directory_hashmap_add(struct hashmap *map, const char *pattern, const int patternlen)
 {
-	char *slash;
+	const char *slash;
 	struct virtualfilesystem *vfs;
 
 	/*
