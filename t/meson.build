@@ -767,6 +767,7 @@ integration_tests = [
   't5793-gvfs-helper-integration.sh',
   't5794-gvfs-helper-packfiles.sh',
   't5795-gvfs-helper-verb-cache.sh',
+  't5797-gvfs-helper-prefetch-threads.sh',
   't5801-remote-helpers.sh',
   't5802-connect-helper.sh',
   't5810-proto-disable-local.sh',
