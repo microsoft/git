@@ -1,12 +1,3 @@
-#
-# Minimal repro: 1ES PT validation jobs ignore job-level pool
-#
-# EXPECTED: The "prebuild" validation job runs on the Linux image
-#           (ubuntu-x86_64-ado1es) specified in its own pool block.
-#
-# ACTUAL:   The job runs on the Windows image (win-x86_64-ado1es)
-#           from sourceAnalysisPool, ignoring the job-level pool.
-#
 name: $(Date:yyyyMMdd)$(Rev:.r)
 trigger: none
 pr: none
@@ -23,31 +14,19 @@ extends:
   parameters:
     sdl:
       sourceAnalysisPool:
-        name: GitClient-1ESHostedPool-intel-pc
-        image: win-x86_64-ado1es # THE SDL SOURCE ANALYSIS JOB RUNS ON WINDOWS
+        name: GitClientPME-1ESHostedPool-intel-pc
+        image: win-x86_64-ado1es
         os: windows
     stages:
-      - stage: validate
-        displayName: 'Validation'
+      - stage: stage1
+        displayName: 'Stage1'
         jobs:
-          - job: prebuild
-            displayName: 'Pre-build validation (should be Linux)'
+          - job: job1
+            displayName: 'Job1'
             pool:
-              name: GitClient-1ESHostedPool-intel-pc
-              image: ubuntu-x86_64-ado1es # THIS JOB SHOULD RUN ON A LINUX IMAGE
-              os: linux
-            templateContext:
-              type: validationJob ## VALIDATION JOB - WE WANT TO RUN ON LINUX
+              name: GitClientPME-1ESHostedPool-arm64-pc
+              image: win-arm64-ado1es-vnext
+              os: windows
+              hostArchitecture: arm64
             steps:
-              - task: Bash@3
-                displayName: 'Verify we are on Linux'
-                inputs:
-                  targetType: inline
-                  script: |
-                    echo "Image: $(Agent.OSArchitecture)"
-                    echo "OS: $(Agent.OS)"
-                    if [ "$(Agent.OS)" != "Linux" ]; then
-                      echo "##[error]Expected Linux but got $(Agent.OS)!"
-                      echo "##[error]The job pool was overridden by sourceAnalysisPool."
-                      exit 1
-                    fi
+              - checkout: self
