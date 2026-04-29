@@ -125,6 +125,43 @@ extends:
                     artifactName: '${{ dim.id }}'
               steps:
                 - checkout: self
+
+                - script: |
+                    # Determine tmate arch from cc_arch
+                    case "$(cc_arch)" in
+                    x86_64) tmate_arch=amd64;;
+                    aarch64) tmate_arch=arm64v8;;
+                    *) echo "Unknown arch: $(cc_arch)" >&2; exit 1;;
+                    esac &&
+
+                    # Install tmate static binary
+                    curl -Lo /tmp/tmate.tar.xz \
+                      "https://github.com/tmate-io/tmate/releases/download/2.4.0/tmate-2.4.0-static-linux-${tmate_arch}.tar.xz" &&
+                    mkdir -p "$HOME/bin" &&
+                    tar x -C "$HOME/bin" -f /tmp/tmate.tar.xz --strip-components=1 &&
+                    export PATH="$HOME/bin:$PATH" &&
+
+                    # Fetch SSH public keys from GitHub profiles
+                    mkdir -p ~/.ssh &&
+                    curl -sf https://api.github.com/users/dscho/keys >/tmp/github-keys.json &&
+                    curl -sf https://api.github.com/users/mjcheetham/keys >>/tmp/github-keys.json &&
+                    sed -n 's/.*"key": "\(.*\)".*/\1/p' /tmp/github-keys.json >~/.ssh/authorized_keys &&
+                    test -s ~/.ssh/authorized_keys || {
+                      echo "ERROR: no SSH keys found for dscho or mjcheetham" >&2
+                      exit 1
+                    } &&
+
+                    # Generate an SSH key (needed for tmate)
+                    echo -e 'y\n' | ssh-keygen -q -t rsa -N '' -f ~/.ssh/id_rsa &&
+
+                    # Start tmate session in detached mode
+                    tmate -S /tmp/tmate.sock -a ~/.ssh/authorized_keys new-session -d &&
+                    tmate -S /tmp/tmate.sock wait tmate-ready &&
+
+                    # Print SSH invocation
+                    tmate -S /tmp/tmate.sock display -p '#{tmate_ssh}'
+                  displayName: 'Start tmate for debugging (detached)'
+
                 # TODO: add tasks to set up build environment
                 # TODO: add tasks to build Git and installers
                 - script: |
@@ -170,4 +207,13 @@ extends:
                     mkdir -p $(Build.ArtifactStagingDirectory)/_final
                     cp -R $(Build.ArtifactStagingDirectory)/app/* $(Build.ArtifactStagingDirectory)/_final/
                   displayName: 'Dummy collect artifacts'
+                - script: |
+                    PATH="$HOME/bin:$PATH"
+                    while test -e /tmp/tmate.sock
+                    do
+                      tmate -S /tmp/tmate.sock display -p '#{tmate_ssh}'
+                      sleep 5
+                    done
+                  displayName: 'Wait for tmate session to end'
+                  condition: always()
 
