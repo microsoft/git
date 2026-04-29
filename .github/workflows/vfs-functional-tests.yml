@@ -22,10 +22,10 @@ jobs:
 
     steps:
       - name: Check out Git's source code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Setup build tools
-        uses: git-for-windows/setup-git-for-windows-sdk@v1
+        uses: git-for-windows/setup-git-for-windows-sdk@v2
         with:
           architecture: ${{ matrix.architecture }}
 
@@ -79,7 +79,7 @@ jobs:
           make -j5 DESTDIR="$GITHUB_WORKSPACE/MicrosoftGit/payload/${{ matrix.architecture }}" install
 
       - name: Upload Git artifact
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: MicrosoftGit-${{ matrix.architecture }}
           path: MicrosoftGit
@@ -94,13 +94,13 @@ jobs:
 
     steps:
       - name: Download x86_64 build
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: MicrosoftGit-x86_64
           path: MicrosoftGit
 
       - name: Download aarch64 build
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: MicrosoftGit-aarch64
           path: MicrosoftGit
@@ -123,7 +123,7 @@ jobs:
           BATCH
 
       - name: Upload Git artifact
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: MicrosoftGit
           path: MicrosoftGit
