@@ -61,45 +61,8 @@ extends:
         image: win-x86_64-ado1es
         os: windows
     stages:
-      - stage: prereqs
-        displayName: 'Prerequisites'
-        jobs:
-          - job: prebuild
-            displayName: 'Pre-build validation'
-            pool:
-              name: GitClientPME-1ESHostedPool-intel-pc
-              image: ubuntu-x86_64-ado1es
-              os: linux
-            steps:
-              - checkout: self
-                fetchDepth: 0
-                fetchTags: true
-              - task: Bash@3
-                displayName: 'Resolve version and tag information'
-                name: info
-                inputs:
-                  # TODO: uncomment and remove inline script below
-                  # targetType: filePath
-                  # filePath: .azure-pipelines/scripts/resolve-version.sh
-                  targetType: inline
-                  script: |
-                    set -euo pipefail
-
-                    tag_name="v2.53.0.vfs.0.0"
-                    tag_sha="$(git rev-parse HEAD)"
-                    git_version="2.53.0.vfs.0.0"
-
-                    echo "Git version: $git_version"
-                    echo "Tag name: $tag_name"
-                    echo "Tag SHA: $tag_sha"
-                    echo "##vso[task.setvariable variable=git_version;isOutput=true;isReadOnly=true]$git_version"
-                    echo "##vso[task.setvariable variable=tag_name;isOutput=true;isReadOnly=true]$tag_name"
-                    echo "##vso[task.setvariable variable=tag_sha;isOutput=true;isReadOnly=true]$tag_sha"
-                    echo "##vso[build.updatebuildnumber]${tag_name} ($(Build.BuildNumber))"
-
       - stage: build
         displayName: 'Build'
-        dependsOn: [prereqs]
         jobs:
           #
           # Linux build jobs
@@ -113,9 +76,6 @@ extends:
                 os: ${{ dim.os }}
                 hostArchitecture: ${{ dim.poolArch }}
               variables:
-                tag_name: $[stageDependencies.prereqs.prebuild.outputs['info.tag_name']]
-                tag_sha: $[stageDependencies.prereqs.prebuild.outputs['info.tag_sha']]
-                git_version: $[stageDependencies.prereqs.prebuild.outputs['info.git_version']]
                 cc_arch: ${{ dim.cc_arch }}
                 deb_arch: ${{ dim.deb_arch }}
               templateContext:
