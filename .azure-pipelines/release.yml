@@ -12,7 +12,7 @@ resources:
 parameters:
   - name: 'esrp'
     type: boolean
-    default: false # TODO: change default to true after testing
+    default: true
     displayName: 'Enable ESRP code signing'
   - name: linux_matrix
     type: object
