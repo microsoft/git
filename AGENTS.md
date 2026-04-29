@@ -1002,6 +1002,51 @@ gets squashed into.
 
 Run affected tests before finalizing.
 
+### GitHub Actions Version Bumps (Dependabot)
+
+The repository uses Dependabot to monitor GitHub Actions versions
+(configured in `.github/dependabot.yml`). When Dependabot proposes
+version bumps, the resulting changes must be split by ownership layer,
+because each layer is handled differently during rebases.
+
+There are three ownership layers for workflows in this repository:
+
+1. **Upstream Git**: Core CI workflows and jobs that exist in the upstream
+   Git project (e.g., the core jobs in `.github/workflows/main.yml`,
+   `.github/workflows/check-whitespace.yml`).
+2. **Git for Windows**: Additional workflows and workflow sections added
+   by Git for Windows on top of upstream (e.g., GfW-specific jobs in
+   `main.yml`, `.github/workflows/check-style.yml`,
+   `.github/workflows/l10n.yml`).
+3. **Microsoft Git**: Fork-specific workflows added by the Microsoft Git
+   fork (e.g., `.github/workflows/build-git-installers.yml`,
+   `.github/workflows/release-*.yml`,
+   `.github/workflows/scalar-functional-tests.yml`,
+   `.github/workflows/vfs-functional-tests.yml`).
+
+Ownership is determined **per changed line/section**, not per file.
+A single workflow file like `main.yml` contains sections owned by all
+three layers. Use `git blame` or `git log -L` on the changed lines to
+determine which downstream commit introduced them.
+
+**How to handle each layer:**
+
+- **Upstream Git**: Create standalone commits with rewritten commit
+  messages (not the auto-generated Dependabot text). The message must
+  include a risk analysis: what the new version changes, whether it
+  affects our usage, and any preconditions (e.g., minimum runner
+  version). These commits are intended to be submitted upstream via
+  GitGitGadget.
+- **Git for Windows**: Create `fixup!` commits targeting the Git for
+  Windows commit that introduced the affected workflow or section. Use
+  `git log -L` or `git blame` to find the right target.
+- **Microsoft Git**: Create `fixup!` commits targeting the Microsoft
+  Git commit that introduced the affected workflow or section.
+
+When a single Dependabot update touches lines from multiple layers,
+**split the changes into separate commits**, one per layer. Each commit
+follows the rules for its respective layer.
+
 ### Common Adaptation Patterns
 
 **Struct field moves**: When upstream moves fields between structs, update
@@ -1094,12 +1139,30 @@ with a cast for `size_t` values.
 
 ## Configuration Options
 
-| Config               | Purpose                                    |
-|----------------------|--------------------------------------------|
-| `core.useGVFSHelper` | Enable GVFS helper for object fetching     |
-| `gvfs.sharedCache`   | Path to shared object cache directory      |
-| `gvfs.cache-server`  | URL of GVFS cache server                   |
-| `gvfs.fallback`      | Whether to fall back to origin if CS fails |
+### GVFS-specific
+
+| Config                 | Purpose                                    |
+|------------------------|--------------------------------------------|
+| `core.useGVFSHelper`   | Enable GVFS helper for object fetching     |
+| `gvfs.sharedCache`     | Path to shared object cache directory      |
+| `gvfs.cache-server`    | URL of GVFS cache server                   |
+| `gvfs.fallback`        | Whether to fall back to origin if CS fails |
+| `gvfs.sessionKey`      | Custom session key for GVFS HTTP headers   |
+| `gvfs.prefetchThreads` | Parallel index-pack processes for prefetch |
+
+### Rename detection and blame
+
+These configuration options are downstream enhancements that do not
+exist in upstream Git (yet).
+
+| Config                   | Purpose                                  |
+|--------------------------|------------------------------------------|
+| `diff.renameThreshold`   | Min similarity for rename detection      |
+| `merge.renameThreshold`  | Override for merges                      |
+| `status.renameThreshold` | Override for status                      |
+| `blame.renames`          | Enable/disable rename following in blame |
+| `blame.renameThreshold`  | Min similarity for blame renames         |
+| `blame.renameLimit`      | Limit on blame rename detection candidates |
 
 ## Contributing to Upstream Git via GitGitGadget
 
