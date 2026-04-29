@@ -23,7 +23,7 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Install dependencies
         run: ci/install-dependencies.sh
@@ -56,7 +56,7 @@ jobs:
         run: ls -la sarif-results
 
       - name: publish sarif for debugging
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: sarif-results-${{ matrix.language }}
           path: sarif-results
