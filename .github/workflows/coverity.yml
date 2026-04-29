@@ -38,10 +38,10 @@ jobs:
       COVERITY_LANGUAGE: cxx
       COVERITY_PLATFORM: overridden-below
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
       - name: install minimal Git for Windows SDK
         if: contains(matrix.os, 'windows')
-        uses: git-for-windows/setup-git-for-windows-sdk@v1
+        uses: git-for-windows/setup-git-for-windows-sdk@v2
       - run: ci/install-dependencies.sh
         if: contains(matrix.os, 'ubuntu') || contains(matrix.os, 'macos')
         env:
