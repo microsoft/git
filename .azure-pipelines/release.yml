@@ -270,6 +270,64 @@ extends:
                         -output libintl.a \
                         /usr/local/opt/gettext/lib/libintl.a \
                         /opt/homebrew/opt/gettext/lib/libintl.a
+                - task: Bash@3
+                  displayName: 'Configure universal build'
+                  inputs:
+                    targetType: inline
+                    script: |
+                      set -euo pipefail
+
+                      VERSION="$(git_version)"
+                      # Git's GIT-VERSION-GEN expects .rc rather than -rc
+                      BUILD_VERSION="$(echo "$VERSION" | sed 's/-rc/.rc/g')"
+                      echo "$BUILD_VERSION" >version
+
+                      # HOST_CPU is a bit of a lie and is only used in
+                      # 'git version --build-options'; we'll fix that in
+                      # code. The two -arch flags are what actually drive
+                      # the universal build.
+                      cat >config.mak <<EOF
+                      HOST_CPU = universal
+                      BASIC_CFLAGS += -arch arm64 -arch x86_64
+
+                      # macOS uses Apple Common Crypto instead of OpenSSL.
+                      # The main Makefile sets NO_OPENSSL and adds
+                      # -DNO_OPENSSL to BASIC_CFLAGS, but contrib
+                      # Makefiles that only include config.mak* miss it.
+                      BASIC_CFLAGS += -DNO_OPENSSL
+
+                      # On Darwin 24+ (macOS 15) config.mak.uname sets
+                      # USE_HOMEBREW_LIBICONV, pointing ICONVDIR at
+                      # Homebrew's libiconv. That libiconv exports
+                      # _libiconv/_libiconv_open (prefixed) symbols while
+                      # Homebrew's gettext/libintl was built against the
+                      # system iconv that exports _iconv/_iconv_open
+                      # (unprefixed). We pin the build to the system's
+                      # universal /usr/lib/libiconv.dylib instead.
+                      USE_HOMEBREW_LIBICONV =
+                      ICONVDIR =
+                      EOF
+
+                      # Find the universal libintl.a we lipo'd in the
+                      # previous step ($(pwd) is the workspace root) and
+                      # the gettext headers from either Homebrew prefix.
+                      homebrew_prefix="$(brew --prefix)"
+                      cat >>config.mak <<EOF
+                      CFLAGS = -I$homebrew_prefix/include -I/usr/local/opt/gettext/include
+                      LDFLAGS = -L"$(pwd)"
+                      EOF
+
+                      # Use the OS-supplied libcurl rather than Homebrew's.
+                      cat >>config.mak <<EOF
+                      CURL_LDFLAGS := -lcurl
+                      CURL_CONFIG := /usr/bin/true
+                      EOF
+
+                      # The dashed built-ins are supposed to be hard-links
+                      # to the 'git' executable; on the macOS staging tree
+                      # they end up as full copies instead and bloat the
+                      # .dmg indecently. Skip them entirely.
+                      echo 'SKIP_DASHED_BUILT_INS = YabbaDabbaDoo' >>config.mak
                 # TODO: add tasks to build Git and installers
                 - script: |
                     echo "Hello, Mac!"
