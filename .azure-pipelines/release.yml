@@ -26,6 +26,7 @@ parameters:
       - id: windows_x64
         jobName: 'Windows (x64)'
         pool: GitClientPME-1ESHostedPool-intel-pc
+        poolArch: amd64
         image: win-x86_64-ado1es
         os: windows
         toolchain: x86_64
@@ -34,13 +35,20 @@ parameters:
       - id: windows_arm64
         jobName: 'Windows (ARM64)'
         pool: GitClientPME-1ESHostedPool-arm64-pc
+        poolArch: arm64
         image: win-arm64-ado1es
         os: windows
         toolchain: clang-aarch64
         mingwprefix: clangarm64
 
-  # No matrix for macOS as we build both x64 and ARM64 in the same job
-  # and produce a universal binary.
+  - name: macos_matrix
+    type: object
+    default:
+      - id: macos_universal
+        jobName: 'macOS (x64 + ARM64)'
+        pool: 'Azure Pipelines'
+        image: macOS-latest
+        os: macos
 
   - name: linux_matrix
     type: object
@@ -48,6 +56,7 @@ parameters:
       - id: linux_x64
         jobName: 'Linux (x64)'
         pool: GitClientPME-1ESHostedPool-intel-pc
+        poolArch: amd64
         image: ubuntu-x86_64-ado1es
         os: linux
         cc_arch: x86_64
@@ -56,6 +65,7 @@ parameters:
       - id: linux_arm64
         jobName: 'Linux (ARM64)'
         pool: GitClientPME-1ESHostedPool-arm64-pc
+        poolArch: arm64
         image: ubuntu-arm64-ado1es
         os: linux
         cc_arch: aarch64
@@ -85,20 +95,15 @@ extends:
               image: ubuntu-x86_64-ado1es
               os: linux
             steps:
+              - checkout: self
+                fetchDepth: 0
+                fetchTags: true
               - task: Bash@3
                 displayName: 'Resolve version and tag information'
                 name: info
                 inputs:
-                  targetType: inline
-                  script: |
-                    # TODO: determine git_version, tag_name, and tag_sha
-                    # TODO: error if the current commit is not an annotated tag
-                    git_version=TODO_GITVER
-                    tag_name=TODO_TAGNAME
-                    tag_sha=TODO_TAGSHA
-                    echo "##vso[task.setvariable variable=git_version;isOutput=true;isReadOnly=true]$git_version"
-                    echo "##vso[task.setvariable variable=tag_name;isOutput=true;isReadOnly=true]$tag_name"
-                    echo "##vso[task.setvariable variable=tag_sha;isOutput=true;isReadOnly=true]$tag_sha"
+                  targetType: filePath
+                  filePath: .azure-pipelines/scripts/resolve-version.sh
 
       - stage: build
         displayName: 'Build'
@@ -114,6 +119,7 @@ extends:
                 name: ${{ dim.pool }}
                 image: ${{ dim.image }}
                 os: ${{ dim.os }}
+                hostArchitecture: ${{ dim.poolArch }}
               variables:
                 tag_name: $[stageDependencies.prereqs.prebuild.outputs['info.tag_name']]
                 tag_sha: $[stageDependencies.prereqs.prebuild.outputs['info.tag_sha']]
@@ -127,44 +133,60 @@ extends:
                     artifactName: '${{ dim.id }}'
               steps:
                 - checkout: self
+                # Add Git Bash to the PATH so Bash tasks can find it
+                - task: BatchScript@1
+                  displayName: 'Add Git Bash to PATH'
+                  inputs:
+                    filename: ./.azure-pipelines/scripts/windows/setup-git-bash.cmd
                 # TODO: add tasks to set up Git for Windows SDK
                 # TODO: add tasks to build Git and installers
                 - script: |
                     echo $(mingwprefix)
                     echo $(toolchain)
+                    mkdir $(Build.ArtifactStagingDirectory)\app
+                    copy C:\Windows\System32\calc.exe $(Build.ArtifactStagingDirectory)\app\example1.exe
+                    copy C:\Windows\System32\calc.exe $(Build.ArtifactStagingDirectory)\app\example2.exe
+                    copy C:\Windows\System32\calc.exe $(Build.ArtifactStagingDirectory)\app\example3.exe
                   displayName: 'Dummy build'
                 # TODO: put final artifacts under $(Build.ArtifactStagingDirectory)/_final
                 - script: |
-                    echo "TODO" > $(Build.ArtifactStagingDirectory)/_final/placeholder.txt
+                    mkdir $(Build.ArtifactStagingDirectory)\_final
+                    xcopy /s /y $(Build.ArtifactStagingDirectory)\app $(Build.ArtifactStagingDirectory)\_final
+                  displayName: 'Dummy collect artifacts'
 
           #
-          # macOS build job (universal)
+          # macOS build jobs
           #
-          - job: macos_universal
-            displayName: 'macOS (x64 + ARM64)'
-            pool:
-              name: 'Azure Pipelines'
-              image: macOS-latest
-              os: macos
-            variables:
-              tag_name: $[stageDependencies.prereqs.prebuild.outputs['info.tag_name']]
-              tag_sha: $[stageDependencies.prereqs.prebuild.outputs['info.tag_sha']]
-              git_version: $[stageDependencies.prereqs.prebuild.outputs['info.git_version']]
-            templateContext:
-              outputs:
-                - output: pipelineArtifact
-                  targetPath: '$(Build.ArtifactStagingDirectory)/_final'
-                  artifactName: 'macos_universal'
-            steps:
-              - checkout: self
-              # TODO: add tasks to set up build environment
-              # TODO: add tasks to build Git and installers
-              - script: |
-                  echo "Hello, Mac!"
-                displayName: 'Dummy build'
-              # TODO: put final artifacts under $(Build.ArtifactStagingDirectory)/_final
-              - script: |
-                  echo "TODO" > $(Build.ArtifactStagingDirectory)/_final/placeholder.txt
+          - ${{ each dim in parameters.macos_matrix }}:
+            - job: ${{ dim.id }}
+              displayName: ${{ dim.jobName }}
+              pool:
+                name: ${{ dim.pool }}
+                image: ${{ dim.image }}
+                os: ${{ dim.os }}
+              variables:
+                tag_name: $[stageDependencies.prereqs.prebuild.outputs['info.tag_name']]
+                tag_sha: $[stageDependencies.prereqs.prebuild.outputs['info.tag_sha']]
+                git_version: $[stageDependencies.prereqs.prebuild.outputs['info.git_version']]
+              templateContext:
+                outputs:
+                  - output: pipelineArtifact
+                    targetPath: '$(Build.ArtifactStagingDirectory)/_final'
+                    artifactName: '${{ dim.id }}'
+              steps:
+                - checkout: self
+                # TODO: add tasks to set up build environment
+                # TODO: add tasks to build Git and installers
+                - script: |
+                    echo "Hello, Mac!"
+                    mkdir -p $(Build.ArtifactStagingDirectory)/app
+                    cp /bin/echo $(Build.ArtifactStagingDirectory)/app/example
+                  displayName: 'Dummy build'
+                # TODO: put final artifacts under $(Build.ArtifactStagingDirectory)/_final
+                - script: |
+                    mkdir -p $(Build.ArtifactStagingDirectory)/_final
+                    cp -R $(Build.ArtifactStagingDirectory)/app/* $(Build.ArtifactStagingDirectory)/_final/
+                  displayName: 'Dummy collect artifacts'
 
           #
           # Linux build jobs
@@ -176,6 +198,7 @@ extends:
                 name: ${{ dim.pool }}
                 image: ${{ dim.image }}
                 os: ${{ dim.os }}
+                hostArchitecture: ${{ dim.poolArch }}
               variables:
                 tag_name: $[stageDependencies.prereqs.prebuild.outputs['info.tag_name']]
                 tag_sha: $[stageDependencies.prereqs.prebuild.outputs['info.tag_sha']]
@@ -194,16 +217,104 @@ extends:
                 - script: |
                     echo $(cc_arch)
                     echo $(deb_arch)
+                    mkdir -p $(Build.ArtifactStagingDirectory)/app
+                    debroot=$(Build.ArtifactStagingDirectory)/pkgroot
+                    mkdir -p $debroot/DEBIAN
+                    cat > $debroot/DEBIAN/control <<CTRL
+                    Package: example
+                    Version: 1.0
+                    Architecture: $(deb_arch)
+                    Maintainer: test
+                    Description: dummy
+                    CTRL
+                    dpkg-deb --build $debroot $(Build.ArtifactStagingDirectory)/app/example_$(deb_arch).deb
                   displayName: 'Dummy build'
                 # TODO: put final artifacts under $(Build.ArtifactStagingDirectory)/_final
                 - script: |
-                    echo "TODO" > $(Build.ArtifactStagingDirectory)/_final/placeholder.txt
+                    mkdir -p $(Build.ArtifactStagingDirectory)/_final
+                    cp -R $(Build.ArtifactStagingDirectory)/app/* $(Build.ArtifactStagingDirectory)/_final/
+                  displayName: 'Dummy collect artifacts'
 
       - stage: release
         displayName: 'Release'
         dependsOn: [prereqs, build]
         jobs:
+          #
+          # Windows validation jobs
+          #
+          - ${{ each dim in parameters.windows_matrix }}:
+            - job: validate_${{ dim.id }}
+              displayName: 'Validate ${{ dim.jobName }}'
+              pool:
+                name: ${{ dim.pool }}
+                image: ${{ dim.image }}
+                os: ${{ dim.os }}
+                hostArchitecture: ${{ dim.poolArch }}
+              templateContext:
+                inputs:
+                  - input: pipelineArtifact
+                    artifactName: '${{ dim.id }}'
+                    targetPath: $(Pipeline.Workspace)/assets/${{ dim.id }}
+              steps:
+                # TODO: add artifact validation steps
+                - script: |
+                    dir $(Pipeline.Workspace)\assets\${{ dim.id }}
+                  displayName: 'Validate artifacts'
+
+          #
+          # macOS validation jobs
+          #
+          - ${{ each dim in parameters.macos_matrix }}:
+            - job: validate_${{ dim.id }}
+              displayName: 'Validate ${{ dim.jobName }}'
+              pool:
+                name: ${{ dim.pool }}
+                image: ${{ dim.image }}
+                os: ${{ dim.os }}
+              templateContext:
+                inputs:
+                  - input: pipelineArtifact
+                    artifactName: '${{ dim.id }}'
+                    targetPath: $(Pipeline.Workspace)/assets/${{ dim.id }}
+              steps:
+                # TODO: add artifact validation steps
+                - script: |
+                    ls $(Pipeline.Workspace)/assets/${{ dim.id }}
+                  displayName: 'Validate artifacts'
+
+          #
+          # Linux validation jobs
+          #
+          - ${{ each dim in parameters.linux_matrix }}:
+            - job: validate_${{ dim.id }}
+              displayName: 'Validate ${{ dim.jobName }}'
+              pool:
+                name: ${{ dim.pool }}
+                image: ${{ dim.image }}
+                os: ${{ dim.os }}
+                hostArchitecture: ${{ dim.poolArch }}
+              templateContext:
+                inputs:
+                  - input: pipelineArtifact
+                    artifactName: '${{ dim.id }}'
+                    targetPath: $(Pipeline.Workspace)/assets/${{ dim.id }}
+              steps:
+                # TODO: add artifact validation steps
+                - script: |
+                    ls $(Pipeline.Workspace)/assets/${{ dim.id }}
+                  displayName: 'Validate artifacts'
+
+          #
+          # GitHub release publishing
+          #
           - job: github
+            dependsOn:
+              - ${{ each dim in parameters.windows_matrix }}:
+                - validate_${{ dim.id }}
+              - ${{ each dim in parameters.macos_matrix }}:
+                - validate_${{ dim.id }}
+              - ${{ each dim in parameters.linux_matrix }}:
+                - validate_${{ dim.id }}
             displayName: 'Publish GitHub release'
             condition: and(succeeded(), eq('${{ parameters.github }}', true))
             pool:
@@ -218,21 +329,18 @@ extends:
               type: releaseJob
               isProduction: true
               inputs:
-                - input: pipelineArtifact
-                  artifactName: 'windows_x64'
-                  targetPath: $(Pipeline.Workspace)/assets/windows_x64
-                - input: pipelineArtifact
-                  artifactName: 'windows_arm64'
-                  targetPath: $(Pipeline.Workspace)/assets/windows_arm64
-                - input: pipelineArtifact
-                  artifactName: 'macos_universal'
-                  targetPath: $(Pipeline.Workspace)/assets/macos_universal
-                - input: pipelineArtifact
-                  artifactName: 'linux_x64'
-                  targetPath: $(Pipeline.Workspace)/assets/linux_x64
-                - input: pipelineArtifact
-                  artifactName: 'linux_arm64'
-                  targetPath: $(Pipeline.Workspace)/assets/linux_arm64
+                - ${{ each dim in parameters.windows_matrix }}:
+                  - input: pipelineArtifact
+                    artifactName: '${{ dim.id }}'
+                    targetPath: $(Pipeline.Workspace)/assets/${{ dim.id }}
+                - ${{ each dim in parameters.macos_matrix }}:
+                  - input: pipelineArtifact
+                    artifactName: '${{ dim.id }}'
+                    targetPath: $(Pipeline.Workspace)/assets/${{ dim.id }}
+                - ${{ each dim in parameters.linux_matrix }}:
+                  - input: pipelineArtifact
+                    artifactName: '${{ dim.id }}'
+                    targetPath: $(Pipeline.Workspace)/assets/${{ dim.id }}
             steps:
               - task: GitHubRelease@1
                 displayName: 'Create Draft GitHub Release'
