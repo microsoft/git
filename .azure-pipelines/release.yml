@@ -151,6 +151,19 @@ extends:
                   displayName: 'Add Git Bash to PATH'
                   inputs:
                     filename: ./.azure-pipelines/scripts/windows/setup-git-bash.cmd
+                # Install Azure CLI on arm64 (not pre-installed on these agents)
+                - ${{ if eq(dim.poolArch, 'arm64') }}:
+                  - powershell: |
+                      $ProgressPreference = 'SilentlyContinue'
+                      $msi = "$env:TEMP\AzureCLI.msi"
+                      Write-Host "Downloading Azure CLI (x64)..."
+                      Invoke-WebRequest -Uri https://aka.ms/installazurecliwindows -OutFile $msi
+                      Write-Host "Installing Azure CLI..."
+                      Start-Process msiexec.exe -ArgumentList "/i", $msi, "/quiet", "/norestart" -Wait
+                      $azPath = "C:\Program Files (x86)\Microsoft SDKs\Azure\CLI2\wbin"
+                      Write-Host "##vso[task.prependpath]$azPath"
+                      Write-Host "Azure CLI installed."
+                    displayName: 'Install Azure CLI (arm64)'
                 # Setup ESRP code signing for Windows (sets ESRP_TOOL, ESRP_AUTH)
                 - ${{ if eq(parameters.esrp, true) }}:
                   - template: .azure-pipelines/esrp/windows/setup.yml@self
