@@ -1,0 +1,69 @@
+parameters:
+  - name: serviceConnectionName
+    type: string
+  - name: esrpClientId
+    type: string
+  - name: keyVaultName
+    type: string
+  - name: signCertName
+    type: string
+
+steps:
+  - task: EsrpClientTool@5
+    name: esrpinstall
+    displayName: 'Install ESRP client'
+  - task: AzureCLI@2
+    displayName: 'Set up ESRP environment'
+    inputs:
+      azureSubscription: ${{ parameters.serviceConnectionName }}
+      addSpnToEnvironment: true
+      scriptType: ps
+      scriptLocation: inlineScript
+      inlineScript: |
+        # Resolve ESRP client tool path (passed via env to avoid PS subexpression issues)
+        $esrpTool = "$env:ESRPCLIENT_TOOLPATH\$env:ESRPCLIENT_TOOLNAME"
+        if (-not (Test-Path $esrpTool)) { Write-Error "ESRPClient.exe not found at $esrpTool"; exit 1 }
+        Write-Host "Found ESRP client: $esrpTool"
+        Write-Host "##vso[task.setvariable variable=ESRP_TOOL]$esrpTool"
+
+        # Derive the service connection GUID from the ENDPOINT_URL_* env vars
+        # that the agent emits for the bound connection. Filter out the
+        # built-in SystemVssConnection which is always present.
+        $scId = (Get-ChildItem env:ENDPOINT_URL_*).Name `
+          -replace '^ENDPOINT_URL_','' |
+          Where-Object { $_ -ne 'SYSTEMVSSCONNECTION' }
+        if (-not $scId) { Write-Error "Could not derive service connection GUID"; exit 1 }
+        Write-Host "Resolved service connection GUID: $scId"
+
+        # servicePrincipalId and tenantId are provided by addSpnToEnvironment
+        $authJson = @{
+          Version = "1.0.0"
+          AuthenticationType = "AAD_MSI_WIF"
+          EsrpClientId = "${{ parameters.esrpClientId }}"
+          ClientId = $env:servicePrincipalId
+          TenantId = $env:tenantId
+          AADAuthorityBaseUri = "https://login.microsoftonline.com/"
+          FederatedTokenData = @{
+            JobId = "$(System.JobId)"
+            PlanId = "$(System.PlanId)"
+            ProjectId = "$(System.TeamProjectId)"
+            Hub = "$(System.HostType)"
+            Uri = "$(System.CollectionUri)"
+            ServiceConnectionId = $scId
+            SystemAccessToken = "SYSTEM_ACCESSTOKEN"
+          }
+          RequestSigningCert = @{
+            GetCertFromKeyVault = $true
+            KeyVaultName = "${{ parameters.keyVaultName }}"
+            KeyVaultCertName = "${{ parameters.signCertName }}"
+          }
+        } | ConvertTo-Json -Depth 4
+
+        $authPath = "$(Agent.TempDirectory)\esrp-auth.json"
+        $authJson | Set-Content -Path $authPath -Encoding UTF8
+        Write-Host "Generated ESRP auth JSON: $authPath"
+        Write-Host "##vso[task.setvariable variable=ESRP_AUTH]$authPath"
+    env:
+      SYSTEM_ACCESSTOKEN: $(System.AccessToken)
+      ESRPCLIENT_TOOLPATH: $(esrpinstall.esrpclient.toolpath)
+      ESRPCLIENT_TOOLNAME: $(esrpinstall.esrpclient.toolname)
