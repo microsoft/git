@@ -238,22 +238,257 @@ extends:
                   - output: pipelineArtifact
                     targetPath: '$(Build.ArtifactStagingDirectory)/_final'
                     artifactName: '${{ dim.id }}'
+              # macOS build flow:
+              #
+              #   1. Configure for a universal build and produce
+              #      Git's own dist tarballs (`make dist dist-doc`).
+              #   2. Extract the source tarball into payload/, copy
+              #      config.mak in, run `make payload` to compile and
+              #      install into stage/git-universal-<ver>/.
+              #   3. Mirror stage/ into build-artifacts/ (which is
+              #      what the macos-installer Makefile's `pkg` target
+              #      consumes - see note in the build step).
+              #   4. ESRP-sign Mach-O files in build-artifacts/.
+              #   5. `make pkg` -> unsigned .pkg in disk-image/.
+              #   6. ESRP-sign and ESRP-notarize the .pkg in place.
+              #   7. `make image` wraps disk-image/ contents in a DMG.
+              #   8. Stage the .pkg and .dmg under _final/ for upload.
               steps:
                 - checkout: self
-                # TODO: add tasks to set up build environment
-                # TODO: add tasks to build Git and installers
-                - script: |
-                    echo "Hello, Mac!"
-                    mkdir -p $(Build.ArtifactStagingDirectory)/app
-                    cp /bin/echo $(Build.ArtifactStagingDirectory)/app/example
-                  displayName: 'Dummy build'
+                - task: Bash@3
+                  displayName: 'Disable Spotlight indexing'
+                  inputs:
+                    targetType: inline
+                    script: |
+                      # Disable Spotlight indexing to prevent file
+                      # locking issues.
+                      set -euo pipefail
+                      sudo mdutil -i off / || true
+                - task: Bash@3
+                  displayName: 'Install build dependencies'
+                  inputs:
+                    targetType: inline
+                    script: |
+                      set -euo pipefail
+
+                      # The agent's native arm64 Homebrew lives at
+                      # /opt/homebrew. Install a separate x86_64 Homebrew
+                      # under /usr/local so we can fetch the x86_64 build
+                      # of gettext/libintl alongside the arm64 one.
+                      arch -x86_64 /bin/bash -c \
+                        "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+                      arch -x86_64 /usr/local/bin/brew install gettext
+
+                      # Native (arm64) build dependencies.
+                      brew install automake asciidoc xmlto docbook
+                      brew link --force gettext
+
+                      # Make a universal libintl.a out of the two
+                      # arch-specific copies, dropped at the workspace
+                      # root so the build's LDFLAGS = -L"$(pwd)" can find
+                      # it. libintl depends on iconv, but we deliberately
+                      # use the system's universal /usr/lib/libiconv.dylib
+                      # rather than Homebrew's libiconv (which exports
+                      # _libiconv* symbols, while Homebrew's gettext was
+                      # built against system iconv with _iconv* symbols).
+                      lipo -create \
+                        -output libintl.a \
+                        /usr/local/opt/gettext/lib/libintl.a \
+                        /opt/homebrew/opt/gettext/lib/libintl.a
+                - task: Bash@3
+                  displayName: 'Configure universal build'
+                  inputs:
+                    targetType: inline
+                    script: |
+                      set -euo pipefail
+
+                      VERSION="$(git_version)"
+                      # Git's GIT-VERSION-GEN expects .rc rather than -rc
+                      BUILD_VERSION="$VERSION"
+                      echo "$BUILD_VERSION" >version
+
+                      # HOST_CPU is a bit of a lie and is only used in
+                      # 'git version --build-options'; we'll fix that in
+                      # code. The two -arch flags are what actually drive
+                      # the universal build.
+                      cat >config.mak <<EOF
+                      HOST_CPU = universal
+                      BASIC_CFLAGS += -arch arm64 -arch x86_64
+
+                      # macOS uses Apple Common Crypto instead of OpenSSL.
+                      # The main Makefile sets NO_OPENSSL and adds
+                      # -DNO_OPENSSL to BASIC_CFLAGS, but contrib
+                      # Makefiles that only include config.mak* miss it.
+                      BASIC_CFLAGS += -DNO_OPENSSL
+
+                      # On Darwin 24+ (macOS 15) config.mak.uname sets
+                      # USE_HOMEBREW_LIBICONV, pointing ICONVDIR at
+                      # Homebrew's libiconv. That libiconv exports
+                      # _libiconv/_libiconv_open (prefixed) symbols while
+                      # Homebrew's gettext/libintl was built against the
+                      # system iconv that exports _iconv/_iconv_open
+                      # (unprefixed). We pin the build to the system's
+                      # universal /usr/lib/libiconv.dylib instead.
+                      USE_HOMEBREW_LIBICONV =
+                      ICONVDIR =
+                      EOF
+
+                      # Find the universal libintl.a we lipo'd in the
+                      # previous step ($(pwd) is the workspace root) and
+                      # the gettext headers from either Homebrew prefix.
+                      homebrew_prefix="$(brew --prefix)"
+                      cat >>config.mak <<EOF
+                      CFLAGS = -I$homebrew_prefix/include -I/usr/local/opt/gettext/include
+                      LDFLAGS = -L"$(pwd)"
+                      EOF
+
+                      # Use the OS-supplied libcurl rather than Homebrew's.
+                      cat >>config.mak <<EOF
+                      CURL_LDFLAGS := -lcurl
+                      CURL_CONFIG := /usr/bin/true
+                      EOF
+
+                      # The dashed built-ins are supposed to be hard-links
+                      # to the 'git' executable; on the macOS staging tree
+                      # they end up as full copies instead and bloat the
+                      # .dmg indecently. Skip them entirely.
+                      echo 'SKIP_DASHED_BUILT_INS = YabbaDabbaDoo' >>config.mak
+                - task: Bash@3
+                  displayName: 'Build payload via macos-installer'
+                  env:
+                    # The macos-installer Makefile derives BUILD_DIR from
+                    # $(GITHUB_WORKSPACE), which is unset in ADO. Point it
+                    # at the worktree root.
+                    GITHUB_WORKSPACE: $(Build.SourcesDirectory)
+                  inputs:
+                    targetType: inline
+                    script: |
+                      set -euo pipefail
+
+                      VERSION="$(git_version)"
+                      BUILD_VERSION="$VERSION"
+
+                      # The asciidoc/xmlto build steps need the catalogs
+                      # from Homebrew docbook.
+                      export XML_CATALOG_FILES="$(brew --prefix)/etc/xml/catalog"
+
+                      # `git commit` (in dist-doc) forks a detached
+                      # `git maintenance run --auto` that keeps writing
+                      # into .git/ after the commit returns, which then
+                      # races with dist-doc's `rm -fr .doc-tmp-dir` and
+                      # produces "Directory not empty". Disable
+                      # auto-maintenance for every git invocation in
+                      # this build.
+                      export GIT_CONFIG_PARAMETERS="'maintenance.auto=false'"
+
+                      # Build a universal (arm64 + x86_64) Rust static
+                      # library. The C code is compiled with
+                      # `-arch arm64 -arch x86_64` via config.mak, but
+                      # `cargo build` only targets the host architecture
+                      # by default, so we must build both targets
+                      # explicitly and lipo them together before `make`
+                      # tries to link the final binary.
+                      rustup target add x86_64-apple-darwin
+                      BUILD_UNIVERSAL_LIBGITCORE=YesPlease
+                      export BUILD_UNIVERSAL_LIBGITCORE
+
+                      make -j"$(sysctl -n hw.physicalcpu)" GIT-VERSION-FILE dist dist-doc
+
+                      # Recover the source-tree commit OID from the dist
+                      # tarball; the macos-installer Makefile bakes it
+                      # into 'git version --build-options'.
+                      # `git get-tar-commit-id` reads only the leading
+                      # pax header and then closes its stdin, which
+                      # makes `gunzip -c` exit 141 (SIGPIPE) under the
+                      # outer `set -o pipefail`. Disable pipefail for
+                      # the duration of this one pipeline.
+                      GIT_BUILT_FROM_COMMIT="$(
+                        set +o pipefail
+                        gunzip -c "git-$BUILD_VERSION.tar.gz" |
+                          git get-tar-commit-id
+                      )"
+                      export GIT_BUILT_FROM_COMMIT
+                      export VERSION
+
+                      mkdir payload manpages
+                      tar -xf "git-$BUILD_VERSION.tar.gz" -C payload
+                      tar -xf "git-manpages-$BUILD_VERSION.tar.gz" -C manpages
+
+                      # The actual compile happens inside the extracted
+                      # tree, against a copy of the config.mak we wrote
+                      # at the worktree root in the previous step.
+                      cp config.mak "payload/git-$BUILD_VERSION/config.mak"
+
+                      make -C .github/macos-installer V=1 payload
+
+                      # NOTE: the macos-installer Makefile produces
+                      # the install tree at stage/git-universal-<ver>/
+                      # but its `pkg` target packages from
+                      # build-artifacts/. Mirror the GitHub workflow
+                      # by copying the tree across so the rest of the
+                      # pipeline (signing, pkg) finds it where the
+                      # Makefile expects.
+                      #
+                      # FUTURE: this duplication exists only because
+                      # .github/macos-installer/Makefile hardcodes
+                      # both DESTDIR (=stage/...) and ARTIFACTDIR
+                      # (=build-artifacts). Overriding ARTIFACTDIR on
+                      # the `make pkg` line below to point at stage/
+                      # would let us drop the cp entirely. Worth
+                      # cleaning up alongside moving the macOS
+                      # installer Makefiles out of .github/ (they are
+                      # build infrastructure, not GitHub-specific).
+                      mkdir -p .github/macos-installer/build-artifacts
+                      cp -R "stage/git-universal-$BUILD_VERSION/." \
+                        .github/macos-installer/build-artifacts/
+                # ESRP-sign the universal Mach-O binaries inside the
+                # payload tree. The existing esrp/sign.yml template's
+                # CopyFiles@2 step uses minimatch globs and the only
+                # reliable way to detect Mach-O is by file content
+                # (file --mime), so we pre-filter into a staging dir,
+                # let the template zip/sign/extract that staging dir,
+                # then copy the signed binaries back over the payload.
                 - ${{ if eq(parameters.esrp, true) }}:
+                  # ESRP ADO tasks require .NET, which the macOS pool
+                  # image does not provide by default.
+                  - task: UseDotNet@2
+                    displayName: 'Install .NET for ESRP'
+                    inputs:
+                      packageType: sdk
+                      version: '8.x'
+                  - task: Bash@3
+                    displayName: 'Stage Mach-O binaries for signing'
+                    inputs:
+                      targetType: inline
+                      script: |
+                        set -euo pipefail
+
+                        # Sign the install tree (build-artifacts/) -
+                        # this is what `make pkg` packages. Signing
+                        # the source tree under payload/ would have
+                        # no effect on the resulting .pkg.
+                        install_tree=".github/macos-installer/build-artifacts/usr/local/git"
+                        stage_dir="$(Build.ArtifactStagingDirectory)/macos-tosign/binaries"
+
+                        rm -rf "$stage_dir"
+                        mkdir -p "$stage_dir"
+
+                        pushd "$install_tree"
+                        find . -type f -exec file --mime {} + \
+                          | sed -n '/mach/s/: .*//p' \
+                          | while IFS= read -r f; do
+                              rel="${f#./}"
+                              tgt="$stage_dir/$rel"
+                              mkdir -p "$(dirname "$tgt")"
+                              cp -- "$f" "$tgt"
+                            done
+                        popd
                   - template: .azure-pipelines/esrp/sign.yml@self
                     parameters:
-                      displayName: 'Example sign binaries'
-                      folderPath: '$(Build.ArtifactStagingDirectory)/app'
+                      displayName: 'ESRP-sign Mach-O binaries'
+                      folderPath: '$(Build.ArtifactStagingDirectory)/macos-tosign/binaries'
                       pattern: '**/*'
-                      useArchive: true # Must be true when macOS signing
+                      useArchive: true # Required for macOS signing
                       inlineOperation: |
                         [
                           {
@@ -266,11 +501,139 @@ extends:
                             }
                           }
                         ]
-                # TODO: put final artifacts under $(Build.ArtifactStagingDirectory)/_final
-                - script: |
-                    mkdir -p $(Build.ArtifactStagingDirectory)/_final
-                    cp -R $(Build.ArtifactStagingDirectory)/app/* $(Build.ArtifactStagingDirectory)/_final/
-                  displayName: 'Dummy collect artifacts'
+                  - task: Bash@3
+                    displayName: 'Copy signed binaries back to install tree'
+                    inputs:
+                      targetType: inline
+                      script: |
+                        set -euo pipefail
+
+                        cp -R "$(Build.ArtifactStagingDirectory)/macos-tosign/binaries"/* \
+                          .github/macos-installer/build-artifacts/usr/local/git/
+                - task: Bash@3
+                  displayName: 'Build unsigned installer pkg'
+                  env:
+                    GITHUB_WORKSPACE: $(Build.SourcesDirectory)
+                  inputs:
+                    targetType: inline
+                    script: |
+                      set -euo pipefail
+
+                      VERSION="$(git_version)"
+                      export VERSION
+
+                      # Leave APPLE_INSTALLER_IDENTITY undefined so the
+                      # Makefile's `pkg` target produces an unsigned .pkg
+                      # (the `ifdef APPLE_INSTALLER_IDENTITY` branch in
+                      # pkg_cmd is skipped). ESRP signs it in the next
+                      # step.
+                      make -C .github/macos-installer V=1 pkg
+                - ${{ if eq(parameters.esrp, true) }}:
+                  - template: .azure-pipelines/esrp/sign.yml@self
+                    parameters:
+                      displayName: 'ESRP-sign installer pkg'
+                      folderPath: '.github/macos-installer/disk-image'
+                      pattern: '*.pkg'
+                      useArchive: true # Required for macOS signing
+                      inlineOperation: |
+                        [
+                          {
+                            "KeyCode": "CP-401337-Apple",
+                            "OperationCode": "MacAppDeveloperSign",
+                            "ToolName": "sign",
+                            "ToolVersion": "1.0",
+                            "Parameters": {
+                              "Hardening": "Enable"
+                            }
+                          }
+                        ]
+                  - template: .azure-pipelines/esrp/sign.yml@self
+                    parameters:
+                      displayName: 'ESRP-notarize installer pkg'
+                      folderPath: '.github/macos-installer/disk-image'
+                      pattern: '*.pkg'
+                      useArchive: true # Required for macOS notarization
+                      inlineOperation: |
+                        [
+                          {
+                            "KeyCode": "CP-401337-Apple",
+                            "OperationCode": "MacAppNotarize",
+                            "ToolName": "sign",
+                            "ToolVersion": "1.0",
+                            "Parameters": {
+                              "BundleId": "com.git.pkg"
+                            }
+                          }
+                        ]
+                - task: Bash@3
+                  displayName: 'Build DMG'
+                  env:
+                    GITHUB_WORKSPACE: $(Build.SourcesDirectory)
+                  inputs:
+                    targetType: inline
+                    script: |
+                      set -euo pipefail
+
+                      VERSION="$(git_version)"
+                      export VERSION
+
+                      # Builds .github/macos-installer/git-<version>-universal.dmg
+                      # from the contents of disk-image/, which now contains
+                      # the signed and notarized .pkg.
+                      make -C .github/macos-installer V=1 image
+                - task: Bash@3
+                  displayName: 'Stage installer artifacts for upload'
+                  inputs:
+                    targetType: inline
+                    script: |
+                      set -euo pipefail
+
+                      mkdir -p "$(Build.ArtifactStagingDirectory)/_final"
+                      ls -la .github/macos-installer/ \
+                             .github/macos-installer/disk-image/ || true
+                      # The .pkg lands either directly under disk-image/
+                      # or, after ESRP MacAppNotarize re-packs it, inside
+                      # disk-image/<uuid>.zip.unzipped/. Find it.
+                      pkg=$(find .github/macos-installer/disk-image \
+                              -name 'git-*-universal.pkg' -type f \
+                              | head -1)
+                      mv .github/macos-installer/git-*-universal.dmg \
+                         "$pkg" \
+                         "$(Build.ArtifactStagingDirectory)/_final/"
+                # Validate the freshly built pkg in-place: install it,
+                # assert `git --version`, and confirm the universal binary
+                # actually runs natively as the host architecture. Folded
+                # into the build job so it runs on the same agent without
+                # the 1ES job-startup overhead a separate validate job
+                # carries.
+                - bash: |
+                    set -e
+                    if [ "$(uname -m)" = arm64 ] && command -v brew >/dev/null; then
+                      brew uninstall git || true
+                    fi
+                    pkg=$(find "$(Build.ArtifactStagingDirectory)/_final" \
+                      -name 'git-*-universal.pkg' -type f | head -1)
+                    if [ -z "$pkg" ]; then
+                      echo "No git-*-universal.pkg found in _final" >&2
+                      exit 1
+                    fi
+                    echo "Installing $pkg"
+                    sudo installer -pkg "$pkg" -target /
+                  displayName: 'Install Git'
+                - bash: |
+                    set -e
+                    actual=$(git --version | sed 's/^git version //')
+                    expect="$(git_version)"
+                    echo "Expected: $expect"
+                    echo "Actual:   $actual"
+                    test "$actual" = "$expect"
+                  displayName: 'Validate installed version'
+                - bash: |
+                    set -ex
+                    git version --build-options >actual
+                    cat actual
+                    grep "cpu: $(uname -m)" actual
+                  displayName: 'Validate universal binary CPU architecture'
 
           #
           # Linux build jobs
