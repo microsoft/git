@@ -289,6 +289,13 @@ extends:
                     dpkg-deb --build $debroot $(Build.ArtifactStagingDirectory)/app/example_$(deb_arch).deb
                   displayName: 'Dummy build'
                 - ${{ if eq(parameters.esrp, true) }}:
+                  # ESRP ADO tasks require .NET, so we install it here since the
+                  # Linux images do not have it by default.
+                  - task: UseDotNet@2
+                    displayName: 'Install .NET for ESRP'
+                    inputs:
+                      packageType: sdk
+                      version: '8.x'
                   - template: .azure-pipelines/esrp/sign.yml@self
                     parameters:
                       displayName: 'Example sign Debian package'
