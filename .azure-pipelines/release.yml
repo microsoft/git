@@ -295,7 +295,26 @@ extends:
                     artifactName: '${{ dim.id }}'
               steps:
                 - checkout: self
-                # TODO: add tasks to set up build environment
+                - task: Bash@3
+                  displayName: 'Log build environment'
+                  inputs:
+                    targetType: inline
+                    script: |
+                      lsb_release -a || true
+                      uname -a
+                      id
+                - task: Bash@3
+                  displayName: 'Install build dependencies'
+                  inputs:
+                    targetType: inline
+                    script: |
+                      set -euo pipefail
+                      sudo apt-get update -q
+                      sudo apt-get install -y -q --no-install-recommends \
+                        build-essential \
+                        tcl tk gettext asciidoc xmlto \
+                        libcurl4-gnutls-dev libpcre2-dev zlib1g-dev libexpat-dev \
+                        curl ca-certificates
                 # TODO: add tasks to build Git and installers
                 - script: |
                     echo $(cc_arch)
