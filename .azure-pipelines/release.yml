@@ -454,6 +454,25 @@ extends:
                       # pkg_cmd is skipped). ESRP signs it in the next
                       # step.
                       make -C .github/macos-installer V=1 pkg
+                - ${{ if eq(parameters.esrp, true) }}:
+                  - template: .azure-pipelines/esrp/sign.yml@self
+                    parameters:
+                      displayName: 'ESRP-sign installer pkg'
+                      folderPath: '.github/macos-installer/disk-image'
+                      pattern: '*.pkg'
+                      useArchive: true # Required for macOS signing
+                      inlineOperation: |
+                        [
+                          {
+                            "KeyCode": "CP-401337-Apple",
+                            "OperationCode": "MacAppDeveloperSign",
+                            "ToolName": "sign",
+                            "ToolVersion": "1.0",
+                            "Parameters": {
+                              "Hardening": "Enable"
+                            }
+                          }
+                        ]
                 # TODO: put final artifacts under $(Build.ArtifactStagingDirectory)/_final
                 - script: |
                     mkdir -p $(Build.ArtifactStagingDirectory)/_final
