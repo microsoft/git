@@ -295,22 +295,52 @@ extends:
                         tcl tk gettext asciidoc xmlto \
                         libcurl4-gnutls-dev libpcre2-dev zlib1g-dev libexpat-dev \
                         curl ca-certificates
-                # TODO: add tasks to build Git and installers
-                - script: |
-                    echo $(cc_arch)
-                    echo $(deb_arch)
-                    mkdir -p $(Build.ArtifactStagingDirectory)/app
-                    debroot=$(Build.ArtifactStagingDirectory)/pkgroot
-                    mkdir -p $debroot/DEBIAN
-                    cat > $debroot/DEBIAN/control <<CTRL
-                    Package: example
-                    Version: 1.0
-                    Architecture: $(deb_arch)
-                    Maintainer: test
-                    Description: dummy
-                    CTRL
-                    dpkg-deb --build $debroot $(Build.ArtifactStagingDirectory)/app/example_$(deb_arch).deb
-                  displayName: 'Dummy build'
+                - task: Bash@3
+                  displayName: 'Build microsoft-git Debian package'
+                  inputs:
+                    targetType: inline
+                    script: |
+                      set -euo pipefail
+
+                      VERSION="$(git_version)"
+                      # Git's GIT-VERSION-GEN expects .rc rather than -rc
+                      BUILD_VERSION="$(echo "$VERSION" | sed 's/-rc/.rc/g')"
+                      echo "$BUILD_VERSION" >version
+                      make GIT-VERSION-FILE
+
+                      PKGNAME="microsoft-git_${VERSION}_$(deb_arch)"
+                      PKGDIR="$(Build.ArtifactStagingDirectory)/pkgroot"
+                      rm -rf "$PKGDIR"
+                      mkdir -p "$PKGDIR/DEBIAN"
+
+                      DESTDIR="$PKGDIR" make -j"$(nproc)" V=1 DEVELOPER=1 \
+                        USE_LIBPCRE=1 \
+                        USE_CURL_FOR_IMAP_SEND=1 NO_OPENSSL=1 \
+                        NO_CROSS_DIRECTORY_HARDLINKS=1 \
+                        ASCIIDOC8=1 ASCIIDOC_NO_ROFF=1 \
+                        ASCIIDOC='TZ=UTC asciidoc' \
+                        prefix=/usr/local \
+                        gitexecdir=/usr/local/lib/git-core \
+                        libexecdir=/usr/local/lib/git-core \
+                        htmldir=/usr/local/share/doc/git/html \
+                        install install-doc install-html
+
+                      # Based on https://packages.ubuntu.com/xenial/vcs/git
+                      cat >"$PKGDIR/DEBIAN/control" <<CTRL
+                      Package: microsoft-git
+                      Version: $VERSION
+                      Section: vcs
+                      Priority: optional
+                      Architecture: $(deb_arch)
+                      Depends: libcurl3-gnutls, liberror-perl, libexpat1, libpcre2-8-0, perl, perl-modules, zlib1g
+                      Maintainer: GitClient <gitclient@microsoft.com>
+                      Description: Git client built from the https://github.com/microsoft/git repository,
+                        specialized in supporting monorepo scenarios. Includes the Scalar CLI.
+                      CTRL
+
+                      mkdir -p "$(Build.ArtifactStagingDirectory)/app"
+                      dpkg-deb -Zxz --build "$PKGDIR" \
+                        "$(Build.ArtifactStagingDirectory)/app/$PKGNAME.deb"
                 - ${{ if eq(parameters.esrp, true) }}:
                   # ESRP ADO tasks require .NET, so we install it here since the
                   # Linux images do not have it by default.
