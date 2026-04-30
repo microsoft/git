@@ -328,6 +328,45 @@ extends:
                       # they end up as full copies instead and bloat the
                       # .dmg indecently. Skip them entirely.
                       echo 'SKIP_DASHED_BUILT_INS = YabbaDabbaDoo' >>config.mak
+                - task: Bash@3
+                  displayName: 'Build payload via macos-installer'
+                  env:
+                    # The macos-installer Makefile derives BUILD_DIR from
+                    # $(GITHUB_WORKSPACE), which is unset in ADO. Point it
+                    # at the worktree root.
+                    GITHUB_WORKSPACE: $(Build.SourcesDirectory)
+                  inputs:
+                    targetType: inline
+                    script: |
+                      set -euo pipefail
+
+                      VERSION="$(git_version)"
+                      BUILD_VERSION="$(echo "$VERSION" | sed 's/-rc/.rc/g')"
+
+                      # The asciidoc/xmlto build steps need the catalogs
+                      # from Homebrew docbook.
+                      export XML_CATALOG_FILES="$(brew --prefix)/etc/xml/catalog"
+
+                      make -j"$(sysctl -n hw.physicalcpu)" GIT-VERSION-FILE dist dist-doc
+
+                      # Recover the source-tree commit OID from the dist
+                      # tarball; the macos-installer Makefile bakes it
+                      # into 'git version --build-options'.
+                      GIT_BUILT_FROM_COMMIT="$(gunzip -c "git-$BUILD_VERSION.tar.gz" \
+                        | git get-tar-commit-id)"
+                      export GIT_BUILT_FROM_COMMIT
+                      export VERSION
+
+                      mkdir payload manpages
+                      tar -xf "git-$BUILD_VERSION.tar.gz" -C payload
+                      tar -xf "git-manpages-$BUILD_VERSION.tar.gz" -C manpages
+
+                      # The actual compile happens inside the extracted
+                      # tree, against a copy of the config.mak we wrote
+                      # at the worktree root in the previous step.
+                      cp config.mak "payload/git-$BUILD_VERSION/config.mak"
+
+                      make -C .github/macos-installer V=1 payload
                 # TODO: add tasks to build Git and installers
                 - script: |
                     echo "Hello, Mac!"
