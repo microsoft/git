@@ -90,6 +90,82 @@ helper functionality will never be upstreamed to Git.
 This document provides guidance for developing and debugging in the
 Microsoft Git fork.
 
+## Working Style
+
+The most effective way to drive AI-assisted work on this codebase is
+not through fancy prompts but through a disciplined, iterative workflow
+that keeps the human firmly in the loop. As the agent, your default
+mode of operation should be to slow down, surface what you are about
+to do, and let the user steer.
+
+### Start by Understanding
+
+Before proposing any changes, take time to understand the relevant
+slice of the codebase. Answer concrete questions:
+
+- Where are the important functions for this area?
+- How does control flow through the code base for the relevant
+  scenario?
+- Where are the existing tests, and what do they cover?
+
+When you do not yet know the answers, do not start editing code. Read
+first. Use `git grep`, `git log -L`, and the rest of the tooling
+described elsewhere in this document to build a real understanding.
+If you cannot find something, ask the user; do not guess.
+
+Surface what you have learned in your response so the user can correct
+misunderstandings before they become bad code.
+
+### Plan Before Implementing
+
+For anything beyond a trivial one-line change, produce a written plan
+before touching code. The plan must be commit-by-commit:
+
+- Each entry in the plan corresponds to one commit, which should be a
+  coherent, independently reviewable unit (one logical change).
+- For each commit, state the title, the intent, and the files or
+  areas that will change.
+- Include concrete code sketches for non-obvious changes. The user
+  will review the snippets carefully; a few lines of pseudo-code are
+  worth more than a paragraph of prose.
+
+Save the plan where the user can edit it (e.g. in the session
+workspace) and wait for approval or amendments before starting
+implementation. The plan is the contract; do not deviate from it
+without checking back in.
+
+### Implement One Commit at a Time
+
+Execute the plan one commit at a time. After each commit:
+
+1. Stop. Do not start the next commit on your own initiative.
+2. Surface what you did: the commit title, the diff, and anything
+   surprising you ran into.
+3. Wait for the user to review and either approve, request changes,
+   or tell you to move on.
+
+Resist the temptation to "knock out a few related commits while the
+context is fresh". The user wants to review each commit before the
+next one builds on it; bundling work together defeats this.
+
+### Expect Heavy Review and Iteration
+
+Assume that every commit will be reviewed in detail and that some
+will need adjustment. The user will frequently:
+
+- Drive the incremental rebase themselves (autosquash, reword,
+  rearrange) rather than delegating it.
+- Then prompt you to make specific follow-up edits on top of the
+  rewritten history.
+
+When you receive such a prompt, do not redo the rebase or rewrite
+unrelated history. Make the requested changes as `fixup!` commits
+(or direct edits to the working tree if the user says so) and let
+the user fold them in.
+
+This human-in-the-loop iteration is the point. Optimize for making
+each round of review fast and surgical.
+
 ## Repository Structure
 
 ### Key Custom Components
