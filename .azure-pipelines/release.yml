@@ -367,19 +367,52 @@ extends:
                       cp config.mak "payload/git-$BUILD_VERSION/config.mak"
 
                       make -C .github/macos-installer V=1 payload
-                # TODO: add tasks to build Git and installers
-                - script: |
-                    echo "Hello, Mac!"
-                    mkdir -p $(Build.ArtifactStagingDirectory)/app
-                    cp /bin/echo $(Build.ArtifactStagingDirectory)/app/example
-                  displayName: 'Dummy build'
+                # ESRP-sign the universal Mach-O binaries inside the
+                # payload tree. The existing esrp/sign.yml template's
+                # CopyFiles@2 step uses minimatch globs and the only
+                # reliable way to detect Mach-O is by file content
+                # (file --mime), so we pre-filter into a staging dir,
+                # let the template zip/sign/extract that staging dir,
+                # then copy the signed binaries back over the payload.
                 - ${{ if eq(parameters.esrp, true) }}:
+                  # ESRP ADO tasks require .NET, which the macOS pool
+                  # image does not provide by default.
+                  - task: UseDotNet@2
+                    displayName: 'Install .NET for ESRP'
+                    inputs:
+                      packageType: sdk
+                      version: '8.x'
+                  - task: Bash@3
+                    displayName: 'Stage Mach-O binaries for signing'
+                    inputs:
+                      targetType: inline
+                      script: |
+                        set -euo pipefail
+
+                        VERSION="$(git_version)"
+                        BUILD_VERSION="$(echo "$VERSION" | sed 's/-rc/.rc/g')"
+                        payload_dir="payload/git-$BUILD_VERSION"
+                        stage_dir="$(Build.ArtifactStagingDirectory)/macos-tosign/binaries"
+
+                        rm -rf "$stage_dir"
+                        mkdir -p "$stage_dir"
+
+                        pushd "$payload_dir"
+                        find . -type f -exec file --mime {} + \
+                          | sed -n '/mach/s/: .*//p' \
+                          | while IFS= read -r f; do
+                              rel="${f#./}"
+                              tgt="$stage_dir/$rel"
+                              mkdir -p "$(dirname "$tgt")"
+                              cp -- "$f" "$tgt"
+                            done
+                        popd
                   - template: .azure-pipelines/esrp/sign.yml@self
                     parameters:
-                      displayName: 'Example sign binaries'
-                      folderPath: '$(Build.ArtifactStagingDirectory)/app'
+                      displayName: 'ESRP-sign Mach-O binaries'
+                      folderPath: '$(Build.ArtifactStagingDirectory)/macos-tosign/binaries'
                       pattern: '**/*'
-                      useArchive: true # Must be true when macOS signing
+                      useArchive: true # Required for macOS signing
                       inlineOperation: |
                         [
                           {
@@ -392,6 +425,17 @@ extends:
                             }
                           }
                         ]
+                  - task: Bash@3
+                    displayName: 'Copy signed binaries back to payload'
+                    inputs:
+                      targetType: inline
+                      script: |
+                        set -euo pipefail
+
+                        VERSION="$(git_version)"
+                        BUILD_VERSION="$(echo "$VERSION" | sed 's/-rc/.rc/g')"
+                        cp -R "$(Build.ArtifactStagingDirectory)/macos-tosign/binaries"/* \
+                          "payload/git-$BUILD_VERSION/"
                 # TODO: put final artifacts under $(Build.ArtifactStagingDirectory)/_final
                 - script: |
                     mkdir -p $(Build.ArtifactStagingDirectory)/_final
