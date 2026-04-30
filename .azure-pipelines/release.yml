@@ -239,7 +239,37 @@ extends:
                     artifactName: '${{ dim.id }}'
               steps:
                 - checkout: self
-                # TODO: add tasks to set up build environment
+                - task: Bash@3
+                  displayName: 'Install build dependencies'
+                  inputs:
+                    targetType: inline
+                    script: |
+                      set -euo pipefail
+
+                      # The agent's native arm64 Homebrew lives at
+                      # /opt/homebrew. Install a separate x86_64 Homebrew
+                      # under /usr/local so we can fetch the x86_64 build
+                      # of gettext/libintl alongside the arm64 one.
+                      arch -x86_64 /bin/bash -c \
+                        "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+                      arch -x86_64 /usr/local/bin/brew install gettext
+
+                      # Native (arm64) build dependencies.
+                      brew install automake asciidoc xmlto docbook
+                      brew link --force gettext
+
+                      # Make a universal libintl.a out of the two
+                      # arch-specific copies, dropped at the workspace
+                      # root so the build's LDFLAGS = -L"$(pwd)" can find
+                      # it. libintl depends on iconv, but we deliberately
+                      # use the system's universal /usr/lib/libiconv.dylib
+                      # rather than Homebrew's libiconv (which exports
+                      # _libiconv* symbols, while Homebrew's gettext was
+                      # built against system iconv with _iconv* symbols).
+                      lipo -create \
+                        -output libintl.a \
+                        /usr/local/opt/gettext/lib/libintl.a \
+                        /opt/homebrew/opt/gettext/lib/libintl.a
                 # TODO: add tasks to build Git and installers
                 - script: |
                     echo "Hello, Mac!"
