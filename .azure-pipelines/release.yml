@@ -10,6 +10,10 @@ resources:
       ref: refs/tags/release
 
 parameters:
+  - name: 'esrp'
+    type: boolean
+    default: false # TODO: change default to true after testing
+    displayName: 'Enable ESRP code signing'
   - name: 'github'
     type: boolean
     default: false # TODO: change default to true after testing
@@ -76,8 +80,17 @@ parameters:
         deb_arch: arm64
 
 variables:
+  - name: 'esrpAppConnectionName'
+    value: '1ESGitClient-ESRP-App'
   - name: 'githubConnectionName'
     value: 'GitHub-MicrosoftGit'
+  # ESRP signing variables set in the pipeline settings:
+  # - esrpEndpointUrl
+  # - esrpMI
+  # - esrpClientId
+  # - esrpTenantId
+  # - esrpKeyVaultName
+  # - esrpSignReqCertName
 
 extends:
   template: v1/1ES.Official.PipelineTemplate.yml@1ESPipelines
@@ -142,6 +155,14 @@ extends:
                   displayName: 'Add Git Bash to PATH'
                   inputs:
                     filename: ./.azure-pipelines/scripts/windows/setup-git-bash.cmd
+                # Setup ESRP code signing for Windows (sets ESRP_TOOL, ESRP_AUTH)
+                - ${{ if eq(parameters.esrp, true) }}:
+                  - template: .azure-pipelines/esrp/windows/setup.yml@self
+                    parameters:
+                      serviceConnectionName: $(esrpAppConnectionName)
+                      esrpClientId: $(esrpClientId)
+                      keyVaultName: $(esrpKeyVaultName)
+                      signCertName: $(esrpSignReqCertName)
                 # TODO: add tasks to set up Git for Windows SDK
                 # TODO: add tasks to build Git and installers
                 - script: |
@@ -152,6 +173,25 @@ extends:
                     copy C:\Windows\System32\calc.exe $(Build.ArtifactStagingDirectory)\app\example2.exe
                     copy C:\Windows\System32\calc.exe $(Build.ArtifactStagingDirectory)\app\example3.exe
                   displayName: 'Dummy build'
+                #
+                # To sign Windows binaries with ESRP, call esrpsign.sh
+                # with the files to sign as arguments. Requires the
+                # following environment variables to be set:
+                #   ESRP_TOOL           - set by the setup template above
+                #   ESRP_AUTH           - set by the setup template above
+                #   SYSTEM_ACCESSTOKEN  - $(System.AccessToken)
+                #
+                - ${{ if eq(parameters.esrp, true) }}:
+                  - bash: |
+                      .azure-pipelines/esrp/windows/esrpsign.sh \
+                        "$BUILD_ARTIFACTSTAGINGDIRECTORY/app/example1.exe" \
+                        "$BUILD_ARTIFACTSTAGINGDIRECTORY/app/example2.exe" \
+                        "$BUILD_ARTIFACTSTAGINGDIRECTORY/app/example3.exe"
+                    displayName: 'Example ESRP signing'
+                    env:
+                      ESRP_TOOL: $(ESRP_TOOL)
+                      ESRP_AUTH: $(ESRP_AUTH)
+                      SYSTEM_ACCESSTOKEN: $(System.AccessToken)
                 # TODO: put final artifacts under $(Build.ArtifactStagingDirectory)/_final
                 - script: |
                     mkdir $(Build.ArtifactStagingDirectory)\_final
@@ -186,6 +226,25 @@ extends:
                     mkdir -p $(Build.ArtifactStagingDirectory)/app
                     cp /bin/echo $(Build.ArtifactStagingDirectory)/app/example
                   displayName: 'Dummy build'
+                - ${{ if eq(parameters.esrp, true) }}:
+                  - template: .azure-pipelines/esrp/sign.yml@self
+                    parameters:
+                      displayName: 'Example sign binaries'
+                      folderPath: '$(Build.ArtifactStagingDirectory)/app'
+                      pattern: '**/*'
+                      useArchive: true # Must be true when macOS signing
+                      inlineOperation: |
+                        [
+                          {
+                            "KeyCode": "CP-401337-Apple",
+                            "OperationCode": "MacAppDeveloperSign",
+                            "ToolName": "sign",
+                            "ToolVersion": "1.0",
+                            "Parameters": {
+                              "Hardening": "Enable"
+                            }
+                          }
+                        ]
                 # TODO: put final artifacts under $(Build.ArtifactStagingDirectory)/_final
                 - script: |
                     mkdir -p $(Build.ArtifactStagingDirectory)/_final
@@ -233,6 +292,29 @@ extends:
                     CTRL
                     dpkg-deb --build $debroot $(Build.ArtifactStagingDirectory)/app/example_$(deb_arch).deb
                   displayName: 'Dummy build'
+                - ${{ if eq(parameters.esrp, true) }}:
+                  # ESRP ADO tasks require .NET, so we install it here since the
+                  # Linux images do not have it by default.
+                  - task: UseDotNet@2
+                    displayName: 'Install .NET for ESRP'
+                    inputs:
+                      packageType: sdk
+                      version: '8.x'
+                  - template: .azure-pipelines/esrp/sign.yml@self
+                    parameters:
+                      displayName: 'Example sign Debian package'
+                      folderPath: '$(Build.ArtifactStagingDirectory)/app'
+                      pattern: '**/*.deb'
+                      inlineOperation: |
+                        [
+                          {
+                            "KeyCode": "CP-453387-Pgp",
+                            "OperationCode": "LinuxSign",
+                            "ToolName": "sign",
+                            "ToolVersion": "1.0",
+                            "Parameters": {}
+                          }
+                        ]
                 # TODO: put final artifacts under $(Build.ArtifactStagingDirectory)/_final
                 - script: |
                     mkdir -p $(Build.ArtifactStagingDirectory)/_final
