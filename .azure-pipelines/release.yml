@@ -217,6 +217,21 @@ extends:
                   - output: pipelineArtifact
                     targetPath: '$(Build.ArtifactStagingDirectory)/_final'
                     artifactName: '${{ dim.id }}'
+              # macOS build flow:
+              #
+              #   1. Configure for a universal build and produce
+              #      Git's own dist tarballs (`make dist dist-doc`).
+              #   2. Extract the source tarball into payload/, copy
+              #      config.mak in, run `make payload` to compile and
+              #      install into stage/git-universal-<ver>/.
+              #   3. Mirror stage/ into build-artifacts/ (which is
+              #      what the macos-installer Makefile's `pkg` target
+              #      consumes - see note in the build step).
+              #   4. ESRP-sign Mach-O files in build-artifacts/.
+              #   5. `make pkg` -> unsigned .pkg in disk-image/.
+              #   6. ESRP-sign and ESRP-notarize the .pkg in place.
+              #   7. `make image` wraps disk-image/ contents in a DMG.
+              #   8. Stage the .pkg and .dmg under _final/ for upload.
               steps:
                 - checkout: self
                 - task: Bash@3
@@ -518,11 +533,41 @@ extends:
                             }
                           }
                         ]
-                # TODO: put final artifacts under $(Build.ArtifactStagingDirectory)/_final
-                - script: |
-                    mkdir -p $(Build.ArtifactStagingDirectory)/_final
-                    cp -R $(Build.ArtifactStagingDirectory)/app/* $(Build.ArtifactStagingDirectory)/_final/
-                  displayName: 'Dummy collect artifacts'
+                - task: Bash@3
+                  displayName: 'Build DMG'
+                  env:
+                    GITHUB_WORKSPACE: $(Build.SourcesDirectory)
+                  inputs:
+                    targetType: inline
+                    script: |
+                      set -euo pipefail
+
+                      VERSION="$(git_version)"
+                      export VERSION
+
+                      # Builds .github/macos-installer/git-<version>-universal.dmg
+                      # from the contents of disk-image/, which now contains
+                      # the signed and notarized .pkg.
+                      make -C .github/macos-installer V=1 image
+                - task: Bash@3
+                  displayName: 'Stage installer artifacts for upload'
+                  inputs:
+                    targetType: inline
+                    script: |
+                      set -euo pipefail
+
+                      mkdir -p "$(Build.ArtifactStagingDirectory)/_final"
+                      ls -la .github/macos-installer/ \
+                             .github/macos-installer/disk-image/ || true
+                      # The .pkg lands either directly under disk-image/
+                      # or, after ESRP MacAppNotarize re-packs it, inside
+                      # disk-image/<uuid>.zip.unzipped/. Find it.
+                      pkg=$(find .github/macos-installer/disk-image \
+                              -name 'git-*-universal.pkg' -type f \
+                              | head -1)
+                      mv .github/macos-installer/git-*-universal.dmg \
+                         "$pkg" \
+                         "$(Build.ArtifactStagingDirectory)/_final/"
 
           #
           # Linux build jobs
