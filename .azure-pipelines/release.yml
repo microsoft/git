@@ -491,11 +491,35 @@ extends:
                             }
                           }
                         ]
-                # TODO: put final artifacts under $(Build.ArtifactStagingDirectory)/_final
-                - script: |
-                    mkdir -p $(Build.ArtifactStagingDirectory)/_final
-                    cp -R $(Build.ArtifactStagingDirectory)/app/* $(Build.ArtifactStagingDirectory)/_final/
-                  displayName: 'Dummy collect artifacts'
+                - task: Bash@3
+                  displayName: 'Build DMG'
+                  env:
+                    GITHUB_WORKSPACE: $(Build.SourcesDirectory)
+                  inputs:
+                    targetType: inline
+                    script: |
+                      set -euo pipefail
+
+                      VERSION="$(git_version)"
+                      export VERSION
+
+                      # Builds .github/macos-installer/git-<version>-universal.dmg
+                      # from the contents of disk-image/, which now contains
+                      # the signed and notarized .pkg.
+                      make -C .github/macos-installer V=1 image
+                - task: Bash@3
+                  displayName: 'Stage installer artifacts for upload'
+                  inputs:
+                    targetType: inline
+                    script: |
+                      set -euo pipefail
+
+                      VERSION="$(git_version)"
+                      mkdir -p "$(Build.ArtifactStagingDirectory)/_final"
+                      mv ".github/macos-installer/git-$VERSION-universal.dmg" \
+                        "$(Build.ArtifactStagingDirectory)/_final/"
+                      mv ".github/macos-installer/disk-image/git-$VERSION-universal.pkg" \
+                        "$(Build.ArtifactStagingDirectory)/_final/"
 
           #
           # Linux build jobs
