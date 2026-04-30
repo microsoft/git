@@ -436,6 +436,24 @@ extends:
                         BUILD_VERSION="$(echo "$VERSION" | sed 's/-rc/.rc/g')"
                         cp -R "$(Build.ArtifactStagingDirectory)/macos-tosign/binaries"/* \
                           "payload/git-$BUILD_VERSION/"
+                - task: Bash@3
+                  displayName: 'Build unsigned installer pkg'
+                  env:
+                    GITHUB_WORKSPACE: $(Build.SourcesDirectory)
+                  inputs:
+                    targetType: inline
+                    script: |
+                      set -euo pipefail
+
+                      VERSION="$(git_version)"
+                      export VERSION
+
+                      # Leave APPLE_INSTALLER_IDENTITY undefined so the
+                      # Makefile's `pkg` target produces an unsigned .pkg
+                      # (the `ifdef APPLE_INSTALLER_IDENTITY` branch in
+                      # pkg_cmd is skipped). ESRP signs it in the next
+                      # step.
+                      make -C .github/macos-installer V=1 pkg
                 # TODO: put final artifacts under $(Build.ArtifactStagingDirectory)/_final
                 - script: |
                     mkdir -p $(Build.ArtifactStagingDirectory)/_final
