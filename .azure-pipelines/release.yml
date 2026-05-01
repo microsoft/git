@@ -234,6 +234,48 @@ extends:
                       git clone --filter=blob:none --single-branch -b main \
                         https://github.com/git-for-windows/build-extra \
                         /usr/src/build-extra
+                - task: Bash@3
+                  displayName: 'Build mingw-w64-git package'
+                  inputs:
+                    targetType: inline
+                    script: |
+                      set -euo pipefail
+                      set -x
+
+                      # makepkg-mingw runs git internally and looks for a
+                      # plain /usr/bin/git; trampoline it to the matching
+                      # MinGW-built git.exe.
+                      printf '#!/bin/sh\n\nexec /%s/bin/git.exe "$@"\n' \
+                        "$(mingwprefix)" >/usr/bin/git
+                      chmod +x /usr/bin/git
+
+                      USER_NAME='microsoft-git-build'
+                      USER_EMAIL='microsoft-git-build@users.noreply.github.com'
+                      git config --global user.name "$USER_NAME"
+                      git config --global user.email "$USER_EMAIL"
+                      export PACKAGER="$USER_NAME <$USER_EMAIL>"
+
+                      # please.sh's --only-<arch> takes the bare CPU
+                      # name (x86_64 / aarch64), not the toolchain
+                      # triple ($(toolchain) here is x86_64 or
+                      # clang-aarch64).
+                      case "$(toolchain)" in
+                      x86_64) cpu_arch=x86_64 ;;
+                      clang-aarch64) cpu_arch=aarch64 ;;
+                      *) echo "unknown toolchain: $(toolchain)" >&2; exit 1 ;;
+                      esac
+
+                      sh -x /usr/src/build-extra/please.sh build-mingw-w64-git \
+                        --only-"$cpu_arch" \
+                        --build-src-pkg \
+                        -o artifacts \
+                        HEAD
+
+                      # NOTE: the GitHub workflow additionally GPG-signs
+                      # each tarball and creates a MINGW-packages.bundle
+                      # for downstream Pacman consumers; both are
+                      # intentionally out of scope for the initial port
+                      # and tracked as follow-ups.
                 # Setup ESRP code signing for Windows (sets ESRP_TOOL, ESRP_AUTH)
                 - ${{ if eq(parameters.esrp, true) }}:
                   - template: .azure-pipelines/esrp/windows/setup.yml@self
