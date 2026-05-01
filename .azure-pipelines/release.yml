@@ -185,49 +185,10 @@ extends:
                 - task: Bash@3
                   displayName: 'Install Git for Windows SDK'
                   inputs:
-                    targetType: inline
-                    script: |
-                      set -euo pipefail
-
-                      # Materialise the build-installers flavour of the
-                      # Git for Windows SDK at C:\sdk. We do a partial + bare
-                      # clone of git-sdk-XX, then run build-extra's please.sh
-                      # script to sparse-checkout just the build-installers
-                      # subset out of it.
-                      #
-                      # See:
-                      # https://github.com/git-for-windows/git-sdk-64/blob/main/.github/workflows/ci-artifacts.yml
-                      # https://github.com/git-for-windows/build-extra/blob/main/please.sh
-
-                      sources="$(cygpath -au "$(Build.SourcesDirectory)")"
-                      sdk_bare="$sources/sdk-bare.git"
-                      bootstrap_be="$sources/build-extra-bootstrap"
-                      sdk="C:/sdk"
-
-                      git init --bare "$sdk_bare"
-                      git --git-dir="$sdk_bare" remote add origin "https://github.com/$(sdk_repo)"
-                      git --git-dir="$sdk_bare" config remote.origin.promisor true
-                      git --git-dir="$sdk_bare" config remote.origin.partialCloneFilter blob:none
-                      git --git-dir="$sdk_bare" fetch --depth=1 origin HEAD
-                      git --git-dir="$sdk_bare" update-ref --no-deref HEAD FETCH_HEAD
-
-                      # please.sh is the bootstrap; build-extra gets cloned
-                      # again into the SDK in the next step so `please.sh
-                      # build-mingw-w64-git` can find it at /usr/src/build-extra
-                      # under the SDK's bash.
-                      git clone --depth=1 --single-branch -b main \
-                        https://github.com/git-for-windows/build-extra \
-                        "$bootstrap_be"
-
-                      # Architecture is auto-detected from the bare clone's HEAD
-                      # tree (clangarm64/ vs usr/x86_64-pc-msys/).
-                      bash "$bootstrap_be/please.sh" create-sdk-artifact \
-                        --sdk="$sdk_bare" --out="$sdk" build-installers
-
-                      # Expose the SDK's bash and the matching MinGW
-                      # toolchain to subsequent tasks.
-                      echo "##vso[task.prependpath]$(cygpath -w "$sdk/usr/bin")"
-                      echo "##vso[task.prependpath]$(cygpath -w "$sdk/$(mingwprefix)/bin")"
+                    filePath: ./.azure-pipelines/scripts/windows/setup-git-sdk.sh
+                    arguments: '$(sdk_repo) $(mingwprefix) "$(Agent.TempDirectory)\gitsdk"'
+                  env:
+                    BOOTSTRAP_DIR: '$(Build.SourcesDirectory)'
                 - task: Bash@3
                   displayName: 'Clone build-extra into SDK'
                   inputs:
