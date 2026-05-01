@@ -34,6 +34,7 @@ parameters:
         image: win-x86_64-ado1es
         os: windows
         toolchain: x86_64
+        cpu_arch: x86_64
         mingwprefix: mingw64
         sdk_repo: git-for-windows/git-sdk-64
 
@@ -44,6 +45,7 @@ parameters:
         image: win-arm64-ado1es
         os: windows
         toolchain: clang-aarch64
+        cpu_arch: aarch64
         mingwprefix: clangarm64
         sdk_repo: git-for-windows/git-sdk-arm64
 
@@ -157,6 +159,7 @@ extends:
                 toolchain: ${{ dim.toolchain }}
                 mingwprefix: ${{ dim.mingwprefix }}
                 sdk_repo: ${{ dim.sdk_repo }}
+                cpu_arch: ${{ dim.cpu_arch }}
               templateContext:
                 outputs:
                   - output: pipelineArtifact
@@ -222,18 +225,8 @@ extends:
                       git config --global user.email "$USER_EMAIL"
                       export PACKAGER="$USER_NAME <$USER_EMAIL>"
 
-                      # please.sh's --only-<arch> takes the bare CPU
-                      # name (x86_64 / aarch64), not the toolchain
-                      # triple ($(toolchain) here is x86_64 or
-                      # clang-aarch64).
-                      case "$(toolchain)" in
-                      x86_64) cpu_arch=x86_64 ;;
-                      clang-aarch64) cpu_arch=aarch64 ;;
-                      *) echo "unknown toolchain: $(toolchain)" >&2; exit 1 ;;
-                      esac
-
                       sh -x /usr/src/build-extra/please.sh build-mingw-w64-git \
-                        --only-"$cpu_arch" \
+                        --only-"$(cpu_arch)" \
                         --build-src-pkg \
                         -o artifacts \
                         HEAD
