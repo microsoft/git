@@ -34,6 +34,7 @@ parameters:
         image: win-x86_64-ado1es
         os: windows
         toolchain: x86_64
+        cpu_arch: x86_64
         mingwprefix: mingw64
         sdk_repo: git-for-windows/git-sdk-64
 
@@ -44,6 +45,7 @@ parameters:
         image: win-arm64-ado1es
         os: windows
         toolchain: clang-aarch64
+        cpu_arch: aarch64
         mingwprefix: clangarm64
         sdk_repo: git-for-windows/git-sdk-arm64
 
@@ -146,6 +148,7 @@ extends:
                 toolchain: ${{ dim.toolchain }}
                 mingwprefix: ${{ dim.mingwprefix }}
                 sdk_repo: ${{ dim.sdk_repo }}
+                cpu_arch: ${{ dim.cpu_arch }}
               templateContext:
                 outputs:
                   - output: pipelineArtifact
@@ -190,6 +193,49 @@ extends:
                       git clone --filter=blob:none --single-branch -b main \
                         https://github.com/git-for-windows/build-extra \
                         /usr/src/build-extra
+                - task: Bash@3
+                  displayName: 'Build mingw-w64-git package'
+                  inputs:
+                    targetType: inline
+                    script: |
+                      set -euo pipefail
+                      set -x
+
+                      # Detach stdin so descendants like the git-extra
+                      # post_install hook (which runs `for s in $(grep
+                      # -l PAT $(find /mingw*/bin/ ...))` and falls back
+                      # to reading stdin when /mingw*/bin/ is absent
+                      # and find produces empty output) cannot block
+                      # the build waiting for input. Bash@3 leaves the
+                      # task's stdin pipe open with no writer; the
+                      # GitHub Actions runner closes it for the same
+                      # reason (see actions/runner ProcessInvoker.cs).
+                      exec </dev/null
+
+                      # makepkg-mingw runs git internally and looks for a
+                      # plain /usr/bin/git; trampoline it to the matching
+                      # MinGW-built git.exe.
+                      printf '#!/bin/sh\n\nexec /%s/bin/git.exe "$@"\n' \
+                        "$(mingwprefix)" >/usr/bin/git
+                      chmod +x /usr/bin/git
+
+                      USER_NAME='microsoft-git-build'
+                      USER_EMAIL='microsoft-git-build@users.noreply.github.com'
+                      git config --global user.name "$USER_NAME"
+                      git config --global user.email "$USER_EMAIL"
+                      export PACKAGER="$USER_NAME <$USER_EMAIL>"
+
+                      sh -x /usr/src/build-extra/please.sh build-mingw-w64-git \
+                        --only-"$(cpu_arch)" \
+                        --build-src-pkg \
+                        -o artifacts \
+                        HEAD
+
+                      # NOTE: the GitHub workflow additionally GPG-signs
+                      # each tarball and creates a MINGW-packages.bundle
+                      # for downstream Pacman consumers; both are
+                      # intentionally out of scope for the initial port
+                      # and tracked as follow-ups.
                 # Setup ESRP code signing for Windows (sets ESRP_TOOL, ESRP_AUTH)
                 - ${{ if eq(parameters.esrp, true) }}:
                   - template: .azure-pipelines/esrp/windows/setup.yml@self
