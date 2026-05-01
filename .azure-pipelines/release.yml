@@ -222,6 +222,18 @@ extends:
                       Write-Host "##vso[task.prependpath]$tools"
                       Write-Host "##vso[task.prependpath]$sdk\usr\bin"
                       Write-Host "##vso[task.prependpath]$sdk\$(mingwprefix)\bin"
+                - task: Bash@3
+                  displayName: 'Clone build-extra into SDK'
+                  inputs:
+                    targetType: inline
+                    script: |
+                      set -euo pipefail
+                      # The please.sh + signtool.sh scripts the build
+                      # relies on live in build-extra; the SDK ships
+                      # without them. Partial clone to keep this fast.
+                      git clone --filter=blob:none --single-branch -b main \
+                        https://github.com/git-for-windows/build-extra \
+                        /usr/src/build-extra
                 # Setup ESRP code signing for Windows (sets ESRP_TOOL, ESRP_AUTH)
                 - ${{ if eq(parameters.esrp, true) }}:
                   - template: .azure-pipelines/esrp/windows/setup.yml@self
