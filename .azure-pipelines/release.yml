@@ -532,15 +532,17 @@ extends:
                       script: |
                         set -euo pipefail
 
-                        VERSION="$(git_version)"
-                        BUILD_VERSION="$(echo "$VERSION" | sed 's/-rc/.rc/g')"
-                        payload_dir="payload/git-$BUILD_VERSION"
+                        # Sign the install tree (build-artifacts/) -
+                        # this is what `make pkg` packages. Signing
+                        # the source tree under payload/ would have
+                        # no effect on the resulting .pkg.
+                        install_tree=".github/macos-installer/build-artifacts/usr/local/git"
                         stage_dir="$(Build.ArtifactStagingDirectory)/macos-tosign/binaries"
 
                         rm -rf "$stage_dir"
                         mkdir -p "$stage_dir"
 
-                        pushd "$payload_dir"
+                        pushd "$install_tree"
                         find . -type f -exec file --mime {} + \
                           | sed -n '/mach/s/: .*//p' \
                           | while IFS= read -r f; do
@@ -569,16 +571,14 @@ extends:
                           }
                         ]
                   - task: Bash@3
-                    displayName: 'Copy signed binaries back to payload'
+                    displayName: 'Copy signed binaries back to install tree'
                     inputs:
                       targetType: inline
                       script: |
                         set -euo pipefail
 
-                        VERSION="$(git_version)"
-                        BUILD_VERSION="$(echo "$VERSION" | sed 's/-rc/.rc/g')"
                         cp -R "$(Build.ArtifactStagingDirectory)/macos-tosign/binaries"/* \
-                          "payload/git-$BUILD_VERSION/"
+                          .github/macos-installer/build-artifacts/usr/local/git/
                 - task: Bash@3
                   displayName: 'Build unsigned installer pkg'
                   env:
