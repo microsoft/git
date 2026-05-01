@@ -316,40 +316,37 @@ extends:
                       esrpClientId: $(esrpClientId)
                       keyVaultName: $(esrpKeyVaultName)
                       signCertName: $(esrpSignReqCertName)
-                # TODO: add tasks to set up Git for Windows SDK
-                # TODO: add tasks to build Git and installers
-                - script: |
-                    echo $(mingwprefix)
-                    echo $(toolchain)
-                    mkdir $(Build.ArtifactStagingDirectory)\app
-                    copy C:\Windows\System32\calc.exe $(Build.ArtifactStagingDirectory)\app\example1.exe
-                    copy C:\Windows\System32\calc.exe $(Build.ArtifactStagingDirectory)\app\example2.exe
-                    copy C:\Windows\System32\calc.exe $(Build.ArtifactStagingDirectory)\app\example3.exe
-                  displayName: 'Dummy build'
-                #
-                # To sign Windows binaries with ESRP, call esrpsign.sh
-                # with the files to sign as arguments. Requires the
-                # following environment variables to be set:
-                #   ESRP_TOOL           - set by the setup template above
-                #   ESRP_AUTH           - set by the setup template above
-                #   SYSTEM_ACCESSTOKEN  - $(System.AccessToken)
-                #
-                - ${{ if eq(parameters.esrp, true) }}:
                   - bash: |
+                      set -euo pipefail
                       .azure-pipelines/esrp/windows/esrpsign.sh \
-                        "$BUILD_ARTIFACTSTAGINGDIRECTORY/app/example1.exe" \
-                        "$BUILD_ARTIFACTSTAGINGDIRECTORY/app/example2.exe" \
-                        "$BUILD_ARTIFACTSTAGINGDIRECTORY/app/example3.exe"
-                    displayName: 'Example ESRP signing'
+                        artifacts/Git-*.exe \
+                        artifacts/PortableGit-*.exe
+                    displayName: 'ESRP-sign installer and portable Git'
                     env:
                       ESRP_TOOL: $(ESRP_TOOL)
                       ESRP_AUTH: $(ESRP_AUTH)
                       SYSTEM_ACCESSTOKEN: $(System.AccessToken)
-                # TODO: put final artifacts under $(Build.ArtifactStagingDirectory)/_final
-                - script: |
-                    mkdir $(Build.ArtifactStagingDirectory)\_final
-                    xcopy /s /y $(Build.ArtifactStagingDirectory)\app $(Build.ArtifactStagingDirectory)\_final
-                  displayName: 'Dummy collect artifacts'
+                - task: Bash@3
+                  displayName: 'Stage installer artifacts for upload'
+                  inputs:
+                    targetType: inline
+                    script: |
+                      set -euo pipefail
+
+                      # Compute SHA-256 over the (possibly signed)
+                      # binaries; if ESRP signing ran, this picks up
+                      # the post-sign bytes, which is what we want to
+                      # publish in the release notes.
+                      openssl dgst -sha256 \
+                        artifacts/Git-*.exe \
+                        artifacts/PortableGit-*.exe \
+                        | sed 's/.* //' >artifacts/sha-256.txt
+
+                      mkdir -p "$(Build.ArtifactStagingDirectory)/_final"
+                      cp artifacts/Git-*.exe \
+                        artifacts/PortableGit-*.exe \
+                        artifacts/sha-256.txt \
+                        "$(Build.ArtifactStagingDirectory)/_final/"
 
           #
           # macOS build jobs
