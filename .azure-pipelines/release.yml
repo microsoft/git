@@ -577,6 +577,15 @@ extends:
                       # from Homebrew docbook.
                       export XML_CATALOG_FILES="$(brew --prefix)/etc/xml/catalog"
 
+                      # `git commit` (in dist-doc) forks a detached
+                      # `git maintenance run --auto` that keeps writing
+                      # into .git/ after the commit returns, which then
+                      # races with dist-doc's `rm -fr .doc-tmp-dir` and
+                      # produces "Directory not empty". Disable
+                      # auto-maintenance for every git invocation in
+                      # this build.
+                      export GIT_CONFIG_PARAMETERS="'maintenance.auto=false'"
+
                       make -j"$(sysctl -n hw.physicalcpu)" GIT-VERSION-FILE dist dist-doc
 
                       # Recover the source-tree commit OID from the dist
