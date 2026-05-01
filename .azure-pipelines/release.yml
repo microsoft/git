@@ -36,6 +36,7 @@ parameters:
         toolchain: x86_64
         cpu_arch: x86_64
         mingwprefix: mingw64
+        msystem: MINGW64
         sdk_repo: git-for-windows/git-sdk-64
 
       - id: windows_arm64
@@ -47,6 +48,7 @@ parameters:
         toolchain: clang-aarch64
         cpu_arch: aarch64
         mingwprefix: clangarm64
+        msystem: CLANGARM64
         sdk_repo: git-for-windows/git-sdk-arm64
 
   - name: macos_matrix
