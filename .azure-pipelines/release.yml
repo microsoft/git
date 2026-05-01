@@ -240,6 +240,16 @@ extends:
                         git config --global alias.signtool "!sh \"$script\""
                         git config --global --get alias.signtool
                 - task: Bash@3
+                  displayName: 'Apply Windows build patches'
+                  inputs:
+                    targetType: inline
+                    script: |
+                      set -euo pipefail
+                      apply="$(cygpath -au "$BUILD_SOURCESDIRECTORY/.azure-pipelines/scripts/apply-patches.sh")"
+                      patches="$(cygpath -au "$BUILD_SOURCESDIRECTORY/.azure-pipelines/patches/windows")"
+                      bash "$apply" "$patches/build-extra" /usr/src/build-extra
+                      bash "$apply" "$patches/git-sdk" "/$(mingwprefix)"
+                - task: Bash@3
                   displayName: 'Build mingw-w64-git package'
                   ${{ if eq(parameters.esrp, true) }}:
                     env:
