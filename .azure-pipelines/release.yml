@@ -276,6 +276,38 @@ extends:
                       # for downstream Pacman consumers; both are
                       # intentionally out of scope for the initial port
                       # and tracked as follow-ups.
+                - task: Bash@3
+                  displayName: 'Build installer and portable Git'
+                  inputs:
+                    targetType: inline
+                    script: |
+                      set -euo pipefail
+                      set -x
+
+                      b=/usr/src/build-extra
+
+                      # please.sh make_installers_from_mingw_w64_git
+                      # --include-pdbs reads PDB archives from
+                      # cached-source-packages/.
+                      mkdir -p "$b/cached-source-packages"
+                      cp artifacts/*-pdb* "$b/cached-source-packages/"
+
+                      # The --pkg=... list excludes the optional pieces
+                      # the workflow drops (signatures, archimport, cvs,
+                      # p4, gitweb, doc-man); keep the same filter so
+                      # the resulting .exe size is comparable.
+                      pkg_args=$(
+                        ls artifacts/mingw-w64-$(toolchain)-*.tar.* \
+                          | sed '/\.sig$/d;/archimport/d;/cvs/d;/p4/d;/gitweb/d;/doc-man/d;s/^/--pkg=/' \
+                          | tr '\n' ' '
+                      )
+
+                      for type in installer portable; do
+                        eval "$b"/please.sh make_installers_from_mingw_w64_git --include-pdbs \
+                          --version="$(git_version)" \
+                          -o artifacts --"$type" \
+                          $pkg_args
+                      done
                 # Setup ESRP code signing for Windows (sets ESRP_TOOL, ESRP_AUTH)
                 - ${{ if eq(parameters.esrp, true) }}:
                   - template: .azure-pipelines/esrp/windows/setup.yml@self
