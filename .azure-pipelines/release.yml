@@ -184,7 +184,7 @@ extends:
                       $azPath = "C:\Program Files (x86)\Microsoft SDKs\Azure\CLI2\wbin"
                       Write-Host "##vso[task.prependpath]$azPath"
                       Write-Host "Azure CLI installed."
-                    displayName: 'Install Azure CLI (arm64)'
+                    displayName: 'Install Azure CLI (x64 on ARM64)'
                 # Install VS 2022 Build Tools on x64 so cv2pdb-strip
                 # (driven by please.sh during the strip phase of
                 # build-mingw-w64-git) can locate mspdb140.dll. We
