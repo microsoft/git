@@ -242,8 +242,38 @@ extends:
                       git clone --filter=blob:none --single-branch -b main \
                         https://github.com/git-for-windows/build-extra \
                         /usr/src/build-extra
+                # Setup ESRP code signing for Windows (sets ESRP_TOOL,
+                # ESRP_AUTH) before the build steps so that the build
+                # itself (Inno Setup, makepkg-mingw) can invoke ESRP
+                # via the `git signtool` alias for in-line signing of
+                # individual binaries.
+                - ${{ if eq(parameters.esrp, true) }}:
+                  - template: .azure-pipelines/esrp/windows/setup.yml@self
+                    parameters:
+                      serviceConnectionName: $(esrpAppConnectionName)
+                      esrpClientId: $(esrpClientId)
+                      keyVaultName: $(esrpKeyVaultName)
+                      signCertName: $(esrpSignReqCertName)
+                  - task: Bash@3
+                    displayName: 'Configure git signtool alias for ESRP'
+                    inputs:
+                      targetType: inline
+                      script: |
+                        set -euo pipefail
+                        # please.sh, makepkg-mingw, and Inno Setup's
+                        # release.sh all detect this alias and route
+                        # their per-file code-signing through it; see
+                        # build-extra's please.sh + installer/release.sh.
+                        script="$(cygpath -au "$BUILD_SOURCESDIRECTORY/.azure-pipelines/esrp/windows/esrpsign.sh")"
+                        git config --global alias.signtool "!sh \"$script\""
+                        git config --global --get alias.signtool
                 - task: Bash@3
                   displayName: 'Build mingw-w64-git package'
+                  ${{ if eq(parameters.esrp, true) }}:
+                    env:
+                      ESRP_TOOL: $(ESRP_TOOL)
+                      ESRP_AUTH: $(ESRP_AUTH)
+                      SYSTEM_ACCESSTOKEN: $(System.AccessToken)
                   inputs:
                     targetType: inline
                     script: |
@@ -276,6 +306,11 @@ extends:
                       # and tracked as follow-ups.
                 - task: Bash@3
                   displayName: 'Build installer and portable Git'
+                  ${{ if eq(parameters.esrp, true) }}:
+                    env:
+                      ESRP_TOOL: $(ESRP_TOOL)
+                      ESRP_AUTH: $(ESRP_AUTH)
+                      SYSTEM_ACCESSTOKEN: $(System.AccessToken)
                   inputs:
                     targetType: inline
                     script: |
@@ -305,25 +340,17 @@ extends:
                           --version="$(git_version)" \
                           -o artifacts --"$type" \
                           $pkg_args
+
+                        # The installer .exe is signed inline by Inno
+                        # Setup via the `git signtool` alias; the
+                        # portable .exe is a 7z self-extractor that
+                        # bypasses that path, so sign it explicitly.
+                        if test "$type" = portable && \
+                           test -n "$(git config alias.signtool)"
+                        then
+                          git signtool artifacts/PortableGit-*.exe
+                        fi
                       done
-                # Setup ESRP code signing for Windows (sets ESRP_TOOL, ESRP_AUTH)
-                - ${{ if eq(parameters.esrp, true) }}:
-                  - template: .azure-pipelines/esrp/windows/setup.yml@self
-                    parameters:
-                      serviceConnectionName: $(esrpAppConnectionName)
-                      esrpClientId: $(esrpClientId)
-                      keyVaultName: $(esrpKeyVaultName)
-                      signCertName: $(esrpSignReqCertName)
-                  - bash: |
-                      set -euo pipefail
-                      .azure-pipelines/esrp/windows/esrpsign.sh \
-                        artifacts/Git-*.exe \
-                        artifacts/PortableGit-*.exe
-                    displayName: 'ESRP-sign installer and portable Git'
-                    env:
-                      ESRP_TOOL: $(ESRP_TOOL)
-                      ESRP_AUTH: $(ESRP_AUTH)
-                      SYSTEM_ACCESSTOKEN: $(System.AccessToken)
                 - task: Bash@3
                   displayName: 'Stage installer artifacts for upload'
                   inputs:
