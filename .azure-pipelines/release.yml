@@ -55,7 +55,11 @@ parameters:
       - id: macos_universal
         jobName: 'macOS (x64 + ARM64)'
         pool: 'Azure Pipelines'
-        image: macOS-latest
+        # macOS-latest is an Intel x86_64 Mac Pro, which can't host the
+        # arm64 Homebrew the universal-binary build needs. We need to
+        # explictly target the newer Apple Silicon machines that can run
+        # both x86_64 and arm64 builds.
+        image: macOS-15-arm64
         os: macos
 
   - name: linux_matrix
