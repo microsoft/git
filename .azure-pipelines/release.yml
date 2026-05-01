@@ -278,8 +278,13 @@ extends:
                       # and tracked as follow-ups.
                 - task: Bash@3
                   displayName: 'Build installer and portable Git'
-                  ${{ if eq(parameters.esrp, true) }}:
-                    env:
+                  env:
+                    # `please.sh make_installers_from_mingw_w64_git` invokes
+                    # build-extra's installer/release.sh, which requires
+                    # MSYSTEM to select the architecture branch. Bash@3 does
+                    # not source /etc/profile, so we export it explicitly.
+                    MSYSTEM: ${{ dim.msystem }}
+                    ${{ if eq(parameters.esrp, true) }}:
                       ESRP_TOOL: $(ESRP_TOOL)
                       ESRP_AUTH: $(ESRP_AUTH)
                       SYSTEM_ACCESSTOKEN: $(System.AccessToken)
