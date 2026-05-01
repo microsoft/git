@@ -38,6 +38,7 @@ if [ -z "${SYSTEM_ACCESSTOKEN:-}" ]; then
 fi
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+. "$SCRIPT_DIR/../../scripts/windows/utils.sh"
 
 # Check for overriden key code, otherwise use default (Microsoft Third-Party/OSS)
 ESRP_KEYCODE="${ESRP_KEYCODE:-CP-231522}"
@@ -53,32 +54,6 @@ if [ ! -f "$ESRP_TOOL" ]; then
 	echo "error: ESRPClient.exe not found at $ESRP_TOOL" >&2
 	exit 1
 fi
-
-# Convert an MSYS2 path to Windows format for ESRPClient.exe.
-to_windows_path () {
-	# Prefer cygpath if available (full Git for Windows)
-	if command -v cygpath >/dev/null 2>&1; then
-		cygpath -w "$1"
-		return
-	fi
-	case "$1" in
-	/[a-zA-Z]/*)
-		# Drive path: /d/path -> D:\path
-		drive=$(echo "$1" | cut -c2 | tr 'a-z' 'A-Z')
-		rest=$(echo "$1" | cut -c3-)
-		echo "${drive}:${rest}" | sed 's|/|\\|g'
-		;;
-	/*)
-		# Absolute path under MSYS2 root
-		root=$(cd / && pwd -W)
-		echo "${root}${1}" | sed 's|/|\\|g'
-		;;
-	# Relative or already-Windows path: just flip slashes
-	*)
-		echo "$1" | sed 's|/|\\|g'
-		;;
-	esac
-}
 
 # Build the SignRequestFiles JSON array
 echo "==> Preparing files for signing ($# file(s))..."
