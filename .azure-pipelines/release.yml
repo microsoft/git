@@ -236,6 +236,59 @@ extends:
                       # for downstream Pacman consumers; both are
                       # intentionally out of scope for the initial port
                       # and tracked as follow-ups.
+                - task: Bash@3
+                  displayName: 'Build installer and portable Git'
+                  inputs:
+                    targetType: inline
+                    script: |
+                      set -euo pipefail
+                      set -x
+
+                      # Detach stdin so descendants like the git-extra
+                      # post_install hook (which runs `for s in $(grep
+                      # -l PAT $(find /mingw*/bin/ ...))` and falls back
+                      # to reading stdin when /mingw*/bin/ is absent
+                      # and find produces empty output) cannot block
+                      # the build waiting for input. Bash@3 leaves the
+                      # task's stdin pipe open with no writer; the
+                      # GitHub Actions runner closes it for the same
+                      # reason (see actions/runner ProcessInvoker.cs).
+                      exec </dev/null
+
+                      b=/usr/src/build-extra
+
+                      # Make every nested bash subshell auto-enable
+                      # xtrace; pacman runs each package's install
+                      # hook in its own non-interactive bash, and
+                      # without this we would not see anything that
+                      # happens between the moment pacman calls into
+                      # the hook and the moment it returns. Tracing
+                      # is cheap; debugging a silent hang is not.
+                      printf 'set -x\n' >/tmp/setx.sh
+                      export BASH_ENV=/tmp/setx.sh
+
+                      # please.sh make_installers_from_mingw_w64_git
+                      # --include-pdbs reads PDB archives from
+                      # cached-source-packages/.
+                      mkdir -p "$b/cached-source-packages"
+                      cp artifacts/*-pdb* "$b/cached-source-packages/"
+
+                      # The --pkg=... list excludes the optional pieces
+                      # the workflow drops (signatures, archimport, cvs,
+                      # p4, gitweb, doc-man); keep the same filter so
+                      # the resulting .exe size is comparable.
+                      pkg_args=$(
+                        ls artifacts/mingw-w64-$(toolchain)-*.tar.* \
+                          | sed '/\.sig$/d;/archimport/d;/cvs/d;/p4/d;/gitweb/d;/doc-man/d;s/^/--pkg=/' \
+                          | tr '\n' ' '
+                      )
+
+                      for type in installer portable; do
+                        eval sh -x "$b"/please.sh make_installers_from_mingw_w64_git --include-pdbs \
+                          --version="$(git_version)" \
+                          -o artifacts --"$type" \
+                          $pkg_args
+                      done
                 # Setup ESRP code signing for Windows (sets ESRP_TOOL, ESRP_AUTH)
                 - ${{ if eq(parameters.esrp, true) }}:
                   - template: .azure-pipelines/esrp/windows/setup.yml@self
