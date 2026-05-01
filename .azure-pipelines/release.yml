@@ -185,16 +185,14 @@ extends:
                       Write-Host "##vso[task.prependpath]$azPath"
                       Write-Host "Azure CLI installed."
                     displayName: 'Install Azure CLI (x64 on ARM64)'
-                # Install VS 2022 Build Tools on x64 so cv2pdb-strip
-                # (driven by please.sh during the strip phase of
-                # build-mingw-w64-git) can locate mspdb140.dll. We
-                # only install the C++ x64 toolchain component, which
-                # is the smallest selection that ships the DLL.
+                # Install VS 2022 Build Tools on x64 so cv2pdb-strip can locate
+                # mspdb140.dll. We do not need to do this on ARM64 since we use
+                # clang's llvm-strip there instead.
                 - ${{ if eq(dim.poolArch, 'amd64') }}:
                   - task: PowerShell@2
-                    displayName: 'Install VS Build Tools (x64)'
+                    displayName: 'Setup cv2pdb (x64)'
                     inputs:
-                      filePath: ./.azure-pipelines/scripts/windows/install-vcbuildtools.ps1
+                      filePath: ./.azure-pipelines/scripts/windows/setup-cv2pdb-x64.ps1
                 - task: Bash@3
                   displayName: 'Install Git for Windows SDK'
                   inputs:

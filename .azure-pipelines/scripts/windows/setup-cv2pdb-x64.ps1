@@ -1,13 +1,16 @@
-# Install VS 2022 Build Tools and put mspdb140.dll on PATH.
+# Set up cv2pdb-strip support on Windows x64 agents.
 #
-# cv2pdb-strip (driven by build-extra's please.sh during the strip
-# phase of build-mingw-w64-git) loads mspdb140.dll via PATH lookup;
-# the smallest VS install that ships the DLL is the
-# Microsoft.VisualStudio.Component.VC.Tools.x86.x64 component.
+# build-extra's please.sh runs cv2pdb-strip during the strip phase of
+# build-mingw-w64-git. cv2pdb-strip loads mspdb140.dll via PATH
+# lookup, and the DLL is part of the MSVC C++ toolchain
+# (Microsoft.VisualStudio.Component.VC.Tools.x86.x64) which is not
+# present on the 1ES image by default.
 #
-# After install, locate mspdb140.dll via vswhere (with a filesystem
-# fallback) and prepend its directory to PATH for subsequent tasks
-# via the `##vso[task.prependpath]` logging command.
+# Install VS 2022 Build Tools with that single component (the
+# smallest selection that ships the DLL), locate mspdb140.dll via
+# vswhere with a filesystem fallback, and prepend its directory to
+# PATH for subsequent tasks via the `##vso[task.prependpath]` logging
+# command.
 #
 # This script is intended to be invoked by a PowerShell@2 task with
 # `filePath:`. It takes no arguments and writes diagnostics to stdout
@@ -15,11 +18,6 @@
 
 $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
-
-function Print-Header($t) {
-    Write-Host ""
-    Write-Host "===== $t ====="
-}
 
 $bootstrapper = "$env:TEMP\vs_BuildTools.exe"
 Write-Host "Downloading VS 2022 Build Tools bootstrapper..."
@@ -37,7 +35,8 @@ $elapsed = (Get-Date) - $start
 Write-Host ("Installer exited with code {0} after {1:N0}s" -f `
     $p.ExitCode, $elapsed.TotalSeconds)
 
-Print-Header "Installer logs in `$env:TEMP"
+Write-Host ""
+Write-Host "===== Installer logs in `$env:TEMP ====="
 $logs = Get-ChildItem $env:TEMP -Filter 'dd_*.log' -ErrorAction SilentlyContinue |
     Sort-Object LastWriteTime -Descending
 if ($logs) {
@@ -49,7 +48,8 @@ if ($logs) {
     Write-Host "(no dd_*.log files found in `$env:TEMP)"
 }
 
-Print-Header "vswhere -all -prerelease (every install)"
+Write-Host ""
+Write-Host "===== vswhere -all -prerelease (every install) ====="
 $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
 if (-not (Test-Path $vswhere)) {
     Write-Host "vswhere not found at $vswhere"
@@ -58,7 +58,8 @@ if (-not (Test-Path $vswhere)) {
         Out-String | Write-Host
 }
 
-Print-Header "Filesystem search for mspdb*.dll"
+Write-Host ""
+Write-Host "===== Filesystem search for mspdb*.dll ====="
 $roots = @(
     "${env:ProgramFiles(x86)}\Microsoft Visual Studio",
     "${env:ProgramFiles}\Microsoft Visual Studio"
@@ -78,7 +79,8 @@ if ($p.ExitCode -notin 0,3010) {
     throw "VS Build Tools installer exited with code $($p.ExitCode)"
 }
 
-Print-Header "Locate mspdb140.dll via vswhere -find"
+Write-Host ""
+Write-Host "===== Locate mspdb140.dll via vswhere -find ====="
 $mspdb = & $vswhere -latest `
     -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 `
     -find 'VC\Tools\MSVC\**\bin\Hostx64\x64\mspdb140.dll' |
