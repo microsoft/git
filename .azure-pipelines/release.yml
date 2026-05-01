@@ -330,6 +330,15 @@ extends:
               steps:
                 - checkout: self
                 - task: Bash@3
+                  displayName: 'Disable Spotlight indexing'
+                  inputs:
+                    targetType: inline
+                    script: |
+                      # Disable Spotlight indexing to prevent file
+                      # locking issues.
+                      set -euo pipefail
+                      sudo mdutil -i off / || true
+                - task: Bash@3
                   displayName: 'Install build dependencies'
                   inputs:
                     targetType: inline
