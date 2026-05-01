@@ -23,6 +23,9 @@
 
 set -euo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+. "$SCRIPT_DIR/utils.sh"
+
 if test $# -ne 3
 then
 	echo "Usage: $0 <sdk_repo> <mingwprefix> <sdk_output_dir>" >&2
@@ -40,8 +43,8 @@ then
 	exit 1
 fi
 
-bootstrap="$(cygpath -au "$bootstrap_dir")"
-sdk="$(cygpath -au "$sdk_output")"
+bootstrap="$(to_unix_path "$bootstrap_dir")"
+sdk="$(to_unix_path "$sdk_output")"
 
 sdk_bare="$bootstrap/sdk-bare.git"
 bootstrap_be="$bootstrap/build-extra-bootstrap"
@@ -67,5 +70,5 @@ bash "$bootstrap_be/please.sh" create-sdk-artifact \
 
 # Expose the SDK's bash and the matching MinGW toolchain to subsequent
 # tasks.
-echo "##vso[task.prependpath]$(cygpath -w "$sdk/usr/bin")"
-echo "##vso[task.prependpath]$(cygpath -w "$sdk/$mingwprefix/bin")"
+echo "##vso[task.prependpath]$(to_windows_path "$sdk/usr/bin")"
+echo "##vso[task.prependpath]$(to_windows_path "$sdk/$mingwprefix/bin")"
