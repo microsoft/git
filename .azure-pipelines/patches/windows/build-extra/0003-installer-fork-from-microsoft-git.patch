@@ -1,0 +1,29 @@
+diff --git a/git-update-git-for-windows.config b/git-update-git-for-windows.config
+new file mode 100644
+index 0000000..bfd0744
+--- /dev/null
++++ b/git-update-git-for-windows.config
+@@ -0,0 +1,2 @@
++[update]
++	fromFork = microsoft/git
+diff --git a/installer/install.iss b/installer/install.iss
+index 70787b7..71d5e72 100644
+--- a/installer/install.iss
++++ b/installer/install.iss
+@@ -126,6 +126,7 @@ Filename: {app}\ReleaseNotes.html; Description: View Release Notes; Flags: shell
+ [Files]
+ ; Install files that might be in use during setup under a different name.
+ #include "file-list.iss"
++Source: {#SourcePath}\..\git-update-git-for-windows.config; DestDir: {app}\{#MINGW_BITNESS}\bin; Flags: replacesameversion; AfterInstall: DeleteFromVirtualStore
+ Source: {#SourcePath}\ReleaseNotes.html; DestDir: {app}; Flags: replacesameversion; AfterInstall: DeleteFromVirtualStore
+ Source: {#SourcePath}\..\LICENSE.txt; DestDir: {app}; Flags: replacesameversion; AfterInstall: DeleteFromVirtualStore
+ Source: {#SourcePath}\NOTICE.txt; DestDir: {app}; Flags: replacesameversion; AfterInstall: DeleteFromVirtualStore; Check: ParamIsSet('VSNOTICE')
+@@ -275,6 +276,8 @@ Type: files; Name: {app}\etc\rebase.db.i386
+ Type: files; Name: {app}\etc\install-options.txt
+ Type: dirifempty; Name: {app}\{#MINGW_BITNESS}\libexec\git-core
+ Type: dirifempty; Name: {app}\{#MINGW_BITNESS}\libexec
++Type: files; Name: {app}\{#MINGW_BITNESS}\bin\git-update-git-for-windows.config
++Type: dirifempty; Name: {app}\{#MINGW_BITNESS}\bin
+ Type: dirifempty; Name: {app}\{#MINGW_BITNESS}
+ Type: dirifempty; Name: {app}
+ 
