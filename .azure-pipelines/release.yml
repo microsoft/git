@@ -35,6 +35,9 @@ parameters:
         os: windows
         toolchain: x86_64
         mingwprefix: mingw64
+        # GitHub repo whose ci-artifacts release exposes a
+        # build-installers.tar.zst snapshot of the matching SDK.
+        sdk_repo: git-for-windows/git-sdk-64
 
       - id: windows_arm64
         jobName: 'Windows (ARM64)'
@@ -44,6 +47,7 @@ parameters:
         os: windows
         toolchain: clang-aarch64
         mingwprefix: clangarm64
+        sdk_repo: git-for-windows/git-sdk-arm64
 
   - name: macos_matrix
     type: object
@@ -150,6 +154,7 @@ extends:
                 git_version: $[stageDependencies.prereqs.prebuild.outputs['info.git_version']]
                 toolchain: ${{ dim.toolchain }}
                 mingwprefix: ${{ dim.mingwprefix }}
+                sdk_repo: ${{ dim.sdk_repo }}
               templateContext:
                 outputs:
                   - output: pipelineArtifact
@@ -175,6 +180,48 @@ extends:
                       Write-Host "##vso[task.prependpath]$azPath"
                       Write-Host "Azure CLI installed."
                     displayName: 'Install Azure CLI (arm64)'
+                - task: PowerShell@2
+                  displayName: 'Bootstrap Git for Windows SDK'
+                  inputs:
+                    targetType: inline
+                    script: |
+                      $ErrorActionPreference = 'Stop'
+                      $ProgressPreference = 'SilentlyContinue'
+
+                      # Win 2022's built-in tar.exe (BSD tar) does not
+                      # decompress zstd archives, and the agent image is
+                      # not guaranteed to ship Git for Windows. Download
+                      # tar.exe + zstd.exe + msys-zstd-1.dll straight
+                      # from git-sdk-64's HEAD and use those.
+                      $tools = "$(Build.SourcesDirectory)\sdk-tools"
+                      New-Item -ItemType Directory -Path $tools -Force | Out-Null
+                      $base = 'https://github.com/git-for-windows/git-sdk-64/raw/HEAD/usr/bin'
+                      foreach ($f in 'tar.exe', 'zstd.exe', 'msys-zstd-1.dll') {
+                          Invoke-WebRequest "$base/$f" -OutFile "$tools\$f"
+                      }
+
+                      # Make tar/zstd findable inside this task too;
+                      # ##vso[task.prependpath] only affects subsequent
+                      # tasks.
+                      $env:PATH = "$tools;$env:PATH"
+
+                      # Download the SDK snapshot for the matching arch
+                      # from its ci-artifacts rolling release.
+                      $archive = "$(Build.SourcesDirectory)\build-installers.tar.zst"
+                      Invoke-WebRequest `
+                        "https://github.com/$(sdk_repo)/releases/download/ci-artifacts/build-installers.tar.zst" `
+                        -OutFile $archive
+
+                      # Extract the SDK into C:\sdk.
+                      $sdk = 'C:\sdk'
+                      New-Item -ItemType Directory -Path $sdk -Force | Out-Null
+                      & tar.exe --use-compress-program='zstd -d' -xf $archive -C $sdk
+
+                      # Make tar tools, the SDK's bash, and the matching
+                      # MinGW toolchain available to subsequent tasks.
+                      Write-Host "##vso[task.prependpath]$tools"
+                      Write-Host "##vso[task.prependpath]$sdk\usr\bin"
+                      Write-Host "##vso[task.prependpath]$sdk\$(mingwprefix)\bin"
                 # Setup ESRP code signing for Windows (sets ESRP_TOOL, ESRP_AUTH)
                 - ${{ if eq(parameters.esrp, true) }}:
                   - template: .azure-pipelines/esrp/windows/setup.yml@self
