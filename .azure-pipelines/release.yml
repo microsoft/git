@@ -327,6 +327,21 @@ extends:
                   - output: pipelineArtifact
                     targetPath: '$(Build.ArtifactStagingDirectory)/_final'
                     artifactName: '${{ dim.id }}'
+              # macOS build flow:
+              #
+              #   1. Configure for a universal build and produce
+              #      Git's own dist tarballs (`make dist dist-doc`).
+              #   2. Extract the source tarball into payload/, copy
+              #      config.mak in, run `make payload` to compile and
+              #      install into stage/git-universal-<ver>/.
+              #   3. Mirror stage/ into build-artifacts/ (which is
+              #      what the macos-installer Makefile's `pkg` target
+              #      consumes - see note in the build step).
+              #   4. ESRP-sign Mach-O files in build-artifacts/.
+              #   5. `make pkg` -> unsigned .pkg in disk-image/.
+              #   6. ESRP-sign and ESRP-notarize the .pkg in place.
+              #   7. `make image` wraps disk-image/ contents in a DMG.
+              #   8. Stage the .pkg and .dmg under _final/ for upload.
               steps:
                 - checkout: self
                 - task: Bash@3
@@ -474,6 +489,27 @@ extends:
                       cp config.mak "payload/git-$BUILD_VERSION/config.mak"
 
                       make -C .github/macos-installer V=1 payload
+
+                      # NOTE: the macos-installer Makefile produces
+                      # the install tree at stage/git-universal-<ver>/
+                      # but its `pkg` target packages from
+                      # build-artifacts/. Mirror the GitHub workflow
+                      # by copying the tree across so the rest of the
+                      # pipeline (signing, pkg) finds it where the
+                      # Makefile expects.
+                      #
+                      # FUTURE: this duplication exists only because
+                      # .github/macos-installer/Makefile hardcodes
+                      # both DESTDIR (=stage/...) and ARTIFACTDIR
+                      # (=build-artifacts). Overriding ARTIFACTDIR on
+                      # the `make pkg` line below to point at stage/
+                      # would let us drop the cp entirely. Worth
+                      # cleaning up alongside moving the macOS
+                      # installer Makefiles out of .github/ (they are
+                      # build infrastructure, not GitHub-specific).
+                      mkdir -p .github/macos-installer/build-artifacts
+                      cp -R "stage/git-universal-$BUILD_VERSION/." \
+                        .github/macos-installer/build-artifacts/
                 # ESRP-sign the universal Mach-O binaries inside the
                 # payload tree. The existing esrp/sign.yml template's
                 # CopyFiles@2 step uses minimatch globs and the only
