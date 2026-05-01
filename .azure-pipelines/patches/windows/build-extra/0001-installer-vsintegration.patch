@@ -1,0 +1,50 @@
+diff --git a/installer/helpers.inc.iss b/installer/helpers.inc.iss
+index 3e3788d..fc81be7 100644
+--- a/installer/helpers.inc.iss
++++ b/installer/helpers.inc.iss
+@@ -224,3 +224,25 @@ begin
+     DeleteFile(OutPath);
+     DeleteFile(ErrPath);
+ end;
++
++procedure CustomPostInstall();
++begin
++    if not RegWriteStringValue(HKEY_CURRENT_USER,'Software\Microsoft\VSCommon\15.0\TeamFoundation\GitSourceControl','GitPath',ExpandConstant('{app}')) or
++      not RegWriteStringValue(HKEY_CURRENT_USER,'Software\Microsoft\VSCommon\16.0\TeamFoundation\GitSourceControl','GitPath',ExpandConstant('{app}')) or
++      not RegWriteStringValue(HKEY_CURRENT_USER,'Software\Microsoft\VSCommon\17.0\TeamFoundation\GitSourceControl','GitPath',ExpandConstant('{app}')) or
++      not RegWriteStringValue(HKEY_CURRENT_USER,'Software\Microsoft\VSCommon\18.0\TeamFoundation\GitSourceControl','GitPath',ExpandConstant('{app}')) or
++      not RegWriteStringValue(HKEY_CURRENT_USER,'Software\Microsoft\VSCommon\19.0\TeamFoundation\GitSourceControl','GitPath',ExpandConstant('{app}')) or
++      not RegWriteStringValue(HKEY_CURRENT_USER,'Software\Microsoft\VSCommon\20.0\TeamFoundation\GitSourceControl','GitPath',ExpandConstant('{app}')) then
++        LogError('Could not register TeamFoundation\GitSourceControl');
++end;
++
++procedure CustomPostUninstall();
++begin
++    if not RegDeleteValue(HKEY_CURRENT_USER,'Software\Microsoft\VSCommon\15.0\TeamFoundation\GitSourceControl','GitPath') or
++      not RegDeleteValue(HKEY_CURRENT_USER,'Software\Microsoft\VSCommon\16.0\TeamFoundation\GitSourceControl','GitPath') or
++      not RegDeleteValue(HKEY_CURRENT_USER,'Software\Microsoft\VSCommon\17.0\TeamFoundation\GitSourceControl','GitPath') or
++      not RegDeleteValue(HKEY_CURRENT_USER,'Software\Microsoft\VSCommon\18.0\TeamFoundation\GitSourceControl','GitPath') or
++      not RegDeleteValue(HKEY_CURRENT_USER,'Software\Microsoft\VSCommon\19.0\TeamFoundation\GitSourceControl','GitPath') or
++      not RegDeleteValue(HKEY_CURRENT_USER,'Software\Microsoft\VSCommon\20.0\TeamFoundation\GitSourceControl','GitPath') then
++        LogError('Could not register TeamFoundation\GitSourceControl');
++end;
+diff --git a/installer/install.iss b/installer/install.iss
+index 70787b7..74d8375 100644
+--- a/installer/install.iss
++++ b/installer/install.iss
+@@ -3603,6 +3603,7 @@ begin
+         Install a scheduled task to try to auto-update Git for Windows
+     }
+ 
++    CustomPostInstall();
+     if IsComponentInstalled('autoupdate') then begin
+         WizardForm.StatusLabel.Caption:='Set up daily up to date check';
+         InstallAutoUpdater();
+@@ -3943,6 +3944,7 @@ begin
+         Remove the scheduled task to try to auto-update Git for Windows
+     }
+ 
++    CustomPostUninstall();
+     if IsComponentInstalled('autoupdate') then
+         UninstallAutoUpdater();
+ 
