@@ -442,8 +442,16 @@ extends:
                       # Recover the source-tree commit OID from the dist
                       # tarball; the macos-installer Makefile bakes it
                       # into 'git version --build-options'.
-                      GIT_BUILT_FROM_COMMIT="$(gunzip -c "git-$BUILD_VERSION.tar.gz" \
-                        | git get-tar-commit-id)"
+                      # `git get-tar-commit-id` reads only the leading
+                      # pax header and then closes its stdin, which
+                      # makes `gunzip -c` exit 141 (SIGPIPE) under the
+                      # outer `set -o pipefail`. Disable pipefail for
+                      # the duration of this one pipeline.
+                      GIT_BUILT_FROM_COMMIT="$(
+                        set +o pipefail
+                        gunzip -c "git-$BUILD_VERSION.tar.gz" |
+                          git get-tar-commit-id
+                      )"
                       export GIT_BUILT_FROM_COMMIT
                       export VERSION
 
