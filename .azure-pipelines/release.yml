@@ -35,6 +35,7 @@ parameters:
         os: windows
         toolchain: x86_64
         mingwprefix: mingw64
+        sdk_repo: git-for-windows/git-sdk-64
 
       - id: windows_arm64
         jobName: 'Windows (ARM64)'
@@ -44,6 +45,7 @@ parameters:
         os: windows
         toolchain: clang-aarch64
         mingwprefix: clangarm64
+        sdk_repo: git-for-windows/git-sdk-arm64
 
   - name: macos_matrix
     type: object
@@ -143,6 +145,7 @@ extends:
                 git_version: $[stageDependencies.prereqs.prebuild.outputs['info.git_version']]
                 toolchain: ${{ dim.toolchain }}
                 mingwprefix: ${{ dim.mingwprefix }}
+                sdk_repo: ${{ dim.sdk_repo }}
               templateContext:
                 outputs:
                   - output: pipelineArtifact
@@ -155,6 +158,13 @@ extends:
                   displayName: 'Add Git Bash to PATH'
                   inputs:
                     filename: ./.azure-pipelines/scripts/windows/setup-git-bash.cmd
+                - task: Bash@3
+                  displayName: 'Install Git for Windows SDK'
+                  inputs:
+                    filePath: ./.azure-pipelines/scripts/windows/setup-git-sdk.sh
+                    arguments: '$(sdk_repo) $(mingwprefix) "$(Agent.TempDirectory)\gitsdk"'
+                  env:
+                    BOOTSTRAP_DIR: '$(Build.SourcesDirectory)'
                 # Setup ESRP code signing for Windows (sets ESRP_TOOL, ESRP_AUTH)
                 - ${{ if eq(parameters.esrp, true) }}:
                   - template: .azure-pipelines/esrp/windows/setup.yml@self
