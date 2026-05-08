@@ -1,9 +1,17 @@
 name: build-git-installers
 
+# This workflow used to run automatically on every `v*vfs*` tag push to
+# build and publish the official microsoft/git installers. The signed
+# release builds have moved to the Azure Pipeline in
+# `.azure-pipelines/release.yml`, which is what now runs on tag push.
+#
+# We no longer have access to a permissible code signing certificate
+# from this workflow, so the artifacts it produces would not be properly
+# code-signed and must not be published as releases. Keep the workflow
+# around behind a `workflow_dispatch:` trigger only, so it can still be
+# invoked manually for debugging or comparison purposes.
 on:
-  push:
-    tags:
-      - 'v[0-9]*vfs*' # matches "v<number><any characters>vfs<any characters>"
+  workflow_dispatch:
 
 permissions:
   id-token: write # required for Azure login via OIDC
