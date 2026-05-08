@@ -10,6 +10,10 @@ resources:
       ref: refs/tags/release
 
 parameters:
+  - name: 'esrp'
+    type: boolean
+    default: false # TODO: change default to true after testing
+    displayName: 'Enable ESRP code signing'
   - name: 'github'
     type: boolean
     default: false # TODO: change default to true after testing
@@ -26,21 +30,39 @@ parameters:
       - id: windows_x64
         jobName: 'Windows (x64)'
         pool: GitClientPME-1ESHostedPool-intel-pc
+        poolArch: amd64
         image: win-x86_64-ado1es
         os: windows
         toolchain: x86_64
+        cpu_arch: x86_64
         mingwprefix: mingw64
+        msystem: MINGW64
+        sdk_repo: git-for-windows/git-sdk-64
 
       - id: windows_arm64
         jobName: 'Windows (ARM64)'
         pool: GitClientPME-1ESHostedPool-arm64-pc
+        poolArch: arm64
         image: win-arm64-ado1es
         os: windows
         toolchain: clang-aarch64
+        cpu_arch: aarch64
         mingwprefix: clangarm64
+        msystem: CLANGARM64
+        sdk_repo: git-for-windows/git-sdk-arm64
 
-  # No matrix for macOS as we build both x64 and ARM64 in the same job
-  # and produce a universal binary.
+  - name: macos_matrix
+    type: object
+    default:
+      - id: macos_universal
+        jobName: 'macOS (x64 + ARM64)'
+        pool: 'Azure Pipelines'
+        # macOS-latest is an Intel x86_64 Mac Pro, which can't host the
+        # arm64 Homebrew the universal-binary build needs. We need to
+        # explictly target the newer Apple Silicon machines that can run
+        # both x86_64 and arm64 builds.
+        image: macOS-15-arm64
+        os: macos
 
   - name: linux_matrix
     type: object
@@ -48,6 +70,7 @@ parameters:
       - id: linux_x64
         jobName: 'Linux (x64)'
         pool: GitClientPME-1ESHostedPool-intel-pc
+        poolArch: amd64
         image: ubuntu-x86_64-ado1es
         os: linux
         cc_arch: x86_64
@@ -56,14 +79,24 @@ parameters:
       - id: linux_arm64
         jobName: 'Linux (ARM64)'
         pool: GitClientPME-1ESHostedPool-arm64-pc
+        poolArch: arm64
         image: ubuntu-arm64-ado1es
         os: linux
         cc_arch: aarch64
         deb_arch: arm64
 
 variables:
+  - name: 'esrpAppConnectionName'
+    value: '1ESGitClient-ESRP-App'
   - name: 'githubConnectionName'
     value: 'GitHub-MicrosoftGit'
+  # ESRP signing variables set in the pipeline settings:
+  # - esrpEndpointUrl
+  # - esrpMI
+  # - esrpClientId
+  # - esrpTenantId
+  # - esrpKeyVaultName
+  # - esrpSignReqCertName
 
 extends:
   template: v1/1ES.Official.PipelineTemplate.yml@1ESPipelines
@@ -85,20 +118,15 @@ extends:
               image: ubuntu-x86_64-ado1es
               os: linux
             steps:
+              - checkout: self
+                fetchDepth: 0
+                fetchTags: true
               - task: Bash@3
                 displayName: 'Resolve version and tag information'
                 name: info
                 inputs:
-                  targetType: inline
-                  script: |
-                    # TODO: determine git_version, tag_name, and tag_sha
-                    # TODO: error if the current commit is not an annotated tag
-                    git_version=TODO_GITVER
-                    tag_name=TODO_TAGNAME
-                    tag_sha=TODO_TAGSHA
-                    echo "##vso[task.setvariable variable=git_version;isOutput=true;isReadOnly=true]$git_version"
-                    echo "##vso[task.setvariable variable=tag_name;isOutput=true;isReadOnly=true]$tag_name"
-                    echo "##vso[task.setvariable variable=tag_sha;isOutput=true;isReadOnly=true]$tag_sha"
+                  targetType: filePath
+                  filePath: .azure-pipelines/scripts/resolve-version.sh
 
       - stage: build
         displayName: 'Build'
@@ -114,12 +142,15 @@ extends:
                 name: ${{ dim.pool }}
                 image: ${{ dim.image }}
                 os: ${{ dim.os }}
+                hostArchitecture: ${{ dim.poolArch }}
               variables:
                 tag_name: $[stageDependencies.prereqs.prebuild.outputs['info.tag_name']]
                 tag_sha: $[stageDependencies.prereqs.prebuild.outputs['info.tag_sha']]
                 git_version: $[stageDependencies.prereqs.prebuild.outputs['info.git_version']]
                 toolchain: ${{ dim.toolchain }}
                 mingwprefix: ${{ dim.mingwprefix }}
+                sdk_repo: ${{ dim.sdk_repo }}
+                cpu_arch: ${{ dim.cpu_arch }}
               templateContext:
                 outputs:
                   - output: pipelineArtifact
@@ -127,44 +158,599 @@ extends:
                     artifactName: '${{ dim.id }}'
               steps:
                 - checkout: self
-                # TODO: add tasks to set up Git for Windows SDK
-                # TODO: add tasks to build Git and installers
-                - script: |
-                    echo $(mingwprefix)
-                    echo $(toolchain)
-                  displayName: 'Dummy build'
-                # TODO: put final artifacts under $(Build.ArtifactStagingDirectory)/_final
-                - script: |
-                    echo "TODO" > $(Build.ArtifactStagingDirectory)/_final/placeholder.txt
+                # Add Git Bash to the PATH so Bash tasks can find it
+                - task: BatchScript@1
+                  displayName: 'Add Git Bash to PATH'
+                  inputs:
+                    filename: ./.azure-pipelines/scripts/windows/setup-git-bash.cmd
+                # Install Azure CLI on arm64 (not pre-installed on these agents)
+                - ${{ if eq(dim.poolArch, 'arm64') }}:
+                  - powershell: |
+                      $ProgressPreference = 'SilentlyContinue'
+                      $msi = "$env:TEMP\AzureCLI.msi"
+                      Write-Host "Downloading Azure CLI (x64)..."
+                      Invoke-WebRequest -Uri https://aka.ms/installazurecliwindows -OutFile $msi
+                      Write-Host "Installing Azure CLI..."
+                      Start-Process msiexec.exe -ArgumentList "/i", $msi, "/quiet", "/norestart" -Wait
+                      $azPath = "C:\Program Files (x86)\Microsoft SDKs\Azure\CLI2\wbin"
+                      Write-Host "##vso[task.prependpath]$azPath"
+                      Write-Host "Azure CLI installed."
+                    displayName: 'Install Azure CLI (x64 on ARM64)'
+                # Install VS 2022 Build Tools on x64 so cv2pdb-strip can locate
+                # mspdb140.dll. We do not need to do this on ARM64 since we use
+                # clang's llvm-strip there instead.
+                - ${{ if eq(dim.poolArch, 'amd64') }}:
+                  - task: PowerShell@2
+                    displayName: 'Setup cv2pdb (x64)'
+                    inputs:
+                      filePath: ./.azure-pipelines/scripts/windows/setup-cv2pdb-x64.ps1
+                - task: Bash@3
+                  displayName: 'Install Git for Windows SDK'
+                  inputs:
+                    filePath: ./.azure-pipelines/scripts/windows/setup-git-sdk.sh
+                    arguments: '$(sdk_repo) $(mingwprefix) "$(Agent.TempDirectory)\gitsdk"'
+                  env:
+                    BOOTSTRAP_DIR: '$(Build.SourcesDirectory)'
+                - task: Bash@3
+                  displayName: 'Clone build-extra into SDK'
+                  inputs:
+                    targetType: inline
+                    script: |
+                      set -euo pipefail
+                      # The please.sh + signtool.sh scripts the build
+                      # relies on live in build-extra; the SDK ships
+                      # without them. Partial clone to keep this fast.
+                      git clone --filter=blob:none --single-branch -b main \
+                        https://github.com/git-for-windows/build-extra \
+                        /usr/src/build-extra
+                # Setup ESRP code signing for Windows (sets ESRP_TOOL,
+                # ESRP_AUTH) before the build steps so that the build
+                # itself (Inno Setup, makepkg-mingw) can invoke ESRP
+                # via the `git signtool` alias for in-line signing of
+                # individual binaries.
+                - ${{ if eq(parameters.esrp, true) }}:
+                  - template: .azure-pipelines/esrp/windows/setup.yml@self
+                    parameters:
+                      serviceConnectionName: $(esrpAppConnectionName)
+                      esrpClientId: $(esrpClientId)
+                      keyVaultName: $(esrpKeyVaultName)
+                      signCertName: $(esrpSignReqCertName)
+                  - task: Bash@3
+                    displayName: 'Configure git signtool alias for ESRP'
+                    inputs:
+                      targetType: inline
+                      script: |
+                        set -euo pipefail
+                        # please.sh, makepkg-mingw, and Inno Setup's
+                        # release.sh all detect this alias and route
+                        # their per-file code-signing through it; see
+                        # build-extra's please.sh + installer/release.sh.
+                        script="$(cygpath -au "$BUILD_SOURCESDIRECTORY/.azure-pipelines/esrp/windows/esrpsign.sh")"
+                        git config --global alias.signtool "!sh \"$script\""
+                        git config --global --get alias.signtool
+                - task: Bash@3
+                  displayName: 'Apply Windows build patches'
+                  inputs:
+                    targetType: inline
+                    script: |
+                      set -euo pipefail
+                      apply="$(cygpath -au "$BUILD_SOURCESDIRECTORY/.azure-pipelines/scripts/apply-patches.sh")"
+                      patches="$(cygpath -au "$BUILD_SOURCESDIRECTORY/.azure-pipelines/patches/windows")"
+                      bash "$apply" "$patches/build-extra" /usr/src/build-extra
+                      bash "$apply" "$patches/git-sdk" "/$(mingwprefix)"
+                - task: Bash@3
+                  displayName: 'Build mingw-w64-git package'
+                  ${{ if eq(parameters.esrp, true) }}:
+                    env:
+                      ESRP_TOOL: $(ESRP_TOOL)
+                      ESRP_AUTH: $(ESRP_AUTH)
+                      SYSTEM_ACCESSTOKEN: $(System.AccessToken)
+                  inputs:
+                    targetType: inline
+                    script: |
+                      set -euo pipefail
+                      set -x
+
+                      # Detach stdin so descendants like the git-extra
+                      # post_install hook (which runs `for s in $(grep
+                      # -l PAT $(find /mingw*/bin/ ...))` and falls back
+                      # to reading stdin when /mingw*/bin/ is absent
+                      # and find produces empty output) cannot block
+                      # the build waiting for input. Bash@3 leaves the
+                      # task's stdin pipe open with no writer; the
+                      # GitHub Actions runner closes it for the same
+                      # reason (see actions/runner ProcessInvoker.cs).
+                      exec </dev/null
+
+                      # makepkg-mingw runs git internally and looks for a
+                      # plain /usr/bin/git; trampoline it to the matching
+                      # MinGW-built git.exe.
+                      printf '#!/bin/sh\n\nexec /%s/bin/git.exe "$@"\n' \
+                        "$(mingwprefix)" >/usr/bin/git
+                      chmod +x /usr/bin/git
+
+                      USER_NAME='microsoft-git-build'
+                      USER_EMAIL='microsoft-git-build@users.noreply.github.com'
+                      git config --global user.name "$USER_NAME"
+                      git config --global user.email "$USER_EMAIL"
+                      export PACKAGER="$USER_NAME <$USER_EMAIL>"
+
+                      sh -x /usr/src/build-extra/please.sh build-mingw-w64-git \
+                        --only-"$(cpu_arch)" \
+                        --build-src-pkg \
+                        -o artifacts \
+                        HEAD
+
+                      # NOTE: the GitHub workflow additionally GPG-signs
+                      # each tarball and creates a MINGW-packages.bundle
+                      # for downstream Pacman consumers; both are
+                      # intentionally out of scope for the initial port
+                      # and tracked as follow-ups.
+                - task: Bash@3
+                  displayName: 'Build installer and portable Git'
+                  env:
+                    # `please.sh make_installers_from_mingw_w64_git` invokes
+                    # build-extra's installer/release.sh, which requires
+                    # MSYSTEM to select the architecture branch. Bash@3 does
+                    # not source /etc/profile, so we export it explicitly.
+                    MSYSTEM: ${{ dim.msystem }}
+                    ${{ if eq(parameters.esrp, true) }}:
+                      ESRP_TOOL: $(ESRP_TOOL)
+                      ESRP_AUTH: $(ESRP_AUTH)
+                      SYSTEM_ACCESSTOKEN: $(System.AccessToken)
+                  inputs:
+                    targetType: inline
+                    script: |
+                      set -euo pipefail
+                      set -x
+
+                      # Detach stdin so descendants like the git-extra
+                      # post_install hook (which runs `for s in $(grep
+                      # -l PAT $(find /mingw*/bin/ ...))` and falls back
+                      # to reading stdin when /mingw*/bin/ is absent
+                      # and find produces empty output) cannot block
+                      # the build waiting for input. Bash@3 leaves the
+                      # task's stdin pipe open with no writer; the
+                      # GitHub Actions runner closes it for the same
+                      # reason (see actions/runner ProcessInvoker.cs).
+                      exec </dev/null
+
+                      b=/usr/src/build-extra
+
+                      # Make every nested bash subshell auto-enable
+                      # xtrace; pacman runs each package's install
+                      # hook in its own non-interactive bash, and
+                      # without this we would not see anything that
+                      # happens between the moment pacman calls into
+                      # the hook and the moment it returns. Tracing
+                      # is cheap; debugging a silent hang is not.
+                      printf 'set -x\n' >/tmp/setx.sh
+                      export BASH_ENV=/tmp/setx.sh
+
+                      # please.sh make_installers_from_mingw_w64_git
+                      # --include-pdbs reads PDB archives from
+                      # cached-source-packages/.
+                      mkdir -p "$b/cached-source-packages"
+                      cp artifacts/*-pdb* "$b/cached-source-packages/"
+
+                      # The --pkg=... list excludes the optional pieces
+                      # the workflow drops (signatures, archimport, cvs,
+                      # p4, gitweb, doc-man); keep the same filter so
+                      # the resulting .exe size is comparable.
+                      pkg_args=$(
+                        ls artifacts/mingw-w64-$(toolchain)-*.tar.* \
+                          | sed '/\.sig$/d;/archimport/d;/cvs/d;/p4/d;/gitweb/d;/doc-man/d;s/^/--pkg=/' \
+                          | tr '\n' ' '
+                      )
+
+                      for type in installer portable; do
+                        eval sh -x "$b"/please.sh make_installers_from_mingw_w64_git --include-pdbs \
+                          --version="$(git_version)" \
+                          -o artifacts --"$type" \
+                          $pkg_args
+
+                        # The installer .exe is signed inline by Inno
+                        # Setup via the `git signtool` alias; the
+                        # portable .exe is a 7z self-extractor that
+                        # bypasses that path, so sign it explicitly.
+                        if test "$type" = portable && \
+                           test -n "$(git config alias.signtool)"
+                        then
+                          git signtool artifacts/PortableGit-*.exe
+                        fi
+                      done
+                - task: Bash@3
+                  displayName: 'Stage installer artifacts for upload'
+                  inputs:
+                    targetType: inline
+                    script: |
+                      set -euo pipefail
+
+                      # Compute SHA-256 over the (possibly signed)
+                      # binaries; if ESRP signing ran, this picks up
+                      # the post-sign bytes, which is what we want to
+                      # publish in the release notes.
+                      openssl dgst -sha256 \
+                        artifacts/Git-*.exe \
+                        artifacts/PortableGit-*.exe \
+                        | sed 's/.* //' >artifacts/sha-256.txt
+
+                      mkdir -p "$(Build.ArtifactStagingDirectory)/_final"
+                      cp artifacts/Git-*.exe \
+                        artifacts/PortableGit-*.exe \
+                        artifacts/sha-256.txt \
+                        "$(Build.ArtifactStagingDirectory)/_final/"
 
           #
-          # macOS build job (universal)
+          # macOS build jobs
           #
-          - job: macos_universal
-            displayName: 'macOS (x64 + ARM64)'
-            pool:
-              name: 'Azure Pipelines'
-              image: macOS-latest
-              os: macos
-            variables:
-              tag_name: $[stageDependencies.prereqs.prebuild.outputs['info.tag_name']]
-              tag_sha: $[stageDependencies.prereqs.prebuild.outputs['info.tag_sha']]
-              git_version: $[stageDependencies.prereqs.prebuild.outputs['info.git_version']]
-            templateContext:
-              outputs:
-                - output: pipelineArtifact
-                  targetPath: '$(Build.ArtifactStagingDirectory)/_final'
-                  artifactName: 'macos_universal'
-            steps:
-              - checkout: self
-              # TODO: add tasks to set up build environment
-              # TODO: add tasks to build Git and installers
-              - script: |
-                  echo "Hello, Mac!"
-                displayName: 'Dummy build'
-              # TODO: put final artifacts under $(Build.ArtifactStagingDirectory)/_final
-              - script: |
-                  echo "TODO" > $(Build.ArtifactStagingDirectory)/_final/placeholder.txt
+          - ${{ each dim in parameters.macos_matrix }}:
+            - job: ${{ dim.id }}
+              displayName: ${{ dim.jobName }}
+              pool:
+                name: ${{ dim.pool }}
+                image: ${{ dim.image }}
+                os: ${{ dim.os }}
+              variables:
+                tag_name: $[stageDependencies.prereqs.prebuild.outputs['info.tag_name']]
+                tag_sha: $[stageDependencies.prereqs.prebuild.outputs['info.tag_sha']]
+                git_version: $[stageDependencies.prereqs.prebuild.outputs['info.git_version']]
+              templateContext:
+                outputs:
+                  - output: pipelineArtifact
+                    targetPath: '$(Build.ArtifactStagingDirectory)/_final'
+                    artifactName: '${{ dim.id }}'
+              # macOS build flow:
+              #
+              #   1. Configure for a universal build and produce
+              #      Git's own dist tarballs (`make dist dist-doc`).
+              #   2. Extract the source tarball into payload/, copy
+              #      config.mak in, run `make payload` to compile and
+              #      install into stage/git-universal-<ver>/.
+              #   3. Mirror stage/ into build-artifacts/ (which is
+              #      what the macos-installer Makefile's `pkg` target
+              #      consumes - see note in the build step).
+              #   4. ESRP-sign Mach-O files in build-artifacts/.
+              #   5. `make pkg` -> unsigned .pkg in disk-image/.
+              #   6. ESRP-sign and ESRP-notarize the .pkg in place.
+              #   7. `make image` wraps disk-image/ contents in a DMG.
+              #   8. Stage the .pkg and .dmg under _final/ for upload.
+              steps:
+                - checkout: self
+                - task: Bash@3
+                  displayName: 'Disable Spotlight indexing'
+                  inputs:
+                    targetType: inline
+                    script: |
+                      # Disable Spotlight indexing to prevent file
+                      # locking issues.
+                      set -euo pipefail
+                      sudo mdutil -i off / || true
+                - task: Bash@3
+                  displayName: 'Install build dependencies'
+                  inputs:
+                    targetType: inline
+                    script: |
+                      set -euo pipefail
+
+                      # The agent's native arm64 Homebrew lives at
+                      # /opt/homebrew. Install a separate x86_64 Homebrew
+                      # under /usr/local so we can fetch the x86_64 build
+                      # of gettext/libintl alongside the arm64 one.
+                      arch -x86_64 /bin/bash -c \
+                        "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+                      arch -x86_64 /usr/local/bin/brew install gettext
+
+                      # Native (arm64) build dependencies.
+                      brew install automake asciidoc xmlto docbook
+                      brew link --force gettext
+
+                      # Make a universal libintl.a out of the two
+                      # arch-specific copies, dropped at the workspace
+                      # root so the build's LDFLAGS = -L"$(pwd)" can find
+                      # it. libintl depends on iconv, but we deliberately
+                      # use the system's universal /usr/lib/libiconv.dylib
+                      # rather than Homebrew's libiconv (which exports
+                      # _libiconv* symbols, while Homebrew's gettext was
+                      # built against system iconv with _iconv* symbols).
+                      lipo -create \
+                        -output libintl.a \
+                        /usr/local/opt/gettext/lib/libintl.a \
+                        /opt/homebrew/opt/gettext/lib/libintl.a
+                - task: Bash@3
+                  displayName: 'Configure universal build'
+                  inputs:
+                    targetType: inline
+                    script: |
+                      set -euo pipefail
+
+                      VERSION="$(git_version)"
+                      # Git's GIT-VERSION-GEN expects .rc rather than -rc
+                      BUILD_VERSION="$(echo "$VERSION" | sed 's/-rc/.rc/g')"
+                      echo "$BUILD_VERSION" >version
+
+                      # HOST_CPU is a bit of a lie and is only used in
+                      # 'git version --build-options'; we'll fix that in
+                      # code. The two -arch flags are what actually drive
+                      # the universal build.
+                      cat >config.mak <<EOF
+                      HOST_CPU = universal
+                      BASIC_CFLAGS += -arch arm64 -arch x86_64
+
+                      # macOS uses Apple Common Crypto instead of OpenSSL.
+                      # The main Makefile sets NO_OPENSSL and adds
+                      # -DNO_OPENSSL to BASIC_CFLAGS, but contrib
+                      # Makefiles that only include config.mak* miss it.
+                      BASIC_CFLAGS += -DNO_OPENSSL
+
+                      # On Darwin 24+ (macOS 15) config.mak.uname sets
+                      # USE_HOMEBREW_LIBICONV, pointing ICONVDIR at
+                      # Homebrew's libiconv. That libiconv exports
+                      # _libiconv/_libiconv_open (prefixed) symbols while
+                      # Homebrew's gettext/libintl was built against the
+                      # system iconv that exports _iconv/_iconv_open
+                      # (unprefixed). We pin the build to the system's
+                      # universal /usr/lib/libiconv.dylib instead.
+                      USE_HOMEBREW_LIBICONV =
+                      ICONVDIR =
+                      EOF
+
+                      # Find the universal libintl.a we lipo'd in the
+                      # previous step ($(pwd) is the workspace root) and
+                      # the gettext headers from either Homebrew prefix.
+                      homebrew_prefix="$(brew --prefix)"
+                      cat >>config.mak <<EOF
+                      CFLAGS = -I$homebrew_prefix/include -I/usr/local/opt/gettext/include
+                      LDFLAGS = -L"$(pwd)"
+                      EOF
+
+                      # Use the OS-supplied libcurl rather than Homebrew's.
+                      cat >>config.mak <<EOF
+                      CURL_LDFLAGS := -lcurl
+                      CURL_CONFIG := /usr/bin/true
+                      EOF
+
+                      # The dashed built-ins are supposed to be hard-links
+                      # to the 'git' executable; on the macOS staging tree
+                      # they end up as full copies instead and bloat the
+                      # .dmg indecently. Skip them entirely.
+                      echo 'SKIP_DASHED_BUILT_INS = YabbaDabbaDoo' >>config.mak
+                - task: Bash@3
+                  displayName: 'Build payload via macos-installer'
+                  env:
+                    # The macos-installer Makefile derives BUILD_DIR from
+                    # $(GITHUB_WORKSPACE), which is unset in ADO. Point it
+                    # at the worktree root.
+                    GITHUB_WORKSPACE: $(Build.SourcesDirectory)
+                  inputs:
+                    targetType: inline
+                    script: |
+                      set -euo pipefail
+
+                      VERSION="$(git_version)"
+                      BUILD_VERSION="$(echo "$VERSION" | sed 's/-rc/.rc/g')"
+
+                      # The asciidoc/xmlto build steps need the catalogs
+                      # from Homebrew docbook.
+                      export XML_CATALOG_FILES="$(brew --prefix)/etc/xml/catalog"
+
+                      # `git commit` (in dist-doc) forks a detached
+                      # `git maintenance run --auto` that keeps writing
+                      # into .git/ after the commit returns, which then
+                      # races with dist-doc's `rm -fr .doc-tmp-dir` and
+                      # produces "Directory not empty". Disable
+                      # auto-maintenance for every git invocation in
+                      # this build.
+                      export GIT_CONFIG_PARAMETERS="'maintenance.auto=false'"
+
+                      make -j"$(sysctl -n hw.physicalcpu)" GIT-VERSION-FILE dist dist-doc
+
+                      # Recover the source-tree commit OID from the dist
+                      # tarball; the macos-installer Makefile bakes it
+                      # into 'git version --build-options'.
+                      # `git get-tar-commit-id` reads only the leading
+                      # pax header and then closes its stdin, which
+                      # makes `gunzip -c` exit 141 (SIGPIPE) under the
+                      # outer `set -o pipefail`. Disable pipefail for
+                      # the duration of this one pipeline.
+                      GIT_BUILT_FROM_COMMIT="$(
+                        set +o pipefail
+                        gunzip -c "git-$BUILD_VERSION.tar.gz" |
+                          git get-tar-commit-id
+                      )"
+                      export GIT_BUILT_FROM_COMMIT
+                      export VERSION
+
+                      mkdir payload manpages
+                      tar -xf "git-$BUILD_VERSION.tar.gz" -C payload
+                      tar -xf "git-manpages-$BUILD_VERSION.tar.gz" -C manpages
+
+                      # The actual compile happens inside the extracted
+                      # tree, against a copy of the config.mak we wrote
+                      # at the worktree root in the previous step.
+                      cp config.mak "payload/git-$BUILD_VERSION/config.mak"
+
+                      make -C .github/macos-installer V=1 payload
+
+                      # NOTE: the macos-installer Makefile produces
+                      # the install tree at stage/git-universal-<ver>/
+                      # but its `pkg` target packages from
+                      # build-artifacts/. Mirror the GitHub workflow
+                      # by copying the tree across so the rest of the
+                      # pipeline (signing, pkg) finds it where the
+                      # Makefile expects.
+                      #
+                      # FUTURE: this duplication exists only because
+                      # .github/macos-installer/Makefile hardcodes
+                      # both DESTDIR (=stage/...) and ARTIFACTDIR
+                      # (=build-artifacts). Overriding ARTIFACTDIR on
+                      # the `make pkg` line below to point at stage/
+                      # would let us drop the cp entirely. Worth
+                      # cleaning up alongside moving the macOS
+                      # installer Makefiles out of .github/ (they are
+                      # build infrastructure, not GitHub-specific).
+                      mkdir -p .github/macos-installer/build-artifacts
+                      cp -R "stage/git-universal-$BUILD_VERSION/." \
+                        .github/macos-installer/build-artifacts/
+                # ESRP-sign the universal Mach-O binaries inside the
+                # payload tree. The existing esrp/sign.yml template's
+                # CopyFiles@2 step uses minimatch globs and the only
+                # reliable way to detect Mach-O is by file content
+                # (file --mime), so we pre-filter into a staging dir,
+                # let the template zip/sign/extract that staging dir,
+                # then copy the signed binaries back over the payload.
+                - ${{ if eq(parameters.esrp, true) }}:
+                  # ESRP ADO tasks require .NET, which the macOS pool
+                  # image does not provide by default.
+                  - task: UseDotNet@2
+                    displayName: 'Install .NET for ESRP'
+                    inputs:
+                      packageType: sdk
+                      version: '8.x'
+                  - task: Bash@3
+                    displayName: 'Stage Mach-O binaries for signing'
+                    inputs:
+                      targetType: inline
+                      script: |
+                        set -euo pipefail
+
+                        # Sign the install tree (build-artifacts/) -
+                        # this is what `make pkg` packages. Signing
+                        # the source tree under payload/ would have
+                        # no effect on the resulting .pkg.
+                        install_tree=".github/macos-installer/build-artifacts/usr/local/git"
+                        stage_dir="$(Build.ArtifactStagingDirectory)/macos-tosign/binaries"
+
+                        rm -rf "$stage_dir"
+                        mkdir -p "$stage_dir"
+
+                        pushd "$install_tree"
+                        find . -type f -exec file --mime {} + \
+                          | sed -n '/mach/s/: .*//p' \
+                          | while IFS= read -r f; do
+                              rel="${f#./}"
+                              tgt="$stage_dir/$rel"
+                              mkdir -p "$(dirname "$tgt")"
+                              cp -- "$f" "$tgt"
+                            done
+                        popd
+                  - template: .azure-pipelines/esrp/sign.yml@self
+                    parameters:
+                      displayName: 'ESRP-sign Mach-O binaries'
+                      folderPath: '$(Build.ArtifactStagingDirectory)/macos-tosign/binaries'
+                      pattern: '**/*'
+                      useArchive: true # Required for macOS signing
+                      inlineOperation: |
+                        [
+                          {
+                            "KeyCode": "CP-401337-Apple",
+                            "OperationCode": "MacAppDeveloperSign",
+                            "ToolName": "sign",
+                            "ToolVersion": "1.0",
+                            "Parameters": {
+                              "Hardening": "Enable"
+                            }
+                          }
+                        ]
+                  - task: Bash@3
+                    displayName: 'Copy signed binaries back to install tree'
+                    inputs:
+                      targetType: inline
+                      script: |
+                        set -euo pipefail
+
+                        cp -R "$(Build.ArtifactStagingDirectory)/macos-tosign/binaries"/* \
+                          .github/macos-installer/build-artifacts/usr/local/git/
+                - task: Bash@3
+                  displayName: 'Build unsigned installer pkg'
+                  env:
+                    GITHUB_WORKSPACE: $(Build.SourcesDirectory)
+                  inputs:
+                    targetType: inline
+                    script: |
+                      set -euo pipefail
+
+                      VERSION="$(git_version)"
+                      export VERSION
+
+                      # Leave APPLE_INSTALLER_IDENTITY undefined so the
+                      # Makefile's `pkg` target produces an unsigned .pkg
+                      # (the `ifdef APPLE_INSTALLER_IDENTITY` branch in
+                      # pkg_cmd is skipped). ESRP signs it in the next
+                      # step.
+                      make -C .github/macos-installer V=1 pkg
+                - ${{ if eq(parameters.esrp, true) }}:
+                  - template: .azure-pipelines/esrp/sign.yml@self
+                    parameters:
+                      displayName: 'ESRP-sign installer pkg'
+                      folderPath: '.github/macos-installer/disk-image'
+                      pattern: '*.pkg'
+                      useArchive: true # Required for macOS signing
+                      inlineOperation: |
+                        [
+                          {
+                            "KeyCode": "CP-401337-Apple",
+                            "OperationCode": "MacAppDeveloperSign",
+                            "ToolName": "sign",
+                            "ToolVersion": "1.0",
+                            "Parameters": {
+                              "Hardening": "Enable"
+                            }
+                          }
+                        ]
+                  - template: .azure-pipelines/esrp/sign.yml@self
+                    parameters:
+                      displayName: 'ESRP-notarize installer pkg'
+                      folderPath: '.github/macos-installer/disk-image'
+                      pattern: '*.pkg'
+                      useArchive: true # Required for macOS notarization
+                      inlineOperation: |
+                        [
+                          {
+                            "KeyCode": "CP-401337-Apple",
+                            "OperationCode": "MacAppNotarize",
+                            "ToolName": "sign",
+                            "ToolVersion": "1.0",
+                            "Parameters": {
+                              "BundleId": "com.git.pkg"
+                            }
+                          }
+                        ]
+                - task: Bash@3
+                  displayName: 'Build DMG'
+                  env:
+                    GITHUB_WORKSPACE: $(Build.SourcesDirectory)
+                  inputs:
+                    targetType: inline
+                    script: |
+                      set -euo pipefail
+
+                      VERSION="$(git_version)"
+                      export VERSION
+
+                      # Builds .github/macos-installer/git-<version>-universal.dmg
+                      # from the contents of disk-image/, which now contains
+                      # the signed and notarized .pkg.
+                      make -C .github/macos-installer V=1 image
+                - task: Bash@3
+                  displayName: 'Stage installer artifacts for upload'
+                  inputs:
+                    targetType: inline
+                    script: |
+                      set -euo pipefail
+
+                      mkdir -p "$(Build.ArtifactStagingDirectory)/_final"
+                      ls -la .github/macos-installer/ \
+                             .github/macos-installer/disk-image/ || true
+                      # The .pkg lands either directly under disk-image/
+                      # or, after ESRP MacAppNotarize re-packs it, inside
+                      # disk-image/<uuid>.zip.unzipped/. Find it.
+                      pkg=$(find .github/macos-installer/disk-image \
+                              -name 'git-*-universal.pkg' -type f \
+                              | head -1)
+                      mv .github/macos-installer/git-*-universal.dmg \
+                         "$pkg" \
+                         "$(Build.ArtifactStagingDirectory)/_final/"
 
           #
           # Linux build jobs
@@ -176,6 +762,7 @@ extends:
                 name: ${{ dim.pool }}
                 image: ${{ dim.image }}
                 os: ${{ dim.os }}
+                hostArchitecture: ${{ dim.poolArch }}
               variables:
                 tag_name: $[stageDependencies.prereqs.prebuild.outputs['info.tag_name']]
                 tag_sha: $[stageDependencies.prereqs.prebuild.outputs['info.tag_sha']]
@@ -189,21 +776,185 @@ extends:
                     artifactName: '${{ dim.id }}'
               steps:
                 - checkout: self
-                # TODO: add tasks to set up build environment
-                # TODO: add tasks to build Git and installers
-                - script: |
-                    echo $(cc_arch)
-                    echo $(deb_arch)
-                  displayName: 'Dummy build'
-                # TODO: put final artifacts under $(Build.ArtifactStagingDirectory)/_final
-                - script: |
-                    echo "TODO" > $(Build.ArtifactStagingDirectory)/_final/placeholder.txt
+                - task: Bash@3
+                  displayName: 'Log build environment'
+                  inputs:
+                    targetType: inline
+                    script: |
+                      lsb_release -a || true
+                      uname -a
+                      id
+                - task: Bash@3
+                  displayName: 'Install build dependencies'
+                  inputs:
+                    targetType: inline
+                    script: |
+                      set -euo pipefail
+                      sudo apt-get update -q
+                      sudo apt-get install -y -q --no-install-recommends \
+                        build-essential \
+                        tcl tk gettext asciidoc xmlto \
+                        libcurl4-gnutls-dev libpcre2-dev zlib1g-dev libexpat-dev \
+                        curl ca-certificates
+                - task: Bash@3
+                  displayName: 'Build microsoft-git Debian package'
+                  inputs:
+                    targetType: inline
+                    script: |
+                      set -euo pipefail
+
+                      VERSION="$(git_version)"
+                      # Git's GIT-VERSION-GEN expects .rc rather than -rc
+                      BUILD_VERSION="$(echo "$VERSION" | sed 's/-rc/.rc/g')"
+                      echo "$BUILD_VERSION" >version
+                      make GIT-VERSION-FILE
+
+                      PKGNAME="microsoft-git_${VERSION}_$(deb_arch)"
+                      PKGDIR="$(Build.ArtifactStagingDirectory)/pkgroot"
+                      rm -rf "$PKGDIR"
+                      mkdir -p "$PKGDIR/DEBIAN"
+
+                      DESTDIR="$PKGDIR" make -j"$(nproc)" V=1 DEVELOPER=1 \
+                        USE_LIBPCRE=1 \
+                        USE_CURL_FOR_IMAP_SEND=1 NO_OPENSSL=1 \
+                        NO_CROSS_DIRECTORY_HARDLINKS=1 \
+                        ASCIIDOC8=1 ASCIIDOC_NO_ROFF=1 \
+                        ASCIIDOC='TZ=UTC asciidoc' \
+                        prefix=/usr/local \
+                        gitexecdir=/usr/local/lib/git-core \
+                        libexecdir=/usr/local/lib/git-core \
+                        htmldir=/usr/local/share/doc/git/html \
+                        install install-doc install-html
+
+                      # Based on https://packages.ubuntu.com/xenial/vcs/git
+                      cat >"$PKGDIR/DEBIAN/control" <<CTRL
+                      Package: microsoft-git
+                      Version: $VERSION
+                      Section: vcs
+                      Priority: optional
+                      Architecture: $(deb_arch)
+                      Depends: libcurl3-gnutls, liberror-perl, libexpat1, libpcre2-8-0, perl, perl-modules, zlib1g
+                      Maintainer: GitClient <gitclient@microsoft.com>
+                      Description: Git client built from the https://github.com/microsoft/git repository,
+                        specialized in supporting monorepo scenarios. Includes the Scalar CLI.
+                      CTRL
+
+                      mkdir -p "$(Build.ArtifactStagingDirectory)/app"
+                      dpkg-deb -Zxz --build "$PKGDIR" \
+                        "$(Build.ArtifactStagingDirectory)/app/$PKGNAME.deb"
+                - ${{ if eq(parameters.esrp, true) }}:
+                  # ESRP ADO tasks require .NET, so we install it here since the
+                  # Linux images do not have it by default.
+                  - task: UseDotNet@2
+                    displayName: 'Install .NET for ESRP'
+                    inputs:
+                      packageType: sdk
+                      version: '8.x'
+                  - template: .azure-pipelines/esrp/sign.yml@self
+                    parameters:
+                      displayName: 'Example sign Debian package'
+                      folderPath: '$(Build.ArtifactStagingDirectory)/app'
+                      pattern: '**/*.deb'
+                      inlineOperation: |
+                        [
+                          {
+                            "KeyCode": "CP-453387-Pgp",
+                            "OperationCode": "LinuxSign",
+                            "ToolName": "sign",
+                            "ToolVersion": "1.0",
+                            "Parameters": {}
+                          }
+                        ]
+                - task: Bash@3
+                  displayName: 'Stage Debian package for upload'
+                  inputs:
+                    targetType: inline
+                    script: |
+                      set -euo pipefail
+                      mkdir -p "$(Build.ArtifactStagingDirectory)/_final"
+                      mv "$(Build.ArtifactStagingDirectory)/app/microsoft-git_$(git_version)_$(deb_arch).deb" \
+                        "$(Build.ArtifactStagingDirectory)/_final/"
 
       - stage: release
         displayName: 'Release'
         dependsOn: [prereqs, build]
         jobs:
+          #
+          # Windows validation jobs
+          #
+          - ${{ each dim in parameters.windows_matrix }}:
+            - job: validate_${{ dim.id }}
+              displayName: 'Validate ${{ dim.jobName }}'
+              pool:
+                name: ${{ dim.pool }}
+                image: ${{ dim.image }}
+                os: ${{ dim.os }}
+                hostArchitecture: ${{ dim.poolArch }}
+              templateContext:
+                inputs:
+                  - input: pipelineArtifact
+                    artifactName: '${{ dim.id }}'
+                    targetPath: $(Pipeline.Workspace)/assets/${{ dim.id }}
+              steps:
+                # TODO: add artifact validation steps
+                - script: |
+                    dir $(Pipeline.Workspace)\assets\${{ dim.id }}
+                  displayName: 'Validate artifacts'
+
+          #
+          # macOS validation jobs
+          #
+          - ${{ each dim in parameters.macos_matrix }}:
+            - job: validate_${{ dim.id }}
+              displayName: 'Validate ${{ dim.jobName }}'
+              pool:
+                name: ${{ dim.pool }}
+                image: ${{ dim.image }}
+                os: ${{ dim.os }}
+              templateContext:
+                inputs:
+                  - input: pipelineArtifact
+                    artifactName: '${{ dim.id }}'
+                    targetPath: $(Pipeline.Workspace)/assets/${{ dim.id }}
+              steps:
+                # TODO: add artifact validation steps
+                - script: |
+                    ls $(Pipeline.Workspace)/assets/${{ dim.id }}
+                  displayName: 'Validate artifacts'
+
+          #
+          # Linux validation jobs
+          #
+          - ${{ each dim in parameters.linux_matrix }}:
+            - job: validate_${{ dim.id }}
+              displayName: 'Validate ${{ dim.jobName }}'
+              pool:
+                name: ${{ dim.pool }}
+                image: ${{ dim.image }}
+                os: ${{ dim.os }}
+                hostArchitecture: ${{ dim.poolArch }}
+              templateContext:
+                inputs:
+                  - input: pipelineArtifact
+                    artifactName: '${{ dim.id }}'
+                    targetPath: $(Pipeline.Workspace)/assets/${{ dim.id }}
+              steps:
+                # TODO: add artifact validation steps
+                - script: |
+                    ls $(Pipeline.Workspace)/assets/${{ dim.id }}
+                  displayName: 'Validate artifacts'
+
+          #
+          # GitHub release publishing
+          #
           - job: github
+            dependsOn:
+              - ${{ each dim in parameters.windows_matrix }}:
+                - validate_${{ dim.id }}
+              - ${{ each dim in parameters.macos_matrix }}:
+                - validate_${{ dim.id }}
+              - ${{ each dim in parameters.linux_matrix }}:
+                - validate_${{ dim.id }}
             displayName: 'Publish GitHub release'
             condition: and(succeeded(), eq('${{ parameters.github }}', true))
             pool:
@@ -218,21 +969,18 @@ extends:
               type: releaseJob
               isProduction: true
               inputs:
-                - input: pipelineArtifact
-                  artifactName: 'windows_x64'
-                  targetPath: $(Pipeline.Workspace)/assets/windows_x64
-                - input: pipelineArtifact
-                  artifactName: 'windows_arm64'
-                  targetPath: $(Pipeline.Workspace)/assets/windows_arm64
-                - input: pipelineArtifact
-                  artifactName: 'macos_universal'
-                  targetPath: $(Pipeline.Workspace)/assets/macos_universal
-                - input: pipelineArtifact
-                  artifactName: 'linux_x64'
-                  targetPath: $(Pipeline.Workspace)/assets/linux_x64
-                - input: pipelineArtifact
-                  artifactName: 'linux_arm64'
-                  targetPath: $(Pipeline.Workspace)/assets/linux_arm64
+                - ${{ each dim in parameters.windows_matrix }}:
+                  - input: pipelineArtifact
+                    artifactName: '${{ dim.id }}'
+                    targetPath: $(Pipeline.Workspace)/assets/${{ dim.id }}
+                - ${{ each dim in parameters.macos_matrix }}:
+                  - input: pipelineArtifact
+                    artifactName: '${{ dim.id }}'
+                    targetPath: $(Pipeline.Workspace)/assets/${{ dim.id }}
+                - ${{ each dim in parameters.linux_matrix }}:
+                  - input: pipelineArtifact
+                    artifactName: '${{ dim.id }}'
+                    targetPath: $(Pipeline.Workspace)/assets/${{ dim.id }}
             steps:
               - task: GitHubRelease@1
                 displayName: 'Create Draft GitHub Release'
