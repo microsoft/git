@@ -1,5 +1,11 @@
 name: $(Date:yyyyMMdd)$(Rev:.r)
-trigger: none
+trigger:
+  branches:
+    exclude:
+      - '*'
+  tags:
+    include:
+      - v[0-9]*vfs*
 pr: none
 
 resources:
@@ -12,11 +18,11 @@ resources:
 parameters:
   - name: 'esrp'
     type: boolean
-    default: false # TODO: change default to true after testing
+    default: true
     displayName: 'Enable ESRP code signing'
   - name: 'github'
     type: boolean
-    default: false # TODO: change default to true after testing
+    default: true
     displayName: 'Enable GitHub release publishing'
   - name: 'versionOverride'
     type: string
