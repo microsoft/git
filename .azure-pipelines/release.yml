@@ -996,16 +996,50 @@ extends:
                 image: ${{ dim.image }}
                 os: ${{ dim.os }}
                 hostArchitecture: ${{ dim.poolArch }}
+              variables:
+                git_version: $[stageDependencies.prereqs.prebuild.outputs['info.git_version']]
               templateContext:
                 inputs:
                   - input: pipelineArtifact
                     artifactName: '${{ dim.id }}'
                     targetPath: $(Pipeline.Workspace)/assets/${{ dim.id }}
               steps:
-                # TODO: add artifact validation steps
-                - script: |
-                    dir $(Pipeline.Workspace)\assets\${{ dim.id }}
-                  displayName: 'Validate artifacts'
+                # The validation only consumes the pre-built installer
+                # artifact and queries the freshly installed git.exe;
+                # nothing references the source tree, so skip the
+                # implicit `checkout: self`.
+                - checkout: none
+                # Silently install the Inno Setup installer (Git-*.exe),
+                # then assert that `git --version` reports the version
+                # we built. Mirrors the validate-installers job in the
+                # legacy build-git-installers GitHub Actions workflow.
+                - powershell: |
+                    $exe = Get-ChildItem -Path "$(Pipeline.Workspace)\assets\${{ dim.id }}\Git-*.exe" |
+                      Where-Object { $_.Name -notlike 'PortableGit-*' } |
+                      Select-Object -First 1 -ExpandProperty FullName
+                    if (-not $exe) {
+                      Write-Error "No Git-*.exe installer found in assets\${{ dim.id }}"
+                      exit 1
+                    }
+                    Write-Host "Installing $exe"
+                    $p = Start-Process -Wait -PassThru -FilePath "$exe" `
+                      -ArgumentList "/SILENT","/VERYSILENT","/NORESTART","/SUPPRESSMSGBOXES","/ALLOWDOWNGRADE=1"
+                    if ($p.ExitCode -ne 0) {
+                      Write-Error "Installer exited with code $($p.ExitCode)"
+                      exit $p.ExitCode
+                    }
+                  displayName: 'Install Git'
+                - powershell: |
+                    $raw = & "$env:PROGRAMFILES\Git\cmd\git.exe" --version
+                    $actual = ($raw -replace '^git version ', '').Trim()
+                    $expect = ('$(git_version)' -replace '-rc', '.rc').Trim()
+                    Write-Host "Expected: $expect"
+                    Write-Host "Actual:   $actual"
+                    if ($actual -ne $expect) {
+                      Write-Error "Version mismatch: expected '$expect', got '$actual'"
+                      exit 1
+                    }
+                  displayName: 'Validate installed version'
 
           #
           # macOS validation jobs
