@@ -1108,16 +1108,38 @@ extends:
                 image: ${{ dim.image }}
                 os: ${{ dim.os }}
                 hostArchitecture: ${{ dim.poolArch }}
+              variables:
+                git_version: $[stageDependencies.prereqs.prebuild.outputs['info.git_version']]
               templateContext:
                 inputs:
                   - input: pipelineArtifact
                     artifactName: '${{ dim.id }}'
                     targetPath: $(Pipeline.Workspace)/assets/${{ dim.id }}
               steps:
-                # TODO: add artifact validation steps
-                - script: |
-                    ls $(Pipeline.Workspace)/assets/${{ dim.id }}
-                  displayName: 'Validate artifacts'
+                # The validation only consumes the pre-built .deb and
+                # queries the freshly installed git; nothing references
+                # the source tree, so skip the implicit `checkout: self`.
+                - checkout: none
+                - bash: |
+                    set -e
+                    deb=$(find "$(Pipeline.Workspace)/assets/${{ dim.id }}" \
+                      -name 'microsoft-git_*.deb' -type f | head -1)
+                    if [ -z "$deb" ]; then
+                      echo "No microsoft-git_*.deb found in assets/${{ dim.id }}" >&2
+                      exit 1
+                    fi
+                    echo "Installing $deb"
+                    sudo apt-get update
+                    sudo apt-get install -y "$deb"
+                  displayName: 'Install Git'
+                - bash: |
+                    set -e
+                    actual=$(git --version | sed 's/^git version //')
+                    expect=$(echo "$(git_version)" | sed 's/-rc/.rc/g')
+                    echo "Expected: $expect"
+                    echo "Actual:   $actual"
+                    test "$actual" = "$expect"
+                  displayName: 'Validate installed version'
 
           #
           # GitHub release publishing
