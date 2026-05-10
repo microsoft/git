@@ -1051,16 +1051,51 @@ extends:
                 name: ${{ dim.pool }}
                 image: ${{ dim.image }}
                 os: ${{ dim.os }}
+              variables:
+                git_version: $[stageDependencies.prereqs.prebuild.outputs['info.git_version']]
               templateContext:
                 inputs:
                   - input: pipelineArtifact
                     artifactName: '${{ dim.id }}'
                     targetPath: $(Pipeline.Workspace)/assets/${{ dim.id }}
               steps:
-                # TODO: add artifact validation steps
-                - script: |
-                    ls $(Pipeline.Workspace)/assets/${{ dim.id }}
-                  displayName: 'Validate artifacts'
+                # The validation only consumes the pre-built installer
+                # artifact and queries the freshly installed git;
+                # nothing references the source tree, so skip the
+                # implicit `checkout: self`.
+                - checkout: none
+                # On Apple Silicon, Homebrew's git in /opt/homebrew/bin
+                # shadows /usr/local/bin/git that our pkg installs into,
+                # so uninstall it first. Then install the universal pkg
+                # and assert version + universal-binary cpu architecture.
+                - bash: |
+                    set -e
+                    if [ "$(uname -m)" = arm64 ] && command -v brew >/dev/null; then
+                      brew uninstall git || true
+                    fi
+                    pkg=$(find "$(Pipeline.Workspace)/assets/${{ dim.id }}" \
+                      -name 'git-*-universal.pkg' -type f | head -1)
+                    if [ -z "$pkg" ]; then
+                      echo "No git-*-universal.pkg found in assets/${{ dim.id }}" >&2
+                      exit 1
+                    fi
+                    echo "Installing $pkg"
+                    sudo installer -pkg "$pkg" -target /
+                  displayName: 'Install Git'
+                - bash: |
+                    set -e
+                    actual=$(git --version | sed 's/^git version //')
+                    expect=$(echo "$(git_version)" | sed 's/-rc/.rc/g')
+                    echo "Expected: $expect"
+                    echo "Actual:   $actual"
+                    test "$actual" = "$expect"
+                  displayName: 'Validate installed version'
+                - bash: |
+                    set -ex
+                    git version --build-options >actual
+                    cat actual
+                    grep "cpu: $(uname -m)" actual
+                  displayName: 'Validate universal binary CPU architecture'
 
           #
           # Linux validation jobs
