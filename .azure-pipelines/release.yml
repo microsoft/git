@@ -384,7 +384,6 @@ extends:
 
                       sh -x /usr/src/build-extra/please.sh build-mingw-w64-git \
                         --only-"$(cpu_arch)" \
-                        --build-src-pkg \
                         -o artifacts \
                         HEAD
 
