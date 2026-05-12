@@ -254,8 +254,16 @@ extends:
                       bash "$apply" "$patches/git-sdk" "/$(mingwprefix)"
                 - task: Bash@3
                   displayName: 'Build mingw-w64-git package'
-                  ${{ if eq(parameters.esrp, true) }}:
-                    env:
+                  env:
+                    # The mingw-w64-git build is heavy on parallel work
+                    # that the underlying compile (and especially the
+                    # contrib + doc + i18n + perl-script generation
+                    # stages) can soak up far more aggressively than the
+                    # core count would suggest, since most of it is I/O
+                    # against the SDK's pacman cache and the make rules
+                    # have very few real serialisation points.
+                    MAKEFLAGS: -j15
+                    ${{ if eq(parameters.esrp, true) }}:
                       ESRP_TOOL: $(ESRP_TOOL)
                       ESRP_AUTH: $(ESRP_AUTH)
                       SYSTEM_ACCESSTOKEN: $(System.AccessToken)
