@@ -197,6 +197,14 @@ extends:
                     arguments: '$(sdk_repo) $(mingwprefix) "$(Agent.TempDirectory)\gitsdk"'
                   env:
                     BOOTSTRAP_DIR: '$(Build.SourcesDirectory)'
+                    # please.sh's `create-sdk-artifact` step does the
+                    # final sparse-checkout of the build-installers
+                    # SDK subset, which is I/O-bound (lots of small
+                    # writes), not CPU-bound. The default
+                    # checkout.workers=1 leaves the agent's I/O
+                    # subsystem mostly idle; bumping it well beyond
+                    # the core count gives a substantial speedup.
+                    GIT_CONFIG_PARAMETERS: "'checkout.workers=56'"
                 - task: Bash@3
                   displayName: 'Clone build-extra into SDK'
                   inputs:
