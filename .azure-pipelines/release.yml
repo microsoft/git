@@ -918,8 +918,16 @@ extends:
                     targetType: inline
                     script: |
                       set -euo pipefail
-                      sudo apt-get update -q
-                      sudo apt-get install -y -q --no-install-recommends \
+                      # The 1ES Ubuntu agents come up with `unattended-
+                      # upgrades` running, which holds the dpkg
+                      # frontend lock for the first few minutes after
+                      # boot. `apt-get` releases earlier than 2.1
+                      # would have failed immediately with
+                      #   E: Could not get lock /var/lib/dpkg/lock-frontend
+                      # Pass `DPkg::Lock::Timeout=600` so apt waits up
+                      # to 10 minutes for the lock instead.
+                      sudo apt-get -o DPkg::Lock::Timeout=600 update -q
+                      sudo apt-get -o DPkg::Lock::Timeout=600 install -y -q --no-install-recommends \
                         build-essential \
                         tcl tk gettext asciidoc xmlto \
                         libcurl4-gnutls-dev libpcre2-dev zlib1g-dev libexpat-dev \
@@ -1151,8 +1159,11 @@ extends:
                       exit 1
                     fi
                     echo "Installing $deb"
-                    sudo apt-get update
-                    sudo apt-get install -y "$deb"
+                    # Wait up to 10 minutes for unattended-upgrades to
+                    # release the dpkg lock; see comment on the build
+                    # job's 'Install build dependencies' step.
+                    sudo apt-get -o DPkg::Lock::Timeout=600 update
+                    sudo apt-get -o DPkg::Lock::Timeout=600 install -y "$deb"
                   displayName: 'Install Git'
                 - bash: |
                     set -e
