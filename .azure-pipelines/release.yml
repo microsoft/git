@@ -1060,7 +1060,7 @@ extends:
                     }
                   displayName: 'Install Git'
                 - powershell: |
-                    $raw = & "$env:PROGRAMFILES\Git\cmd\git.exe" --version
+                    $raw = & "$env:ProgramW6432\Git\cmd\git.exe" --version
                     $actual = ($raw -replace '^git version ', '').Trim()
                     $expect = ('$(git_version)' -replace '-rc', '.rc').Trim()
                     Write-Host "Expected: $expect"
