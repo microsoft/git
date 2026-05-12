@@ -1076,46 +1076,22 @@ extends:
                       mkdir -p "$(Build.ArtifactStagingDirectory)/_final"
                       mv "$(Build.ArtifactStagingDirectory)/app/microsoft-git_$(git_version)_$(deb_arch).deb" \
                         "$(Build.ArtifactStagingDirectory)/_final/"
-
-      - stage: release
-        displayName: 'Release'
-        dependsOn: [prereqs, build]
-        jobs:
-          #
-          # Linux validation jobs
-          #
-          - ${{ each dim in parameters.linux_matrix }}:
-            - job: validate_${{ dim.id }}
-              displayName: 'Validate ${{ dim.jobName }}'
-              pool:
-                name: ${{ dim.pool }}
-                image: ${{ dim.image }}
-                os: ${{ dim.os }}
-                hostArchitecture: ${{ dim.poolArch }}
-              variables:
-                git_version: $[stageDependencies.prereqs.prebuild.outputs['info.git_version']]
-              templateContext:
-                inputs:
-                  - input: pipelineArtifact
-                    artifactName: '${{ dim.id }}'
-                    targetPath: $(Pipeline.Workspace)/assets/${{ dim.id }}
-              steps:
-                # The validation only consumes the pre-built .deb and
-                # queries the freshly installed git; nothing references
-                # the source tree, so skip the implicit `checkout: self`.
-                - checkout: none
+                # Validate the freshly built .deb in-place: install it
+                # and assert `git --version`. Folded into the build job
+                # so it runs on the same agent without the 1ES job-
+                # startup overhead a separate validate job carries.
                 - bash: |
                     set -e
-                    deb=$(find "$(Pipeline.Workspace)/assets/${{ dim.id }}" \
+                    deb=$(find "$(Build.ArtifactStagingDirectory)/_final" \
                       -name 'microsoft-git_*.deb' -type f | head -1)
                     if [ -z "$deb" ]; then
-                      echo "No microsoft-git_*.deb found in assets/${{ dim.id }}" >&2
+                      echo "No microsoft-git_*.deb found in _final" >&2
                       exit 1
                     fi
                     echo "Installing $deb"
                     # Wait up to 10 minutes for unattended-upgrades to
-                    # release the dpkg lock; see comment on the build
-                    # job's 'Install build dependencies' step.
+                    # release the dpkg lock; see comment on this job's
+                    # 'Install build dependencies' step.
                     sudo apt-get -o DPkg::Lock::Timeout=600 update
                     sudo apt-get -o DPkg::Lock::Timeout=600 install -y "$deb"
                   displayName: 'Install Git'
@@ -1128,13 +1104,14 @@ extends:
                     test "$actual" = "$expect"
                   displayName: 'Validate installed version'
 
+      - stage: release
+        displayName: 'Release'
+        dependsOn: [prereqs, build]
+        jobs:
           #
           # GitHub release publishing
           #
           - job: github
-            dependsOn:
-              - ${{ each dim in parameters.linux_matrix }}:
-                - validate_${{ dim.id }}
             displayName: 'Publish GitHub release'
             condition: and(succeeded(), eq('${{ parameters.github }}', true))
             pool:
