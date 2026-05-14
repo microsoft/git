@@ -9,7 +9,7 @@ parameters:
     type: string
 
 steps:
-  - task: EsrpClientTool@4
+  - task: EsrpClientTool@5
     name: esrpinstall
     displayName: 'Install ESRP client'
   - task: AzureCLI@2
