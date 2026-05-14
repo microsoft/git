@@ -227,6 +227,24 @@ static int update_some(const struct object_id *oid, struct strbuf *base,
 			discard_cache_entry(ce);
 			return 0;
 		}
+
+		/*
+		 * When a virtual filesystem is in use, preserve
+		 * skip-worktree from the existing index entry.
+		 * Without this, checkout_entry() would try to
+		 * unlink() and recreate the file on disk, but
+		 * virtual (projected) files have no physical NTFS
+		 * entry and the unlink fails with ENOENT, causing
+		 * the checkout to fail with exit code 255.
+		 *
+		 * Preserving skip-worktree lets the index update to
+		 * the new tree entry's OID while skipping the
+		 * working tree write.  The virtual filesystem
+		 * provider will serve the correct content from the
+		 * updated projection on next access.
+		 */
+		if (core_virtualfilesystem && ce_skip_worktree(old))
+			ce->ce_flags |= CE_SKIP_WORKTREE;
 	}
 
 	add_index_entry(the_repository->index, ce,
@@ -390,7 +408,18 @@ static void mark_ce_for_checkout_overlay(struct cache_entry *ce,
 					 const struct checkout_opts *opts)
 {
 	ce->ce_flags &= ~CE_MATCHED;
-	if (!opts->ignore_skipworktree && ce_skip_worktree(ce))
+	if (!opts->ignore_skipworktree && ce_skip_worktree(ce) &&
+	    !(core_virtualfilesystem && opts->source_tree &&
+	      (ce->ce_flags & CE_UPDATE)))
+		/*
+		 * Skip-worktree entries are normally excluded from
+		 * pathspec matching.  The exception is virtual
+		 * filesystem entries updated from a source tree
+		 * (CE_UPDATE set by update_some): those must still
+		 * match so report_path_error() does not reject them.
+		 * The actual worktree write is skipped later in
+		 * checkout_worktree() because skip-worktree is set.
+		 */
 		return;
 	if (opts->source_tree && !(ce->ce_flags & CE_UPDATE))
 		/*
@@ -468,6 +497,9 @@ static int checkout_worktree(const struct checkout_opts *opts,
 		struct cache_entry *ce = the_repository->index->cache[pos];
 		if (ce->ce_flags & CE_MATCHED) {
 			if (!ce_stage(ce)) {
+				if (core_virtualfilesystem &&
+				    ce_skip_worktree(ce))
+					continue;
 				errs |= checkout_entry(ce, &state,
 						       NULL, &nr_checkouts);
 				continue;
