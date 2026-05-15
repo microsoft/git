@@ -18,6 +18,10 @@ parameters:
     type: boolean
     default: false # TODO: change default to true after testing
     displayName: 'Enable GitHub release publishing'
+  - name: 'versionOverride'
+    type: string
+    default: '-'
+    displayName: 'Version override (release publishing is skipped if set)'
 
 #
 # 1ES Pipeline Templates do not allow using a matrix strategy so we create
@@ -115,12 +119,29 @@ extends:
               - checkout: self
                 fetchDepth: 0
                 fetchTags: true
-              - task: Bash@3
-                displayName: 'Resolve version and tag information'
-                name: info
-                inputs:
-                  targetType: filePath
-                  filePath: .azure-pipelines/scripts/resolve-version.sh
+              - ${{ if or(eq(parameters.versionOverride, ''), eq(parameters.versionOverride, '-')) }}:
+                - task: Bash@3
+                  displayName: 'Resolve version and tag information'
+                  name: info
+                  inputs:
+                    targetType: filePath
+                    filePath: .azure-pipelines/scripts/resolve-version.sh
+              - ${{ if and(ne(parameters.versionOverride, ''), ne(parameters.versionOverride, '-')) }}:
+                - task: Bash@3
+                  displayName: 'Set version override information'
+                  name: info
+                  inputs:
+                    targetType: inline
+                    script: |
+                      tag_sha=$(git rev-parse HEAD)
+                      echo "##vso[task.logissue type=warning]Using version override: ${{ parameters.versionOverride }}. Release publishing will be skipped."
+                      echo "Git version: ${{ parameters.versionOverride }}"
+                      echo "Tag name: untagged"
+                      echo "Tag SHA: ${tag_sha}"
+                      echo "##vso[task.setvariable variable=git_version;isOutput=true;isReadOnly=true]${{ parameters.versionOverride }}"
+                      echo "##vso[task.setvariable variable=tag_name;isOutput=true;isReadOnly=true]untagged"
+                      echo "##vso[task.setvariable variable=tag_sha;isOutput=true;isReadOnly=true]${tag_sha}"
+                      echo "##vso[build.updatebuildnumber][UNTAGGED] ${tag_sha} (${BUILD_BUILDNUMBER:-unknown})"
 
       - stage: build
         displayName: 'Build'
@@ -330,7 +351,7 @@ extends:
           #
           - job: github
             displayName: 'Publish GitHub release'
-            condition: and(succeeded(), eq('${{ parameters.github }}', true))
+            condition: and(succeeded(), eq('${{ parameters.github }}', true), or(eq('${{ parameters.versionOverride }}', ''), eq('${{ parameters.versionOverride }}', '-')))
             pool:
               name: GitClientPME-1ESHostedPool-intel-pc
               image: ubuntu-x86_64-ado1es
