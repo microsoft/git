@@ -1,5 +1,11 @@
 name: $(Date:yyyyMMdd)$(Rev:.r)
-trigger: none
+trigger:
+  branches:
+    exclude:
+      - '*'
+  tags:
+    include:
+      - v[0-9]*vfs*
 pr: none
 
 resources:
@@ -12,11 +18,11 @@ resources:
 parameters:
   - name: 'esrp'
     type: boolean
-    default: false # TODO: change default to true after testing
+    default: true
     displayName: 'Enable ESRP code signing'
   - name: 'github'
     type: boolean
-    default: false # TODO: change default to true after testing
+    default: true
     displayName: 'Enable GitHub release publishing'
   - name: 'versionOverride'
     type: string
@@ -212,6 +218,14 @@ extends:
                     arguments: '$(sdk_repo) $(mingwprefix) "$(Agent.TempDirectory)\gitsdk"'
                   env:
                     BOOTSTRAP_DIR: '$(Build.SourcesDirectory)'
+                    # please.sh's `create-sdk-artifact` step does the
+                    # final sparse-checkout of the build-installers
+                    # SDK subset, which is I/O-bound (lots of small
+                    # writes), not CPU-bound. The default
+                    # checkout.workers=1 leaves the agent's I/O
+                    # subsystem mostly idle; bumping it well beyond
+                    # the core count gives a substantial speedup.
+                    GIT_CONFIG_PARAMETERS: "'checkout.workers=56'"
                 - task: Bash@3
                   displayName: 'Clone build-extra into SDK'
                   inputs:
@@ -261,8 +275,16 @@ extends:
                       bash "$apply" "$patches/git-sdk" "/$(mingwprefix)"
                 - task: Bash@3
                   displayName: 'Build mingw-w64-git package'
-                  ${{ if eq(parameters.esrp, true) }}:
-                    env:
+                  env:
+                    # The mingw-w64-git build is heavy on parallel work
+                    # that the underlying compile (and especially the
+                    # contrib + doc + i18n + perl-script generation
+                    # stages) can soak up far more aggressively than the
+                    # core count would suggest, since most of it is I/O
+                    # against the SDK's pacman cache and the make rules
+                    # have very few real serialisation points.
+                    MAKEFLAGS: -j15
+                    ${{ if eq(parameters.esrp, true) }}:
                       ESRP_TOOL: $(ESRP_TOOL)
                       ESRP_AUTH: $(ESRP_AUTH)
                       SYSTEM_ACCESSTOKEN: $(System.AccessToken)
@@ -283,6 +305,10 @@ extends:
                       # reason (see actions/runner ProcessInvoker.cs).
                       exec </dev/null
 
+                      VERSION="$(git_version)"
+                      # Git's GIT-VERSION-GEN expects .rc rather than -rc.
+                      BUILD_VERSION="$(echo "$VERSION" | sed 's/-rc/.rc/g')"
+
                       # makepkg-mingw runs git internally and looks for a
                       # plain /usr/bin/git; trampoline it to the matching
                       # MinGW-built git.exe.
@@ -296,9 +322,111 @@ extends:
                       git config --global user.email "$USER_EMAIL"
                       export PACKAGER="$USER_NAME <$USER_EMAIL>"
 
+                      # please.sh build-mingw-w64-git derives the package
+                      # version by running `git for-each-ref --points-at=HEAD
+                      # 'refs/tags/v[0-9]*'` against this source tree (and
+                      # then pushing the chosen tag into the freshly cloned
+                      # /usr/src/MINGW-packages/mingw-w64-git/{git,src/git}
+                      # worktrees that makepkg-mingw actually builds from).
+                      # If no v[0-9]* tag is found at HEAD, please.sh falls
+                      # back to `git describe + timestamp` and creates a
+                      # lightweight tag whose name has nothing to do with
+                      # the pipeline-resolved $(git_version). On a real
+                      # release run HEAD is already tagged via the tag-push
+                      # trigger; on a debug run (e.g. the TO-DROP static-
+                      # version override that only fakes git_version in the
+                      # prereqs stage) it is not, so create an annotated
+                      # tag at HEAD ourselves so please.sh picks it up and
+                      # the resulting mingw-w64-git package, the
+                      # cv2pdb-stripped binaries inside it, and the
+                      # downstream Inno Setup installer are all named after
+                      # the resolved git_version. If the tag already exists
+                      # but does not point at HEAD, fail loudly: silently
+                      # skipping creation would let please.sh's for-each-ref
+                      # not find it (since it is not at HEAD) and fall back
+                      # to the describe+timestamp path this whole block is
+                      # supposed to prevent.
+                      if git rev-parse --verify "refs/tags/v$(git_version)"
+                      then
+                        tag_commit="$(git rev-parse "refs/tags/v$(git_version)^{commit}")"
+                        head_commit="$(git rev-parse HEAD)"
+                        test "$tag_commit" = "$head_commit" || {
+                          echo "##vso[task.logissue type=error]Tag v$(git_version) points at $tag_commit, not HEAD ($head_commit)" >&2
+                          exit 1
+                        }
+                      else
+                        git tag -a -m "v$(git_version)" "v$(git_version)" HEAD
+                      fi
+
+                      # Pre-create the worktree that makepkg-mingw will
+                      # actually compile, instead of letting please.sh's
+                      # `clone --reference $bare https://github.com/git-for-windows/git`
+                      # do it. The PKGBUILD's `build()` -> `make` invokes
+                      # microsoft/git's GIT-VERSION-GEN, which `git
+                      # describe`s in $srcdir/git and rejects any version
+                      # whose `${VN%%.vfs.*}` does not match the hard-coded
+                      # `${DEF_VER%%.vfs.*}` (`v2.53.0`). For real release
+                      # tags the two match, but for any debug tag (in
+                      # particular the v9.99.99.vfs.0.0 the TO-DROP commit
+                      # produces) the build aborts with "Found version
+                      # v9.99.99.vfs.0.0, which is not based on
+                      # v2.53.0.vfs.0.0". GIT-VERSION-GEN reads a `version`
+                      # file at the source-tree root in preference to
+                      # running git describe, and the validation only
+                      # fires on the describe path; so plant that file
+                      # ahead of the build.
+                      #
+                      # please.sh would clone /usr/src/MINGW-packages
+                      # itself if missing; we do the same clone first so
+                      # the package directory exists and please.sh skips
+                      # its own clone (line 838-840 of please.sh).
+                      test -d /usr/src/MINGW-packages ||
+                      git clone --depth 1 --single-branch -b main \
+                        https://github.com/git-for-windows/MINGW-packages \
+                        /usr/src/MINGW-packages
+
+                      # mingw-w64-git/src/git is what makepkg's extract_git
+                      # `git fetch`s and `git checkout --force --no-track
+                      # -B makepkg <tag>`s into. Make it a worktree of this
+                      # agent's checkout so the v$VERSION tag we just
+                      # created is already visible there (worktrees share
+                      # refs and objects with the main repo) and we don't
+                      # have to duplicate the source.
+                      #
+                      # Worktrees also share `.git/config` with the main
+                      # repo, so origin would point at the Azure-supplied
+                      # remote URL and extract_git's `git fetch` would go
+                      # online (and abort the build if it failed). Enable
+                      # `extensions.worktreeConfig` and override origin to
+                      # the local checkout via `git config --worktree` so
+                      # the fetch stays on local disk and is effectively a
+                      # no-op. Mirror please.sh's `core.autoCRLF=false`
+                      # under the same per-worktree namespace so the
+                      # checksums calc_checksum_git() computes against
+                      # this tree are reproducible regardless of the main
+                      # repo's autocrlf setting.
+                      mkdir -p /usr/src/MINGW-packages/mingw-w64-git/src
+                      test -d /usr/src/MINGW-packages/mingw-w64-git/src/git || {
+                        git -C "$BUILD_SOURCESDIRECTORY" \
+                          config extensions.worktreeConfig true
+                        git -C "$BUILD_SOURCESDIRECTORY" worktree add \
+                          /usr/src/MINGW-packages/mingw-w64-git/src/git HEAD
+                        git -C /usr/src/MINGW-packages/mingw-w64-git/src/git \
+                          config --worktree remote.origin.url \
+                          "$BUILD_SOURCESDIRECTORY"
+                        git -C /usr/src/MINGW-packages/mingw-w64-git/src/git \
+                          config --worktree core.autoCRLF false
+                      }
+
+                      # The actual `version` file write that side-steps
+                      # GIT-VERSION-GEN's validation. The file is untracked,
+                      # so makepkg's `git checkout --force --no-track -B
+                      # makepkg <tag>` does not remove it.
+                      echo "$BUILD_VERSION" \
+                        >/usr/src/MINGW-packages/mingw-w64-git/src/git/version
+
                       sh -x /usr/src/build-extra/please.sh build-mingw-w64-git \
                         --only-"$(cpu_arch)" \
-                        --build-src-pkg \
                         -o artifacts \
                         HEAD
 
@@ -401,6 +529,38 @@ extends:
                         artifacts/PortableGit-*.exe \
                         artifacts/sha-256.txt \
                         "$(Build.ArtifactStagingDirectory)/_final/"
+                # Validate the freshly built installer in-place: silently
+                # install Git-*.exe and assert that `git --version` reports
+                # the version we resolved at the prereqs stage. Folded into
+                # the build job so it runs on the same agent without the
+                # 1ES job-startup overhead a separate validate job carries.
+                - powershell: |
+                    $exe = Get-ChildItem -Path "$(Build.ArtifactStagingDirectory)\_final\Git-*.exe" |
+                      Where-Object { $_.Name -notlike 'PortableGit-*' } |
+                      Select-Object -First 1 -ExpandProperty FullName
+                    if (-not $exe) {
+                      Write-Error "No Git-*.exe installer found in _final"
+                      exit 1
+                    }
+                    Write-Host "Installing $exe"
+                    $p = Start-Process -Wait -PassThru -FilePath "$exe" `
+                      -ArgumentList "/SILENT","/VERYSILENT","/NORESTART","/SUPPRESSMSGBOXES","/ALLOWDOWNGRADE=1"
+                    if ($p.ExitCode -ne 0) {
+                      Write-Error "Installer exited with code $($p.ExitCode)"
+                      exit $p.ExitCode
+                    }
+                  displayName: 'Install Git'
+                - powershell: |
+                    $raw = & "$env:ProgramW6432\Git\cmd\git.exe" --version
+                    $actual = ($raw -replace '^git version ', '').Trim()
+                    $expect = ('$(git_version)' -replace '-rc', '.rc').Trim()
+                    Write-Host "Expected: $expect"
+                    Write-Host "Actual:   $actual"
+                    if ($actual -ne $expect) {
+                      Write-Error "Version mismatch: expected '$expect', got '$actual'"
+                      exit 1
+                    }
+                  displayName: 'Validate installed version'
 
           #
           # macOS build jobs
@@ -772,6 +932,40 @@ extends:
                       mv .github/macos-installer/git-*-universal.dmg \
                          "$pkg" \
                          "$(Build.ArtifactStagingDirectory)/_final/"
+                # Validate the freshly built pkg in-place: install it,
+                # assert `git --version`, and confirm the universal binary
+                # actually runs natively as the host architecture. Folded
+                # into the build job so it runs on the same agent without
+                # the 1ES job-startup overhead a separate validate job
+                # carries.
+                - bash: |
+                    set -e
+                    if [ "$(uname -m)" = arm64 ] && command -v brew >/dev/null; then
+                      brew uninstall git || true
+                    fi
+                    pkg=$(find "$(Build.ArtifactStagingDirectory)/_final" \
+                      -name 'git-*-universal.pkg' -type f | head -1)
+                    if [ -z "$pkg" ]; then
+                      echo "No git-*-universal.pkg found in _final" >&2
+                      exit 1
+                    fi
+                    echo "Installing $pkg"
+                    sudo installer -pkg "$pkg" -target /
+                  displayName: 'Install Git'
+                - bash: |
+                    set -e
+                    actual=$(git --version | sed 's/^git version //')
+                    expect=$(echo "$(git_version)" | sed 's/-rc/.rc/g')
+                    echo "Expected: $expect"
+                    echo "Actual:   $actual"
+                    test "$actual" = "$expect"
+                  displayName: 'Validate installed version'
+                - bash: |
+                    set -ex
+                    git version --build-options >actual
+                    cat actual
+                    grep "cpu: $(uname -m)" actual
+                  displayName: 'Validate universal binary CPU architecture'
 
           #
           # Linux build jobs
@@ -811,8 +1005,16 @@ extends:
                     targetType: inline
                     script: |
                       set -euo pipefail
-                      sudo apt-get update -q
-                      sudo apt-get install -y -q --no-install-recommends \
+                      # The 1ES Ubuntu agents come up with `unattended-
+                      # upgrades` running, which holds the dpkg
+                      # frontend lock for the first few minutes after
+                      # boot. `apt-get` releases earlier than 2.1
+                      # would have failed immediately with
+                      #   E: Could not get lock /var/lib/dpkg/lock-frontend
+                      # Pass `DPkg::Lock::Timeout=600` so apt waits up
+                      # to 10 minutes for the lock instead.
+                      sudo apt-get -o DPkg::Lock::Timeout=600 update -q
+                      sudo apt-get -o DPkg::Lock::Timeout=600 install -y -q --no-install-recommends \
                         build-essential \
                         tcl tk gettext asciidoc xmlto \
                         libcurl4-gnutls-dev libpcre2-dev zlib1g-dev libexpat-dev \
@@ -895,87 +1097,42 @@ extends:
                       mkdir -p "$(Build.ArtifactStagingDirectory)/_final"
                       mv "$(Build.ArtifactStagingDirectory)/app/microsoft-git_$(git_version)_$(deb_arch).deb" \
                         "$(Build.ArtifactStagingDirectory)/_final/"
+                # Validate the freshly built .deb in-place: install it
+                # and assert `git --version`. Folded into the build job
+                # so it runs on the same agent without the 1ES job-
+                # startup overhead a separate validate job carries.
+                - bash: |
+                    set -e
+                    deb=$(find "$(Build.ArtifactStagingDirectory)/_final" \
+                      -name 'microsoft-git_*.deb' -type f | head -1)
+                    if [ -z "$deb" ]; then
+                      echo "No microsoft-git_*.deb found in _final" >&2
+                      exit 1
+                    fi
+                    echo "Installing $deb"
+                    # Wait up to 10 minutes for unattended-upgrades to
+                    # release the dpkg lock; see comment on this job's
+                    # 'Install build dependencies' step.
+                    sudo apt-get -o DPkg::Lock::Timeout=600 update
+                    sudo apt-get -o DPkg::Lock::Timeout=600 install -y "$deb"
+                  displayName: 'Install Git'
+                - bash: |
+                    set -e
+                    actual=$(git --version | sed 's/^git version //')
+                    expect=$(echo "$(git_version)" | sed 's/-rc/.rc/g')
+                    echo "Expected: $expect"
+                    echo "Actual:   $actual"
+                    test "$actual" = "$expect"
+                  displayName: 'Validate installed version'
 
       - stage: release
         displayName: 'Release'
         dependsOn: [prereqs, build]
         jobs:
           #
-          # Windows validation jobs
-          #
-          - ${{ each dim in parameters.windows_matrix }}:
-            - job: validate_${{ dim.id }}
-              displayName: 'Validate ${{ dim.jobName }}'
-              pool:
-                name: ${{ dim.pool }}
-                image: ${{ dim.image }}
-                os: ${{ dim.os }}
-                hostArchitecture: ${{ dim.poolArch }}
-              templateContext:
-                inputs:
-                  - input: pipelineArtifact
-                    artifactName: '${{ dim.id }}'
-                    targetPath: $(Pipeline.Workspace)/assets/${{ dim.id }}
-              steps:
-                # TODO: add artifact validation steps
-                - script: |
-                    dir $(Pipeline.Workspace)\assets\${{ dim.id }}
-                  displayName: 'Validate artifacts'
-
-          #
-          # macOS validation jobs
-          #
-          - ${{ each dim in parameters.macos_matrix }}:
-            - job: validate_${{ dim.id }}
-              displayName: 'Validate ${{ dim.jobName }}'
-              pool:
-                name: ${{ dim.pool }}
-                image: ${{ dim.image }}
-                os: ${{ dim.os }}
-              templateContext:
-                inputs:
-                  - input: pipelineArtifact
-                    artifactName: '${{ dim.id }}'
-                    targetPath: $(Pipeline.Workspace)/assets/${{ dim.id }}
-              steps:
-                # TODO: add artifact validation steps
-                - script: |
-                    ls $(Pipeline.Workspace)/assets/${{ dim.id }}
-                  displayName: 'Validate artifacts'
-
-          #
-          # Linux validation jobs
-          #
-          - ${{ each dim in parameters.linux_matrix }}:
-            - job: validate_${{ dim.id }}
-              displayName: 'Validate ${{ dim.jobName }}'
-              pool:
-                name: ${{ dim.pool }}
-                image: ${{ dim.image }}
-                os: ${{ dim.os }}
-                hostArchitecture: ${{ dim.poolArch }}
-              templateContext:
-                inputs:
-                  - input: pipelineArtifact
-                    artifactName: '${{ dim.id }}'
-                    targetPath: $(Pipeline.Workspace)/assets/${{ dim.id }}
-              steps:
-                # TODO: add artifact validation steps
-                - script: |
-                    ls $(Pipeline.Workspace)/assets/${{ dim.id }}
-                  displayName: 'Validate artifacts'
-
-          #
           # GitHub release publishing
           #
           - job: github
-            dependsOn:
-              - ${{ each dim in parameters.windows_matrix }}:
-                - validate_${{ dim.id }}
-              - ${{ each dim in parameters.macos_matrix }}:
-                - validate_${{ dim.id }}
-              - ${{ each dim in parameters.linux_matrix }}:
-                - validate_${{ dim.id }}
             displayName: 'Publish GitHub release'
             condition: and(succeeded(), eq('${{ parameters.github }}', true), or(eq('${{ parameters.versionOverride }}', ''), eq('${{ parameters.versionOverride }}', '-')))
             pool:
