@@ -1,0 +1,87 @@
+{
+  "properties": {
+    "helpUri": "https://eng.ms/docs/microsoft-security/security/azure-security/cloudai-security-fundamentals-engineering/security-integration/guardian-wiki/microsoft-guardian/general/baselines"
+  },
+  "version": "1.0.0",
+  "baselines": {
+    "default": {
+      "name": "default",
+      "createdDate": "2026-05-15 18:11:46Z",
+      "lastUpdatedDate": "2026-05-15 18:11:46Z"
+    }
+  },
+  "results": {
+    "1ef94667c163c3a0f5f10b8e667f7568586fa462c5d70f50fa190b62708fa987": {
+      "signature": "1ef94667c163c3a0f5f10b8e667f7568586fa462c5d70f50fa190b62708fa987",
+      "alternativeSignatures": [
+        "b1da4f34c94f9894a230ff4901e242bff1da3d5de5360a02888b7991a9cfdb34",
+        "b4980b97ec22ebbfd9440305f7391c71d54f95fc193161fb358be3a2a7cfa1ef",
+        "9267c6a45a3798fb0e559ae41d8a3c4bb7a20f63c8eb8fe737f3b65a019d6ffc"
+      ],
+      "target": "_final/Git-2.53.0.vfs.0.11-64-bit.exe",
+      "uriBaseId": "file:///D:/a/_work/1/a/",
+      "memberOf": [
+        "default"
+      ],
+      "tool": "binskim",
+      "ruleId": "BA2018",
+      "createdDate": "2026-05-15 18:11:46Z",
+      "expirationDate": "2026-11-01 18:22:12Z",
+      "justification": "This error is baselined with an expiration date of 180 days from 2026-05-15 18:22:12Z"
+    },
+    "1a894ead621f982bdad69ffea06c99b20f2f54527acedc3d5f0670d90a9c0940": {
+      "signature": "1a894ead621f982bdad69ffea06c99b20f2f54527acedc3d5f0670d90a9c0940",
+      "alternativeSignatures": [
+        "2e3c060b70fd0165cf467e89b938158c73e66a8af475b4deb9a93e114619b075",
+        "d4f0f63e56f1afd0d550f6e8e649215ed724040a5fad0e4b3d9fde26615967f9",
+        "03957e8e692d2df7219eb336a4c69cd369f79272de4d5dc00358d38bf2ce630f"
+      ],
+      "target": "_final/PortableGit-2.53.0.vfs.0.11-64-bit.7z.exe",
+      "uriBaseId": "file:///D:/a/_work/1/a/",
+      "memberOf": [
+        "default"
+      ],
+      "tool": "binskim",
+      "ruleId": "BA2008",
+      "createdDate": "2026-05-15 18:11:46Z",
+      "expirationDate": "2026-11-01 18:22:12Z",
+      "justification": "This error is baselined with an expiration date of 180 days from 2026-05-15 18:22:12Z"
+    },
+    "8a45bc5bc547a191155f05b7cd3e20a24c4940f2a669b6a3ac09064ecd9cb627": {
+      "signature": "8a45bc5bc547a191155f05b7cd3e20a24c4940f2a669b6a3ac09064ecd9cb627",
+      "alternativeSignatures": [
+        "2611efa1fa25fbcc67661bbdf28670022219ea13a88a38ad4e4f77b3a3f5bd6c",
+        "afb29cc5ad9189bf042b95840307da1b2c07d9b9a20a626386e51629397523ac",
+        "ad0111fea5cdbfa4f42d8653f046ee6b9b064d08223deebd12d65adfce9481fd"
+      ],
+      "target": "_final/Git-2.53.0.vfs.0.11-arm64.exe",
+      "uriBaseId": "file:///D:/a/_work/1/a/",
+      "memberOf": [
+        "default"
+      ],
+      "tool": "binskim",
+      "ruleId": "BA2018",
+      "createdDate": "2026-05-15 18:03:19Z",
+      "expirationDate": "2026-11-01 18:22:12Z",
+      "justification": "This error is baselined with an expiration date of 180 days from 2026-05-15 18:22:12Z"
+    },
+    "3f077692b529e5fef0a281abd76fe7fa0fb1ad14817320ea28c938e9ce9e9415": {
+      "signature": "3f077692b529e5fef0a281abd76fe7fa0fb1ad14817320ea28c938e9ce9e9415",
+      "alternativeSignatures": [
+        "1e196c01a4320239f858ceb4e3b0007a5c41bda673657ce2e8a258c8edc3f060",
+        "6413bc1f54cd370f1b72eb0b72ee936e42d6bf99e547a38574604b43d485d6b7",
+        "acb96e5883d6ffdfa3481e413ef4209bda7c85724ca147787b747bb7ff2fc859"
+      ],
+      "target": "_final/PortableGit-2.53.0.vfs.0.11-arm64.7z.exe",
+      "uriBaseId": "file:///D:/a/_work/1/a/",
+      "memberOf": [
+        "default"
+      ],
+      "tool": "binskim",
+      "ruleId": "BA2008",
+      "createdDate": "2026-05-15 18:03:19Z",
+      "expirationDate": "2026-11-01 18:22:12Z",
+      "justification": "This error is baselined with an expiration date of 180 days from 2026-05-15 18:22:12Z"
+    }
+  }
+}
