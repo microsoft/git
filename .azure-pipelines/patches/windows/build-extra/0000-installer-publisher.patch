@@ -1,0 +1,13 @@
+diff --git a/installer/install.iss b/installer/install.iss
+index 70787b7..137f660 100644
+--- a/installer/install.iss
++++ b/installer/install.iss
+@@ -65,7 +65,7 @@ SignTool=signtool
+ ; Installer-related
+ AllowNoIcons=yes
+ AppName={#APP_NAME}
+-AppPublisher=The Git Development Community
++AppPublisher=The Git Client Team at Microsoft
+ AppPublisherURL={#APP_URL}
+ AppSupportURL={#APP_CONTACT_URL}
+ AppVersion={#APP_VERSION}

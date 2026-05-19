@@ -1,0 +1,17 @@
+diff --git a/installer/install.iss b/installer/install.iss
+index 70787b7..37d79b0 100644
+--- a/installer/install.iss
++++ b/installer/install.iss
+@@ -1925,6 +1925,12 @@ begin
+     GetDefaultsFromGitConfig('system');
+ 
+     ChosenOptions:='';
++    if (ExpandConstant('{param:components|/}')='/') then begin
++        WizardSelectComponents('autoupdate');
++#ifdef WITH_SCALAR
++        WizardSelectComponents('scalar');
++#endif
++    end;
+ 
+     PrevPageID:=wpSelectProgramGroup;
+ 
