@@ -1,0 +1,12 @@
+diff --git a/bin/git-update-git-for-windows b/bin/git-update-git-for-windows
+index 29444d9..6705da1 100644
+--- a/bin/git-update-git-for-windows
++++ b/bin/git-update-git-for-windows
+@@ -4,6 +4,7 @@
+ # release.  If versions differ, the bit matched installer is downloaded and run
+ # when confirmation to do so is given.
+ 
++use_recently_seen=no
+ 
+ # Compare version strings
+ # Prints -1, 0 or 1 to stdout
