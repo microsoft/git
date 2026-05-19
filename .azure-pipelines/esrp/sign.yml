@@ -1,0 +1,106 @@
+# Reusable step template for ESRP code signing via EsrpCodeSigning@6.
+#
+# For macOS, ESRP requires files to be submitted as a zip archive.
+# Set 'useArchive: true' to automatically handle the
+# copy → zip → sign → extract cycle. For Windows/Linux where ESRP
+# can sign files directly in a folder, leave it as false (default).
+#
+parameters:
+  - name: displayName
+    type: string
+  - name: folderPath
+    type: string
+  - name: pattern
+    type: string
+  - name: inlineOperation
+    type: string
+  # When true, matching files are copied to a staging dir, zipped,
+  # signed, and extracted back to folderPath.
+  - name: useArchive
+    type: boolean
+    default: false
+  # ESRP connection parameters (defaults use pipeline variables)
+  - name: connectedServiceName
+    type: string
+    default: $(esrpAppConnectionName)
+  - name: appRegistrationClientId
+    type: string
+    default: $(esrpClientId)
+  - name: appRegistrationTenantId
+    type: string
+    default: $(esrpTenantId)
+  - name: authAkvName
+    type: string
+    default: $(esrpKeyVaultName)
+  - name: authSignCertName
+    type: string
+    default: $(esrpSignReqCertName)
+  - name: serviceEndpointUrl
+    type: string
+    default: $(esrpEndpointUrl)
+
+steps:
+  - ${{ if eq(parameters.useArchive, true) }}:
+    - task: DeleteFiles@1
+      displayName: 'Clean staging dir for ${{ parameters.displayName }}'
+      inputs:
+        SourceFolder: '$(Agent.TempDirectory)/esrp-staging'
+        Contents: '*'
+        RemoveSourceFolder: true
+    - task: CopyFiles@2
+      displayName: 'Collect files for ${{ parameters.displayName }}'
+      inputs:
+        SourceFolder: '${{ parameters.folderPath }}'
+        Contents: '${{ parameters.pattern }}'
+        TargetFolder: '$(Agent.TempDirectory)/esrp-staging/contents'
+    - task: ArchiveFiles@2
+      displayName: 'Archive files for ${{ parameters.displayName }}'
+      inputs:
+        rootFolderOrFile: '$(Agent.TempDirectory)/esrp-staging/contents'
+        includeRootFolder: false
+        archiveType: zip
+        archiveFile: '$(Agent.TempDirectory)/esrp-staging/archive.zip'
+    - task: EsrpCodeSigning@6
+      displayName: '${{ parameters.displayName }}'
+      inputs:
+        connectedServiceName: '${{ parameters.connectedServiceName }}'
+        useMSIAuthentication: true
+        appRegistrationClientId: '${{ parameters.appRegistrationClientId }}'
+        appRegistrationTenantId: '${{ parameters.appRegistrationTenantId }}'
+        authAkvName: '${{ parameters.authAkvName }}'
+        authSignCertName: '${{ parameters.authSignCertName }}'
+        serviceEndpointUrl: '${{ parameters.serviceEndpointUrl }}'
+        folderPath: '$(Agent.TempDirectory)/esrp-staging'
+        pattern: 'archive.zip'
+        useMinimatch: true
+        signConfigType: inlineSignParams
+        inlineOperation: ${{ parameters.inlineOperation }}
+    - task: ExtractFiles@1
+      displayName: 'Extract signed files for ${{ parameters.displayName }}'
+      inputs:
+        archiveFilePatterns: '$(Agent.TempDirectory)/esrp-staging/archive.zip'
+        destinationFolder: '${{ parameters.folderPath }}'
+        overwriteExistingFiles: true
+    - task: DeleteFiles@1
+      displayName: 'Clean up staging dir for ${{ parameters.displayName }}'
+      condition: always()
+      inputs:
+        SourceFolder: '$(Agent.TempDirectory)/esrp-staging'
+        Contents: '*'
+        RemoveSourceFolder: true
+  - ${{ else }}:
+    - task: EsrpCodeSigning@6
+      displayName: '${{ parameters.displayName }}'
+      inputs:
+        connectedServiceName: '${{ parameters.connectedServiceName }}'
+        useMSIAuthentication: true
+        appRegistrationClientId: '${{ parameters.appRegistrationClientId }}'
+        appRegistrationTenantId: '${{ parameters.appRegistrationTenantId }}'
+        authAkvName: '${{ parameters.authAkvName }}'
+        authSignCertName: '${{ parameters.authSignCertName }}'
+        serviceEndpointUrl: '${{ parameters.serviceEndpointUrl }}'
+        folderPath: '${{ parameters.folderPath }}'
+        pattern: '${{ parameters.pattern }}'
+        useMinimatch: true
+        signConfigType: inlineSignParams
+        inlineOperation: ${{ parameters.inlineOperation }}

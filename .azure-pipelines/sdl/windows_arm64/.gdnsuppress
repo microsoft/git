@@ -1,0 +1,720 @@
+{
+  "hydrated": true,
+  "properties": {
+    "helpUri": "https://eng.ms/docs/microsoft-security/security/azure-security/cloudai-security-fundamentals-engineering/security-integration/guardian-wiki/microsoft-guardian/general/suppressions"
+  },
+  "version": "1.0.0",
+  "suppressionSets": {
+    "default": {
+      "name": "default",
+      "createdDate": "2026-05-27 10:14:26Z",
+      "lastUpdatedDate": "2026-05-27 10:14:26Z"
+    }
+  },
+  "results": {
+    "700115aaeb52ef14c3ecbe6969846d61952c6d886621015dffde4e3bdb61da19": {
+      "signature": "700115aaeb52ef14c3ecbe6969846d61952c6d886621015dffde4e3bdb61da19",
+      "alternativeSignatures": [
+        "2e72db9df4196700b91316238124eb512f9d037af53ffd4c9e988d775f4612ed",
+        "12d9f3c3e169e2b1bf64e764f419192c12f43c401e1d7e4676e230ce9a546875",
+        "98631e820190d0dce5ee357ff9de64ed1273253648398676b9514615c921b9e6"
+      ],
+      "target": "_bin/clangarm64/bin/git-receive-pack.exe",
+      "uriBaseId": "file:///D:/a/_work/1/a/",
+      "memberOf": [
+        "default"
+      ],
+      "tool": "binskim",
+      "ruleId": "BA2008",
+      "createdDate": "2026-05-27 10:14:26Z"
+    },
+    "b7e5647d97442b6f2c23b33e8aafdf22c0d6aed098df1ef15e571f2d8541f672": {
+      "signature": "b7e5647d97442b6f2c23b33e8aafdf22c0d6aed098df1ef15e571f2d8541f672",
+      "alternativeSignatures": [
+        "a525b473688cfa00a627005d40c76484e6744ac8f69e7f127d94f6f490768a66",
+        "beb22705dca5cfc08bc99ace21633b10b4f501734d2fa64a7cc94c05059f0a8b",
+        "4107569dac44655d3b70ef97a70f38f694693225930b98a3d4b4c9db6bd018a4"
+      ],
+      "target": "_bin/clangarm64/bin/git-receive-pack.exe",
+      "uriBaseId": "file:///D:/a/_work/1/a/",
+      "memberOf": [
+        "default"
+      ],
+      "tool": "binskim",
+      "ruleId": "BA2012",
+      "createdDate": "2026-05-27 10:14:26Z"
+    },
+    "31a757644db7f89cb414cc657f0344879b7bd6d65e06a844d1b3642d49cd29c8": {
+      "signature": "31a757644db7f89cb414cc657f0344879b7bd6d65e06a844d1b3642d49cd29c8",
+      "alternativeSignatures": [
+        "2c5152ae42f2f059bafdb22e9291914dea12d431d0a572e50253f4feefc08a6c",
+        "1d6b5dbbfa21ce2fe38254752a6792fd453debe35c0d2471cfa1a0c2de7bc7fe",
+        "a196e7d2cc2b2556bec6cabcd4bed7c5752f9d1b1e5581bb63867c90333aeedc"
+      ],
+      "target": "_bin/clangarm64/bin/git-shell.exe",
+      "uriBaseId": "file:///D:/a/_work/1/a/",
+      "memberOf": [
+        "default"
+      ],
+      "tool": "binskim",
+      "ruleId": "BA2008",
+      "createdDate": "2026-05-27 10:14:26Z"
+    },
+    "faee4a620858f2b998bb548c3c01188b725e40d0843ce25c0913bb436ec9d99e": {
+      "signature": "faee4a620858f2b998bb548c3c01188b725e40d0843ce25c0913bb436ec9d99e",
+      "alternativeSignatures": [
+        "294b1ca1a4c3d990940b286f075ff5329070d6d6a7e49e9d498d1d6c8c730b3c",
+        "88aec4219484bf7a78fe2b9e58801fd15080ede437390b917208c0a0845b313d",
+        "66a40f17c2b6737636e5a9cc7b10311274e576d26bb83e4880172fcc07ab26cd"
+      ],
+      "target": "_bin/clangarm64/bin/git-shell.exe",
+      "uriBaseId": "file:///D:/a/_work/1/a/",
+      "memberOf": [
+        "default"
+      ],
+      "tool": "binskim",
+      "ruleId": "BA2012",
+      "createdDate": "2026-05-27 10:14:26Z"
+    },
+    "3333d624de5ce21b7c8dc05712537e1e89d244fb52df633e2387b1fed7bb96e0": {
+      "signature": "3333d624de5ce21b7c8dc05712537e1e89d244fb52df633e2387b1fed7bb96e0",
+      "alternativeSignatures": [
+        "8d3e28c153ee6977b82a460864bd58aabba9f53c325aa2bdde8a1a94abf3565f",
+        "d45931317dad3d8ff6f9e93daf30f0cf423de5615e0d9601197512c2a9becb1c",
+        "8f7a6d152ea717e80f9167b5e36d73238b40dc5d7645bdd815d495a2976df982"
+      ],
+      "target": "_bin/clangarm64/bin/git-upload-archive.exe",
+      "uriBaseId": "file:///D:/a/_work/1/a/",
+      "memberOf": [
+        "default"
+      ],
+      "tool": "binskim",
+      "ruleId": "BA2008",
+      "createdDate": "2026-05-27 10:14:26Z"
+    },
+    "c357826a839c5403175734a100b79efea4ba3c2b59d1a60c2893c0a332da0220": {
+      "signature": "c357826a839c5403175734a100b79efea4ba3c2b59d1a60c2893c0a332da0220",
+      "alternativeSignatures": [
+        "5d95359b2b45e2a5628494b832fe4cc61c07641265fe4224febabf97d51274a8",
+        "5eba68419d9400267749f597dbf4fa0dc2c13e6d980e43d522a9ccf7da047984",
+        "e6756716f7c84f9db8ce92d6099eabf631c717fb5e18d84f4b3fce80b3bd9029"
+      ],
+      "target": "_bin/clangarm64/bin/git-upload-archive.exe",
+      "uriBaseId": "file:///D:/a/_work/1/a/",
+      "memberOf": [
+        "default"
+      ],
+      "tool": "binskim",
+      "ruleId": "BA2012",
+      "createdDate": "2026-05-27 10:14:26Z"
+    },
+    "26d93852f06da066529b0e93f720f86d2354de41340f75d503fcd7e26d437a12": {
+      "signature": "26d93852f06da066529b0e93f720f86d2354de41340f75d503fcd7e26d437a12",
+      "alternativeSignatures": [
+        "8d3113f61cbb9b7706990b5569ed13ec9352ab41dd9f14005306bed0390243b6",
+        "38ba10bc6b3dfa697c54ff2d4a9055e3eacbdc69a1c255b206e348590482ee45",
+        "ae349628ed4c5bca9af3462a61bef103ab88aa4586bf46c02206a4b9369d0bae"
+      ],
+      "target": "_bin/clangarm64/bin/git-upload-pack.exe",
+      "uriBaseId": "file:///D:/a/_work/1/a/",
+      "memberOf": [
+        "default"
+      ],
+      "tool": "binskim",
+      "ruleId": "BA2008",
+      "createdDate": "2026-05-27 10:14:26Z"
+    },
+    "ed6be62f4679dfa3b8af8fc358db90c4cba7eebe2c1e61a30154a76535bd20d8": {
+      "signature": "ed6be62f4679dfa3b8af8fc358db90c4cba7eebe2c1e61a30154a76535bd20d8",
+      "alternativeSignatures": [
+        "4e911ea879e061ad277594770728f912a3206448cf6c77dd1604d6c6fc3f8d5f",
+        "75abc0a14b3857868f296666c8f6cf8779617be0a0d3d8db3ab3f7928af60675",
+        "50d16cecea5fb05dd3e589591e7a128f8fa6fa34b04394f8e14a0a607f54d7ae"
+      ],
+      "target": "_bin/clangarm64/bin/git-upload-pack.exe",
+      "uriBaseId": "file:///D:/a/_work/1/a/",
+      "memberOf": [
+        "default"
+      ],
+      "tool": "binskim",
+      "ruleId": "BA2012",
+      "createdDate": "2026-05-27 10:14:26Z"
+    },
+    "7a48b83559cff8b21323116d171cbad033f44d9acaa1d54a78e0f242ff247107": {
+      "signature": "7a48b83559cff8b21323116d171cbad033f44d9acaa1d54a78e0f242ff247107",
+      "alternativeSignatures": [
+        "474c364b50285737312ad3a443fd17550fc8352c4b04ebbe2d5dc5e0e54cff33",
+        "3cbdb0cecb6f216f68513823bc7accc4706b262936025ca267b77ad5f929833e",
+        "923de95322f1a2c95315440cf7ce01be268008fed46ab1e2f35ca6d6bbd3aaff"
+      ],
+      "target": "_bin/clangarm64/bin/git.exe",
+      "uriBaseId": "file:///D:/a/_work/1/a/",
+      "memberOf": [
+        "default"
+      ],
+      "tool": "binskim",
+      "ruleId": "BA2008",
+      "createdDate": "2026-05-27 10:14:26Z"
+    },
+    "29ffaec051c0041cfe5a5aa296ef59c5ae06af8439e484fd38c70af1625d1cd4": {
+      "signature": "29ffaec051c0041cfe5a5aa296ef59c5ae06af8439e484fd38c70af1625d1cd4",
+      "alternativeSignatures": [
+        "efe8c09007ee71308ed9ecc3cb1fc64524d17e10d66f5e479e7b96b91f165e9e",
+        "8c305bc7dcf6fb85876fee6d0d65eb0f778550eb4a26748acaa5861c2b5bed0f",
+        "5cd942e56bcdad24defcd3f73cce8175bc35a3bf8f3330293f13868c0e9c6527"
+      ],
+      "target": "_bin/clangarm64/bin/git.exe",
+      "uriBaseId": "file:///D:/a/_work/1/a/",
+      "memberOf": [
+        "default"
+      ],
+      "tool": "binskim",
+      "ruleId": "BA2012",
+      "createdDate": "2026-05-27 10:14:26Z"
+    },
+    "929aadbdd62c111f4f14f6e9454c2c95c896aee5c683fa7f23a3471e06fbeb11": {
+      "signature": "929aadbdd62c111f4f14f6e9454c2c95c896aee5c683fa7f23a3471e06fbeb11",
+      "alternativeSignatures": [
+        "319997640211e8d78718de761aedd9bf1a0216468b31a00356185159c87f8951",
+        "907bbcdbbcbbd2efd732eb076365b6c05e8f3bd112f5636d6280c00dd952ca6b",
+        "ec34808f3ebd5ba87302edacdc840407eff2c500f10bc9fb823ad8c174d69c14"
+      ],
+      "target": "_bin/clangarm64/bin/scalar.exe",
+      "uriBaseId": "file:///D:/a/_work/1/a/",
+      "memberOf": [
+        "default"
+      ],
+      "tool": "binskim",
+      "ruleId": "BA2008",
+      "createdDate": "2026-05-27 10:14:26Z"
+    },
+    "52ce37aea3c9d6e94391e2df75692dd039e6e782fee53dbca87203574d9cb195": {
+      "signature": "52ce37aea3c9d6e94391e2df75692dd039e6e782fee53dbca87203574d9cb195",
+      "alternativeSignatures": [
+        "e82ec6e680ff2b96ea3e610377bcf0810398f7f7beb0eb08c56fa2577a38d46c",
+        "4c61f8c1a7be48bd78362d4fa3e8ffd6cbcacfe888b45929020621a53687cc85",
+        "8dff1a899beae523beaa2d81402c2622ef3523d848c14a6a6e4637ad468a8401"
+      ],
+      "target": "_bin/clangarm64/bin/scalar.exe",
+      "uriBaseId": "file:///D:/a/_work/1/a/",
+      "memberOf": [
+        "default"
+      ],
+      "tool": "binskim",
+      "ruleId": "BA2012",
+      "createdDate": "2026-05-27 10:14:26Z"
+    },
+    "acd3e4fe55a91ca2a2cc775a6260a3c53d51742aeafa6b60f05418b9f617bcec": {
+      "signature": "acd3e4fe55a91ca2a2cc775a6260a3c53d51742aeafa6b60f05418b9f617bcec",
+      "alternativeSignatures": [
+        "63ea27de2e6d75ad3086628c9613ca106eb055bda8011d77d85a165d4646d676",
+        "30c319c8e7addc99a7ea81470bd86b8d7befbbaf9ba534a6b9a347708d830aac",
+        "0b67f880fd20cec29c300249f7a07428a8ace33b0518c966f1e268237032e68a"
+      ],
+      "target": "_bin/clangarm64/libexec/git-core/git-credential-wincred.exe",
+      "uriBaseId": "file:///D:/a/_work/1/a/",
+      "memberOf": [
+        "default"
+      ],
+      "tool": "binskim",
+      "ruleId": "BA2008",
+      "createdDate": "2026-05-27 10:14:26Z"
+    },
+    "8e142434b17377d3661fe543769ff22883b06878f0dc11b8d753bb22a0ab7924": {
+      "signature": "8e142434b17377d3661fe543769ff22883b06878f0dc11b8d753bb22a0ab7924",
+      "alternativeSignatures": [
+        "b37bf9cb58efa8200e2777c6b377b08175fcdea07feb64f201e0af09f95b234a",
+        "062854025b9993575835e305893f958044f9b8841834dd86d2c239ceae0d39a6",
+        "12478f33504453d75bcdce97a8a9bfa3c7cb227291262178d984a4c269e018fb"
+      ],
+      "target": "_bin/clangarm64/libexec/git-core/git-credential-wincred.exe",
+      "uriBaseId": "file:///D:/a/_work/1/a/",
+      "memberOf": [
+        "default"
+      ],
+      "tool": "binskim",
+      "ruleId": "BA2012",
+      "createdDate": "2026-05-27 10:14:26Z"
+    },
+    "4a536ef6d824cfa87108fa3c69dc1585760bd48e3b914b7ba394b5a7dafb2f6f": {
+      "signature": "4a536ef6d824cfa87108fa3c69dc1585760bd48e3b914b7ba394b5a7dafb2f6f",
+      "alternativeSignatures": [
+        "72c7ac2cf33af6b48df8798900e05a373f329b7ae3d9e7d14f7eb6019220dec7",
+        "2e72231910928a8450c5a5da6d0fd48729ffccfb5ce1290e631654da7933b7fc",
+        "afa2107a5fbb0d85c974f7d2f7ae11905723b555f2005e66a09811aeb097d0f7"
+      ],
+      "target": "_bin/clangarm64/libexec/git-core/git-daemon.exe",
+      "uriBaseId": "file:///D:/a/_work/1/a/",
+      "memberOf": [
+        "default"
+      ],
+      "tool": "binskim",
+      "ruleId": "BA2008",
+      "createdDate": "2026-05-27 10:14:26Z"
+    },
+    "7f397612461002ea0b923bb7d9d5f2de98590dd972da3141d2f6bb41f013f869": {
+      "signature": "7f397612461002ea0b923bb7d9d5f2de98590dd972da3141d2f6bb41f013f869",
+      "alternativeSignatures": [
+        "0b869312e100f62f2564b684e742b23d24215155967e20e85bdb40f29a9d4a16",
+        "d0c2382caa251a05c37941631eea371639403627070cca5c5d0f5e1fa9b16ab7",
+        "4cec7447a7f0186a5db518754a4d5e086670bc45e07a43350b773386c8215803"
+      ],
+      "target": "_bin/clangarm64/libexec/git-core/git-daemon.exe",
+      "uriBaseId": "file:///D:/a/_work/1/a/",
+      "memberOf": [
+        "default"
+      ],
+      "tool": "binskim",
+      "ruleId": "BA2012",
+      "createdDate": "2026-05-27 10:14:26Z"
+    },
+    "6c62fb03e23a0fd656f87a2dab5d4f5fc118d8b3ecc63d1162d3dfbf8fa66908": {
+      "signature": "6c62fb03e23a0fd656f87a2dab5d4f5fc118d8b3ecc63d1162d3dfbf8fa66908",
+      "alternativeSignatures": [
+        "d93efc939070712fe68165c832fb9cc9464d4557d9610bee28d968ebaba29b0b",
+        "0c45f7dcc7730fb3d4caf05762cc3e5844868cd4e253673738fea9133704e7ec",
+        "3555a3206d624f227fdb42598c3bb6381baffd49a584a2d3e07dc17f5b6b10c6"
+      ],
+      "target": "_bin/clangarm64/libexec/git-core/git-gvfs-helper.exe",
+      "uriBaseId": "file:///D:/a/_work/1/a/",
+      "memberOf": [
+        "default"
+      ],
+      "tool": "binskim",
+      "ruleId": "BA2008",
+      "createdDate": "2026-05-27 10:14:26Z"
+    },
+    "42402a8c62fa058dcfa40785fbe92b61db33c7bf887bee60d9882fe16f5fa1aa": {
+      "signature": "42402a8c62fa058dcfa40785fbe92b61db33c7bf887bee60d9882fe16f5fa1aa",
+      "alternativeSignatures": [
+        "d67caf0ef90e16fdc718b4630966d35d4bafb9367e3cd207e1a52fc4d10c68f6",
+        "c151c73f0250c31a31050050c82f88b0debc2fd1f6b04a8de20bcf8e1efaf1e9",
+        "5238c5e56be26e93ef48632b1d78b7ddc25b57da6d5e5017b04246276108628e"
+      ],
+      "target": "_bin/clangarm64/libexec/git-core/git-gvfs-helper.exe",
+      "uriBaseId": "file:///D:/a/_work/1/a/",
+      "memberOf": [
+        "default"
+      ],
+      "tool": "binskim",
+      "ruleId": "BA2012",
+      "createdDate": "2026-05-27 10:14:26Z"
+    },
+    "41822e65f219683beea6281ee1792ae859c2f9dc523a0abd797d5cc47202f3b9": {
+      "signature": "41822e65f219683beea6281ee1792ae859c2f9dc523a0abd797d5cc47202f3b9",
+      "alternativeSignatures": [
+        "15dd845d28d938ced02edd6c528fad5719996abd4bcde9b66af2c5a6653465fc",
+        "e8521f3109dcff0bc4c7c9568bbe3b88b455524b564d0b6d33ab481a483f0ec7",
+        "b5d7cca3fd351e7bf372ea60aa6dfdb08aa9fb40fb4cd31b84b4f0b342f2c701"
+      ],
+      "target": "_bin/clangarm64/libexec/git-core/git-http-backend.exe",
+      "uriBaseId": "file:///D:/a/_work/1/a/",
+      "memberOf": [
+        "default"
+      ],
+      "tool": "binskim",
+      "ruleId": "BA2008",
+      "createdDate": "2026-05-27 10:14:26Z"
+    },
+    "7fb2d81e6a268acfff6295245806d9621693248fa0c7b73a6a1c9c8092d9f1a2": {
+      "signature": "7fb2d81e6a268acfff6295245806d9621693248fa0c7b73a6a1c9c8092d9f1a2",
+      "alternativeSignatures": [
+        "750a0aafe2eb523610eb62722fcc67f9d5e26a00d0fa0888407d0ae67b0979b0",
+        "9752a5d1961ff45dc60cb28becf85d92320ce8161aa31332aec763617a1a1f47",
+        "63db412f6bcb108e3dd7d791a180adcd9ddf25a2a99094548f1fcc597923d844"
+      ],
+      "target": "_bin/clangarm64/libexec/git-core/git-http-backend.exe",
+      "uriBaseId": "file:///D:/a/_work/1/a/",
+      "memberOf": [
+        "default"
+      ],
+      "tool": "binskim",
+      "ruleId": "BA2012",
+      "createdDate": "2026-05-27 10:14:26Z"
+    },
+    "258e9da1208c85046acb20d19d2a44f526b966a95a10a88e9a85aedc199edb5c": {
+      "signature": "258e9da1208c85046acb20d19d2a44f526b966a95a10a88e9a85aedc199edb5c",
+      "alternativeSignatures": [
+        "d4a9eab8db924bea32fff7588a86b91ea01b762aa0f7d4e4f1b843b549342c74",
+        "1f9da419ca16b5324e3272b96d73ff7f6781be376c91366af76b379c25a0b5a5",
+        "0f0ab1d0e7012e59b3c0f8d67ca41073f25282f98d7ccc7796e1d3e0f71d292f"
+      ],
+      "target": "_bin/clangarm64/libexec/git-core/git-http-fetch.exe",
+      "uriBaseId": "file:///D:/a/_work/1/a/",
+      "memberOf": [
+        "default"
+      ],
+      "tool": "binskim",
+      "ruleId": "BA2008",
+      "createdDate": "2026-05-27 10:14:26Z"
+    },
+    "e93b8ae0dce05d3ce9545766f6af630393b05a7254ad37c96909b4c2f084f1f1": {
+      "signature": "e93b8ae0dce05d3ce9545766f6af630393b05a7254ad37c96909b4c2f084f1f1",
+      "alternativeSignatures": [
+        "5d78bacbe66e048f11927208cf97c23ffa190dcd8d7d3e2758cbcba55caed854",
+        "7ec3eef60729835440019828f841a12b315df5498c5d24c5a057db008f6006a5",
+        "6a447230b0b0ee4aa2f38198e4bf3e4ffdf49bd49eab8071b8eaa66103e8025b"
+      ],
+      "target": "_bin/clangarm64/libexec/git-core/git-http-fetch.exe",
+      "uriBaseId": "file:///D:/a/_work/1/a/",
+      "memberOf": [
+        "default"
+      ],
+      "tool": "binskim",
+      "ruleId": "BA2012",
+      "createdDate": "2026-05-27 10:14:26Z"
+    },
+    "64c36ad889b4dbf696257a106292ceb49d0bd7960b1202eea4bdae2c6048f432": {
+      "signature": "64c36ad889b4dbf696257a106292ceb49d0bd7960b1202eea4bdae2c6048f432",
+      "alternativeSignatures": [
+        "6e2397e04dc5f2d6f27118647c20a0573287e8b3086443620dc05b19df0d78bf",
+        "00db469d5cceac48c3f11f468f5aa364bb9249610a153c1422f3e89fc0bf07aa",
+        "8a0a4a1607361edf49e6a4e9614de059ce028bb320bfbe7b51b6627654b9387e"
+      ],
+      "target": "_bin/clangarm64/libexec/git-core/git-http-push.exe",
+      "uriBaseId": "file:///D:/a/_work/1/a/",
+      "memberOf": [
+        "default"
+      ],
+      "tool": "binskim",
+      "ruleId": "BA2008",
+      "createdDate": "2026-05-27 10:14:26Z"
+    },
+    "c4e28ac334d75836eea4aa6d4b7b4fc3f96a9c83cf5d139fcbc0ca9f941dbd2b": {
+      "signature": "c4e28ac334d75836eea4aa6d4b7b4fc3f96a9c83cf5d139fcbc0ca9f941dbd2b",
+      "alternativeSignatures": [
+        "faea7c1e72031702fbcbbecf4d714ba752685fea4d2af81e90a356c9c1e00b37",
+        "546d697fb97b9f08dc4aa2492665cd3e04c4de7ee771869014d3a889f771e116",
+        "76e0c9d86595fc958aef0ef723254c0adf9b139cea3bbbde08a9a96117126bcd"
+      ],
+      "target": "_bin/clangarm64/libexec/git-core/git-http-push.exe",
+      "uriBaseId": "file:///D:/a/_work/1/a/",
+      "memberOf": [
+        "default"
+      ],
+      "tool": "binskim",
+      "ruleId": "BA2012",
+      "createdDate": "2026-05-27 10:14:26Z"
+    },
+    "da56ce9a82c659a02a9a9838d90af16151ab09b039b43fe9e08c037452907b26": {
+      "signature": "da56ce9a82c659a02a9a9838d90af16151ab09b039b43fe9e08c037452907b26",
+      "alternativeSignatures": [
+        "0f9293ee3def00df42bd9b39efbe3f1892e561f85a4fb52344ba57f80801cbef",
+        "9529b1d6ce6329b78b7d2e31cb34c9cec31f11dfe737eb6fdc976d7894a92f9d",
+        "b2ebf8b011810768725764842e0de13fe42649db253235febae455e72623e26f"
+      ],
+      "target": "_bin/clangarm64/libexec/git-core/git-imap-send.exe",
+      "uriBaseId": "file:///D:/a/_work/1/a/",
+      "memberOf": [
+        "default"
+      ],
+      "tool": "binskim",
+      "ruleId": "BA2008",
+      "createdDate": "2026-05-27 10:14:26Z"
+    },
+    "2bca8d4fe377a1b88a1d34b01e665a08919799e74aaa5ff9ca7042f35df9d4c9": {
+      "signature": "2bca8d4fe377a1b88a1d34b01e665a08919799e74aaa5ff9ca7042f35df9d4c9",
+      "alternativeSignatures": [
+        "0c93c672117bbc6515696d44364687424851d42e1aea69468902746bdabdd94b",
+        "8ab3c7631630c7c25ebd7ac09ad77c764491567d1f0395789cbec915bdbd650e",
+        "6533c3f8950e3aa9d69537992bbf9d239582de6128bb0338fdbb4107b281be85"
+      ],
+      "target": "_bin/clangarm64/libexec/git-core/git-imap-send.exe",
+      "uriBaseId": "file:///D:/a/_work/1/a/",
+      "memberOf": [
+        "default"
+      ],
+      "tool": "binskim",
+      "ruleId": "BA2012",
+      "createdDate": "2026-05-27 10:14:26Z"
+    },
+    "bada8bbfe22690cb8a77888073ac9b6f3a892825cc4d011caf354d07881da523": {
+      "signature": "bada8bbfe22690cb8a77888073ac9b6f3a892825cc4d011caf354d07881da523",
+      "alternativeSignatures": [
+        "b2cb68813a8a9bd2a26fe175bc3372477ec63d45bfe117e89f0ce59869e39a0e",
+        "31f648ef2ed71d3e2f4f09605aaa834eaba542707f2f3d4d39bf9aea0da728e9",
+        "58f3eb507bf84ac6ea972fc888102f5c475bc517bb9184cb53e5b480fcf43358"
+      ],
+      "target": "_bin/clangarm64/libexec/git-core/git-remote-ftp.exe",
+      "uriBaseId": "file:///D:/a/_work/1/a/",
+      "memberOf": [
+        "default"
+      ],
+      "tool": "binskim",
+      "ruleId": "BA2008",
+      "createdDate": "2026-05-27 10:14:26Z"
+    },
+    "8dd70fe3d2ec27c498720e615a64730f0b35b0d1eb3c0689e3e1760f40787f78": {
+      "signature": "8dd70fe3d2ec27c498720e615a64730f0b35b0d1eb3c0689e3e1760f40787f78",
+      "alternativeSignatures": [
+        "d79769d8e345a48c4fe1fd0ac1fdc24d23e5b1079925938f2686f1e18a51a5ed",
+        "bc33a550d431cdb38f8daada8b80578e8eef144fa5b45d1bb6644d73b39cf434",
+        "5104fab6800721116c706ea1314990afc0bf9f7ad82ae23a71ef7bd31e550c6b"
+      ],
+      "target": "_bin/clangarm64/libexec/git-core/git-remote-ftp.exe",
+      "uriBaseId": "file:///D:/a/_work/1/a/",
+      "memberOf": [
+        "default"
+      ],
+      "tool": "binskim",
+      "ruleId": "BA2012",
+      "createdDate": "2026-05-27 10:14:26Z"
+    },
+    "2e6d5886c50812faf24ecf2f51e32ef6bc87a8f4be7da50209a54e66d44eabce": {
+      "signature": "2e6d5886c50812faf24ecf2f51e32ef6bc87a8f4be7da50209a54e66d44eabce",
+      "alternativeSignatures": [
+        "f1ae25498c830291256f94869881b10cbe85f31eb27de9e4d7541adf4436dec6",
+        "ca61481c1ccdff92be857c5c8ca4bc8adc40ec4ab88385172eb414eb3243cd9b",
+        "61f1a7c4e928b2d13a44e1ee026e0fc19640ee114cc1a078d864d271f7dc10f4"
+      ],
+      "target": "_bin/clangarm64/libexec/git-core/git-remote-ftps.exe",
+      "uriBaseId": "file:///D:/a/_work/1/a/",
+      "memberOf": [
+        "default"
+      ],
+      "tool": "binskim",
+      "ruleId": "BA2008",
+      "createdDate": "2026-05-27 10:14:26Z"
+    },
+    "3572af217ac0b36f110e224d63005887f887661e56b03f36480ad9167d66b538": {
+      "signature": "3572af217ac0b36f110e224d63005887f887661e56b03f36480ad9167d66b538",
+      "alternativeSignatures": [
+        "163d70cc710d914d2d78715b15c536eb5e598ea27e50fd1f2dbffddfd013cda6",
+        "4ef58dba5f8b2806111cf9e42d242719061a6e7426b15fb50d8a46ba837ad889",
+        "784d2389ce365c46d764caf161755708f48557dbf21d63518f57a689a30b5757"
+      ],
+      "target": "_bin/clangarm64/libexec/git-core/git-remote-ftps.exe",
+      "uriBaseId": "file:///D:/a/_work/1/a/",
+      "memberOf": [
+        "default"
+      ],
+      "tool": "binskim",
+      "ruleId": "BA2012",
+      "createdDate": "2026-05-27 10:14:26Z"
+    },
+    "da4db908d4714316a7021b7074ede1f140f204fbb0f97db4f709a2781d666d0f": {
+      "signature": "da4db908d4714316a7021b7074ede1f140f204fbb0f97db4f709a2781d666d0f",
+      "alternativeSignatures": [
+        "2b6976a9262b44ec3a615eccda007d6c3cb17e4aea27b606d9c7c4f69ec6955a",
+        "1ff78576d09f794a9fe9e763fad9ccc0d2c79621b244c2e1f28837eb2c2e33eb",
+        "f217d0fa40acb783c06217121e67c32a55b0e4bacc83f6695690099e93677a5f"
+      ],
+      "target": "_bin/clangarm64/libexec/git-core/git-remote-http.exe",
+      "uriBaseId": "file:///D:/a/_work/1/a/",
+      "memberOf": [
+        "default"
+      ],
+      "tool": "binskim",
+      "ruleId": "BA2008",
+      "createdDate": "2026-05-27 10:14:26Z"
+    },
+    "3c8c45beb7bf6968c666b92aef64bd39954b9724bbf073b596b2c773796aafa6": {
+      "signature": "3c8c45beb7bf6968c666b92aef64bd39954b9724bbf073b596b2c773796aafa6",
+      "alternativeSignatures": [
+        "5b196245fc05ba15e54c13222a6244b5bf3c74f858d0b6c74e9109331aff5711",
+        "32c1833014a6ff49748bb21bccfe1850e9a3853d3782f03fdc673660404c6c9d",
+        "7de42ed077e28792771fdfdec4ab79e97252beef79db1dfcf543a4071d787eef"
+      ],
+      "target": "_bin/clangarm64/libexec/git-core/git-remote-http.exe",
+      "uriBaseId": "file:///D:/a/_work/1/a/",
+      "memberOf": [
+        "default"
+      ],
+      "tool": "binskim",
+      "ruleId": "BA2012",
+      "createdDate": "2026-05-27 10:14:26Z"
+    },
+    "ddc9bd19e3bb4b3b9a6e9806f75df12c73597706da73b9b7c138ca7677f456ac": {
+      "signature": "ddc9bd19e3bb4b3b9a6e9806f75df12c73597706da73b9b7c138ca7677f456ac",
+      "alternativeSignatures": [
+        "3f768e3cae871508d658bbfa6e20ceb20bd015765a27bc194c0ece44d7e063f3",
+        "ca10a085cb18a5fc8efbfe56eb0eb741ad318d56e1678544260bbd4d8d57bd92",
+        "05890a9c899b3730fdc113a0a33e2d7bb6ff4f8a1a729b558e24747431c024ab"
+      ],
+      "target": "_bin/clangarm64/libexec/git-core/git-remote-https.exe",
+      "uriBaseId": "file:///D:/a/_work/1/a/",
+      "memberOf": [
+        "default"
+      ],
+      "tool": "binskim",
+      "ruleId": "BA2008",
+      "createdDate": "2026-05-27 10:14:26Z"
+    },
+    "8616bda42bc8cbbae07c6ee06825554f4ce75241adf6b9dda910f83f5be748a2": {
+      "signature": "8616bda42bc8cbbae07c6ee06825554f4ce75241adf6b9dda910f83f5be748a2",
+      "alternativeSignatures": [
+        "eef6c183bc43c1710ba0e441a6f9abcfac5f4def9ec610e3b55946d6eb4138d0",
+        "3deca0ff646fdb7906c582e3b56ce88c038b04ebb182d90fa57113032308137c",
+        "12a777ac57bf3927c5a2402ede3389b2f915d6fd36f45d0327d9e5f43f1c267d"
+      ],
+      "target": "_bin/clangarm64/libexec/git-core/git-remote-https.exe",
+      "uriBaseId": "file:///D:/a/_work/1/a/",
+      "memberOf": [
+        "default"
+      ],
+      "tool": "binskim",
+      "ruleId": "BA2012",
+      "createdDate": "2026-05-27 10:14:26Z"
+    },
+    "2b8c2d6fa2b4a0f3fba6a4fc872e49218752e9f856d8e8a1523caf28dcf6ac84": {
+      "signature": "2b8c2d6fa2b4a0f3fba6a4fc872e49218752e9f856d8e8a1523caf28dcf6ac84",
+      "alternativeSignatures": [
+        "9457d3dbc084738158db9b44e3105f1b04190566b4d45e1042064a31ad5a784c",
+        "b4f364d0c2ecc39343c22d3cbf01d4ec4b16db7e2b28bf2e8d10cb5a12d5f8eb",
+        "11e4030456e9b5c6cbfec13252c8b9f60cdd96c3818165f860704a514698d118"
+      ],
+      "target": "_bin/clangarm64/libexec/git-core/git-sh-i18n--envsubst.exe",
+      "uriBaseId": "file:///D:/a/_work/1/a/",
+      "memberOf": [
+        "default"
+      ],
+      "tool": "binskim",
+      "ruleId": "BA2008",
+      "createdDate": "2026-05-27 10:14:26Z"
+    },
+    "2e20ced8265c12dfc4a6775e9492ec7a3c6de4a29f8a8b2ca6495cc9d5aa1a43": {
+      "signature": "2e20ced8265c12dfc4a6775e9492ec7a3c6de4a29f8a8b2ca6495cc9d5aa1a43",
+      "alternativeSignatures": [
+        "4f25ba6b45b3354db39c8c2473c96ae732794298a976c349a3396ed101e86fe2",
+        "d0babd76daa2826b3f379c5461730ecd1264204b7459fc87d8630542d04a1307",
+        "0e5e274353ec1cb59b7d234586921655153480ed8dfbffed02d069a27ed52467"
+      ],
+      "target": "_bin/clangarm64/libexec/git-core/git-sh-i18n--envsubst.exe",
+      "uriBaseId": "file:///D:/a/_work/1/a/",
+      "memberOf": [
+        "default"
+      ],
+      "tool": "binskim",
+      "ruleId": "BA2012",
+      "createdDate": "2026-05-27 10:14:26Z"
+    },
+    "0e6ae34b65bf6003767d3b71220988fb0d17c8d48531752957ff6f1278a3bff1": {
+      "signature": "0e6ae34b65bf6003767d3b71220988fb0d17c8d48531752957ff6f1278a3bff1",
+      "alternativeSignatures": [
+        "a6c867253954137604add56197f70f64ec0cf9e1cab72044293882b553f706c7",
+        "26b51c0853c53721f4e1dc04e77cf70b7bc20018014686c8ba7430bc3939a040",
+        "9eafd480a66e6b3d256855b44ee238ea7de974353c8b3cfd03a543f19402c7f9"
+      ],
+      "target": "_bin/clangarm64/libexec/git-core/git-shell.exe",
+      "uriBaseId": "file:///D:/a/_work/1/a/",
+      "memberOf": [
+        "default"
+      ],
+      "tool": "binskim",
+      "ruleId": "BA2008",
+      "createdDate": "2026-05-27 10:14:26Z"
+    },
+    "597c2243d3c8d0b732c8ac676f9221f5590f0db0223d63ff842a4649bae93655": {
+      "signature": "597c2243d3c8d0b732c8ac676f9221f5590f0db0223d63ff842a4649bae93655",
+      "alternativeSignatures": [
+        "691b1d7082c4dd80f54cd2aa83c0f1e353c9b28c654e8fce4e865634edc480e1",
+        "ad442e559f3d14514b6ed4325d9febd171172ca1a165cbfb50fbde9f42ae604e",
+        "6481d4fa4b09642ac72ce891c36a4096501fca0d7ff458f79250fc47e692f2f2"
+      ],
+      "target": "_bin/clangarm64/libexec/git-core/git-shell.exe",
+      "uriBaseId": "file:///D:/a/_work/1/a/",
+      "memberOf": [
+        "default"
+      ],
+      "tool": "binskim",
+      "ruleId": "BA2012",
+      "createdDate": "2026-05-27 10:14:26Z"
+    },
+    "212a23b0f5998525edba472040b36694195c82022ddfdc79d47b02c1830f236b": {
+      "signature": "212a23b0f5998525edba472040b36694195c82022ddfdc79d47b02c1830f236b",
+      "alternativeSignatures": [
+        "77afe7e6fe80b801e99256c2eddc859dfa27ac5372b1f0864624d5cebcd0c933",
+        "e60f8f431f72838a7b35578a6b6cff7dbd28604072fe5dad64b9034308b6314f",
+        "291981ab4722761a9a2d72edb529b5ebd83ed7fd23ce15771a203c8eecaf4a52"
+      ],
+      "target": "_bin/clangarm64/libexec/git-core/git.exe",
+      "uriBaseId": "file:///D:/a/_work/1/a/",
+      "memberOf": [
+        "default"
+      ],
+      "tool": "binskim",
+      "ruleId": "BA2008",
+      "createdDate": "2026-05-27 10:14:26Z"
+    },
+    "418b7e1a1643a9987984872840ad7af4c6232beab5a80c5a25bf4fb9ca9b575c": {
+      "signature": "418b7e1a1643a9987984872840ad7af4c6232beab5a80c5a25bf4fb9ca9b575c",
+      "alternativeSignatures": [
+        "6871337b645c59668a770bd89cb6900382bb231baa21d8b80012cab646667e32",
+        "f3317f1bae546eec8e8e3d47b820e4c14aea68246a114a9465efede36e190d6f",
+        "e0fc0f393dc7cb3cd69c6fcf7b515d439769a73ab265b30aa9ec2444fb7127f6"
+      ],
+      "target": "_bin/clangarm64/libexec/git-core/git.exe",
+      "uriBaseId": "file:///D:/a/_work/1/a/",
+      "memberOf": [
+        "default"
+      ],
+      "tool": "binskim",
+      "ruleId": "BA2012",
+      "createdDate": "2026-05-27 10:14:26Z"
+    },
+    "08f7b3d2a618c656bae10a7600a869667cf13d28f0e7a200d172974676ba57e0": {
+      "signature": "08f7b3d2a618c656bae10a7600a869667cf13d28f0e7a200d172974676ba57e0",
+      "alternativeSignatures": [
+        "799bd7f48384fa663ab8c7c4c56ca1ea237543a246c121461981de648c72a47b",
+        "e83948a022890dfdaa78dec614d634078a9121b5d5f76bb23f418d62f568894d",
+        "af845195e9b490c5347eeb567bcd4d72d400929b2511fee8c346b0c93cb63b72"
+      ],
+      "target": "_bin/clangarm64/libexec/git-core/headless-git.exe",
+      "uriBaseId": "file:///D:/a/_work/1/a/",
+      "memberOf": [
+        "default"
+      ],
+      "tool": "binskim",
+      "ruleId": "BA2008",
+      "createdDate": "2026-05-27 10:14:26Z"
+    },
+    "aed97c6e942ece3edd725fcc89d444de6e84435964037ca6b5575a95e7464132": {
+      "signature": "aed97c6e942ece3edd725fcc89d444de6e84435964037ca6b5575a95e7464132",
+      "alternativeSignatures": [
+        "c9b1cecf6c51bdca4625ad89f24453afb0e2ad95edaa6cebf433f3e10bb044a8",
+        "4786a5b866faa860a535d45ab7d5f372907bd94f67e1573b332a5bd543eb023c",
+        "9918a8269de76fc32e119f45c6b0e79d83da873596da4cfae9f2e8458b47f3ed"
+      ],
+      "target": "_bin/clangarm64/libexec/git-core/headless-git.exe",
+      "uriBaseId": "file:///D:/a/_work/1/a/",
+      "memberOf": [
+        "default"
+      ],
+      "tool": "binskim",
+      "ruleId": "BA2012",
+      "createdDate": "2026-05-27 10:14:26Z"
+    },
+    "18ea9aeec2f6a54008bed03c5390a832fc1ae1d7abd398698160a956f375ddf1": {
+      "signature": "18ea9aeec2f6a54008bed03c5390a832fc1ae1d7abd398698160a956f375ddf1",
+      "alternativeSignatures": [
+        "34de9fd6a96e87bf9a94c588c10f3218853b25354693278cfbe88ceb2dbdeb9e",
+        "ea7e0b5b236c03737be9e93bf18e1d2f1db2b4e5c3f26d2f940d542b7e9c815c",
+        "9ba8e3e4850fa3cb31deebf61aa7cea2c8b3bf42f8b8780cf2ef0a0e05c90f93"
+      ],
+      "target": "_bin/clangarm64/libexec/git-core/scalar.exe",
+      "uriBaseId": "file:///D:/a/_work/1/a/",
+      "memberOf": [
+        "default"
+      ],
+      "tool": "binskim",
+      "ruleId": "BA2008",
+      "createdDate": "2026-05-27 10:14:26Z"
+    },
+    "2ae14339623ae3e433dd3eed27578564ad7a6b2757cc3ee937a89d49a65617bc": {
+      "signature": "2ae14339623ae3e433dd3eed27578564ad7a6b2757cc3ee937a89d49a65617bc",
+      "alternativeSignatures": [
+        "9bf994df30dfd0ca3e278381e18bef22c76d33c50153ebe2e367882fcb911c10",
+        "e9b29b67a2c81b41641ad1f2888b2b8db0b6ee92755f3299411cdcd4a5e50582",
+        "b672c20584f44e68c4915f686b0a69a8121002d775173e9d0c08cdc692119318"
+      ],
+      "target": "_bin/clangarm64/libexec/git-core/scalar.exe",
+      "uriBaseId": "file:///D:/a/_work/1/a/",
+      "memberOf": [
+        "default"
+      ],
+      "tool": "binskim",
+      "ruleId": "BA2012",
+      "createdDate": "2026-05-27 10:14:26Z"
+    }
+  }
+}
