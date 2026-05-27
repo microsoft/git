@@ -419,6 +419,59 @@ test_expect_success 'checkout skips lstat for deleted skip-worktree entries in V
 	git checkout side
 '
 
+test_expect_success 'checkout <tree> -- <path> preserves skip-worktree in VFS mode' '
+	# When "git checkout <tree> -- <path>" updates the index with a
+	# different version of a file, update_some() creates a replacement
+	# cache entry.  Without the fix, skip-worktree is cleared on the
+	# new entry, causing checkout_entry() to try unlink() + write on
+	# disk.  For virtual files with no physical NTFS entry, the unlink
+	# fails with ENOENT and the command exits 255.
+	#
+	# With the fix, skip-worktree is preserved from the old index
+	# entry when core_virtualfilesystem is set.  The index is updated
+	# to the tree entry OID, but checkout_entry() is skipped entirely.
+	clean_repo &&
+
+	test_when_finished "git -c core.virtualfilesystem= checkout main" &&
+
+	# Create a second commit with modified content
+	git -c core.virtualfilesystem= checkout -b checkout-path-test &&
+	echo "modified content" >dir1/file1.txt &&
+	git -c core.virtualfilesystem= add dir1/file1.txt &&
+	git -c core.virtualfilesystem= commit -m "modify dir1/file1.txt" &&
+
+	# Record the OIDs for verification
+	git rev-parse HEAD:dir1/file1.txt >expect_new_oid &&
+	git rev-parse HEAD~1:dir1/file1.txt >expect_old_oid &&
+
+	# Configure VFS hook that returns nothing (0% hydration).
+	# All entries keep skip-worktree set, simulating virtual files
+	# with no physical on-disk representation.
+	write_script .git/hooks/virtualfilesystem <<-\EOF &&
+		printf ""
+	EOF
+
+	# Remove the physical file to simulate a virtual placeholder.
+	# With the fix, checkout should update the index without
+	# touching the working tree (no file creation).
+	# Without the fix, checkout would clear skip-worktree and
+	# write the file to disk.
+	rm -f dir1/file1.txt &&
+
+	# Checkout the old version of the file from the parent commit.
+	git checkout HEAD~1 -- dir1/file1.txt &&
+
+	# Index should have the old (HEAD~1) OID
+	git ls-files -s dir1/file1.txt >actual_index &&
+	grep "$(cat expect_old_oid)" actual_index &&
+
+	# The file should NOT have been written to disk — the fix
+	# preserves skip-worktree so checkout_entry() is skipped.
+	# Without the fix, checkout clears skip-worktree and writes
+	# the file to disk.
+	test_path_is_missing dir1/file1.txt
+'
+
 test_expect_success MINGW,FSMONITOR_DAEMON 'virtualfilesystem hook disables built-in FSMonitor' '
 	clean_repo &&
 	test_config core.usebuiltinfsmonitor true &&
