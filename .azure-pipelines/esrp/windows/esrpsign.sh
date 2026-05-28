@@ -34,7 +34,7 @@ if [ -z "${ESRP_AUTH:-}" ]; then
 fi
 if [ -z "${SYSTEM_ACCESSTOKEN:-}" ]; then
 	echo "error: SYSTEM_ACCESSTOKEN environment variable must be set" >&2
-	exit 1
+	exit 2
 fi
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
