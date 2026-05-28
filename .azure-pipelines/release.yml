@@ -180,6 +180,8 @@ extends:
                 cpu_arch: ${{ dim.cpu_arch }}
               templateContext:
                 sdl:
+                  suppression:
+                    suppressionFile: $(Build.SourcesDirectory)/.azure-pipelines/sdl/${{ dim.id }}/.gdnsuppress
                   binskim:
                     # Direct binskim to analyze the built product binaries rather
                     # than the installer/7z outputs. Binskim cannot crack open the
