@@ -1,0 +1,136 @@
+Add --extra-patches=<dir> to please.sh build_mingw_w64_git.
+
+The Microsoft Git Azure Pipelines release flow needs to apply a
+small series of platform-specific patches against the upstream git
+source before the Windows package is built (e.g. perf fixes for
+slow-fork MSYS2 shells like Documentation/install-webdoc.sh on
+Windows ARM64).
+
+Hand-patching the git worktree at
+/usr/src/MINGW-packages/mingw-w64-git/src/git from outside please.sh
+does not work: makepkg's extract_git phase runs
+`git checkout --force --no-track -B makepkg <tag>` inside that
+worktree, which discards any tracked-file modifications applied
+beforehand.
+
+Teach build_mingw_w64_git to take a --extra-patches=<dir> flag.
+When supplied, each *.patch in that directory is copied next to
+the PKGBUILD and the per-build PKGBUILD.$tag file (the one
+makepkg-mingw actually consumes via `-p PKGBUILD.$tag`) is
+augmented in three places:
+
+  - source=() gains one entry per patch (so makepkg makes the
+    file available in $srcdir at build time);
+  - sha256sums=() gains a matching 'SKIP' entry (the patches
+    come from the caller's tree, not the wider source mirror,
+    and have no independent provenance to validate here);
+  - prepare() gains a `patch -Np1 -i "$srcdir/<name>"` line
+    per patch, applied after makepkg's extract_git checkout
+    and before build()/package() run.
+
+The PKGBUILD-style mutation keeps the resulting PKGBUILD.$tag
+readable to anyone familiar with MSYS2 / Arch packaging, and
+preserves the makepkg expectation that source array, hash array
+and prepare hook stay in lockstep.
+
+This is a strict additive change: when --extra-patches is not
+passed, behaviour is unchanged.
+
+diff --git a/please.sh b/please.sh
+--- a/please.sh
++++ b/please.sh
+@@ -789,12 +789,13 @@ ensure_clean_local_branch () {
+ 	return 1
+ }
+ 
+-build_mingw_w64_git () { # [--only-i686] [--only-x86_64] [--only-aarch64] [--skip-test-artifacts] [--skip-doc-man] [--skip-doc-html] [--force] [<revision>]
++build_mingw_w64_git () { # [--only-i686] [--only-x86_64] [--only-aarch64] [--skip-test-artifacts] [--skip-doc-man] [--skip-doc-html] [--extra-patches=<dir>] [--force] [<revision>]
+ 	output_path=
+ 	sed_makepkg_e=
+ 	force=
+ 	src_pkg=
+ 	maybe_sync=
++	extra_patches_dir=
+ 	while case "$1" in
+ 	--only-i686|--only-32-bit)
+ 		MINGW_ARCH=mingw32
+@@ -839,6 +840,12 @@ build_mingw_w64_git () { # [--only-i686] [--only-x86_64] [--only-aarch64] [--ski
+ 	--maybe-sync|-s)
+ 		maybe_sync="-s --noconfirm"
+ 		;;
++	--extra-patches|--extra-patches=*)
++		case "$1" in
++		*=*) extra_patches_dir="${1#*=}";;
++		*) shift; extra_patches_dir="$1";;
++		esac
++		;;
+ 	-*) die "Unknown option: %s\n" "$1";;
+ 	*) break;;
+ 	esac; do shift; done
+@@ -870,6 +877,66 @@ build_mingw_w64_git () { # [--only-i686] [--only-x86_64] [--only-aarch64] [--ski
+ 		<${git_src_dir%/src/git}/PKGBUILD >${git_src_dir%/src/git}/PKGBUILD.$tag ||
+ 	die "Could not write %s\n" ${git_src_dir%/src/git}/PKGBUILD.$tag
+ 
++	test -z "$extra_patches_dir" || {
++		# Inject caller-supplied patches into PKGBUILD.$tag using
++		# makepkg's own patch-handling pattern: drop each patch next
++		# to the PKGBUILD (so $srcdir/<patch> resolves at build time),
++		# add it to source=() with a matching SKIP entry in
++		# sha256sums=(), and append a `patch -Np1 -i` line to
++		# prepare(). This is preferred over hand-patching the git
++		# worktree because makepkg's extract_git runs
++		# `git checkout --force -B makepkg <tag>`, which would
++		# discard tracked-file modifications; prepare() runs after
++		# that checkout.
++		extra_names=
++		for p in "$extra_patches_dir"/*.patch
++		do
++			test -f "$p" || continue
++			n=$(basename "$p")
++			cp "$p" "${git_src_dir%/src/git}/$n" ||
++			die "Could not copy %s\n" "$p"
++			extra_names="${extra_names:+$extra_names }$n"
++		done
++		test -z "$extra_names" || {
++			awk -v names="$extra_names" '
++				BEGIN {
++					n = split(names, p, " ")
++				}
++				/^source=\(/ { in_source = 1 }
++				in_source && /\)[[:space:]]*$/ {
++					sub(/\)[[:space:]]*$/, "", $0)
++					print
++					for (i = 1; i <= n; i++)
++						print "\t'\''" p[i] "'\''"
++					print ")"
++					in_source = 0
++					next
++				}
++				/^sha256sums=\(/ { in_sha = 1 }
++				in_sha && /\)[[:space:]]*$/ {
++					sub(/\)[[:space:]]*$/, "", $0)
++					print
++					for (i = 1; i <= n; i++)
++						print "            '\''SKIP'\''"
++					print ")"
++					in_sha = 0
++					next
++				}
++				/^prepare *\(\)/ { in_prep = 1 }
++				in_prep && /^}/ {
++					for (i = 1; i <= n; i++)
++						print "  patch -Np1 -i \"$srcdir/" p[i] "\""
++					in_prep = 0
++				}
++				{ print }
++			' "${git_src_dir%/src/git}/PKGBUILD.$tag" \
++				>"${git_src_dir%/src/git}/PKGBUILD.$tag.tmp" &&
++			mv "${git_src_dir%/src/git}/PKGBUILD.$tag.tmp" \
++				"${git_src_dir%/src/git}/PKGBUILD.$tag"
++		} ||
++		die "Could not inject extra patches into PKGBUILD.%s\n" "$tag"
++	}
++
+ 	case "$tag" in
+ 	*[-:/\ ]*)
+ 		# This is a prerelease
