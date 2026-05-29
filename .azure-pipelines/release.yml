@@ -452,8 +452,22 @@ extends:
                       echo "$BUILD_VERSION" \
                         >/usr/src/MINGW-packages/mingw-w64-git/src/git/version
 
+                      # Windows-specific patches against the git source are
+                      # carried under .azure-pipelines/patches/windows/git/
+                      # and applied via build-extra's please.sh, which has
+                      # been taught the --extra-patches=<dir> flag (see
+                      # .azure-pipelines/patches/windows/build-extra/
+                      # 0004-please-extra-patches.patch). please.sh inlines
+                      # each patch into the PKGBUILD.$tag it generates,
+                      # using makepkg's native source=()/sha256sums=()/
+                      # prepare() pattern, so the patches land *inside*
+                      # makepkg's prepare() phase -- after extract_git's
+                      # `git checkout --force -B makepkg <tag>` (which
+                      # would otherwise discard any tracked-file edits
+                      # made out-of-band) and before build()/package().
                       sh -x /usr/src/build-extra/please.sh build-mingw-w64-git \
                         --only-"$(cpu_arch)" \
+                        --extra-patches="$BUILD_SOURCESDIRECTORY/.azure-pipelines/patches/windows/git" \
                         -o artifacts \
                         HEAD
 

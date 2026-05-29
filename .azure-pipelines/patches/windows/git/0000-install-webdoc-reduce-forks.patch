@@ -1,0 +1,81 @@
+Speed up Documentation/install-webdoc.sh on slow-fork platforms.
+
+Documentation/install-webdoc.sh copies ~1100 HTML/AsciiDoc files
+into the doc-html package staging directory. The original loop
+forks four times per file (`rm`, command-substituted `dirname`,
+`mkdir -p`, `cp`), plus a per-file `expr` in the prune loop, plus
+an `echo | sed` to precompute the prefix-stripping pattern.
+
+On MSYS2 / Windows ARM64 each fork+exec costs roughly 3x what it
+does on x86_64, so this single script dominates the
+package_*-doc-html build step (observed at ~5.5 minutes on ARM64
+vs ~1.8 minutes on x64; collapsing the fork pattern brings it down
+into the same ballpark).
+
+Three changes, all of which preserve the exact output tree the
+loop currently produces for the doc-html packaging case:
+
+  - Hoist the per-file `mkdir -p $(dirname "$T/$h")` out of the
+    loop. The globbed source paths only ever live in four
+    directories (`$T`, `$T/howto`, `$T/technical`, `$T/RelNotes`),
+    so create them once up front.
+
+  - Drop the per-file `rm -f "$T/$h"`. `cp` overwrites regular
+    files. The only behavioural difference would be when the
+    destination is a symlink; the only symlink this script ever
+    creates is `$T/index.html` (last line), which is not produced
+    by any source glob in the copy loop.
+
+  - Replace `expr "$th" : "$strip_leading"'\(.*\)'` in the prune
+    loop with POSIX `${th#"$T"/}` parameter expansion. This also
+    removes the `strip_leading=$(echo "$T/" | sed 's|.|.|g')`
+    precomputation and incidentally fixes a latent issue where
+    `$T` containing regex metacharacters would be quietly papered
+    over by replacing every character with `.`.
+
+Net result for a fresh doc-html package build (1127 source files):
+~4500 process spawns reduced to ~1130, with no observable change
+in the resulting tree.
+
+diff --git a/Documentation/install-webdoc.sh b/Documentation/install-webdoc.sh
+--- a/Documentation/install-webdoc.sh
++++ b/Documentation/install-webdoc.sh
+@@ -2,6 +2,14 @@
+ 
+ T="$1"
+ 
++# Pre-create the destination subdirectories once, instead of running
++# `mkdir -p $(dirname "$T/$h")` (subshell + dirname fork + mkdir
++# fork) inside the per-file loop below. The fork-per-file pattern is
++# the dominant cost when this script runs under MSYS2 on Windows
++# ARM64, where fork+exec is roughly 3x slower than on x86_64; the
++# globbed paths only ever resolve into these four directories.
++mkdir -p "$T" "$T/howto" "$T/technical" "$T/RelNotes"
++
+ for h in \
+ 	*.adoc *.html \
+ 	howto/*.adoc howto/*.html \
+@@ -17,18 +25,19 @@ do
+ 		:; # up to date
+ 	else
+ 		echo >&2 "# install $h $T/$h"
+-		rm -f "$T/$h"
+-		mkdir -p $(dirname "$T/$h")
+ 		cp "$h" "$T/$h"
+ 	fi
+ done
+-strip_leading=$(echo "$T/" | sed -e 's|.|.|g')
+ for th in \
+ 	"$T"/*.html "$T"/*.adoc \
+ 	"$T"/howto/*.adoc "$T"/howto/*.html \
+ 	"$T"/technical/*.adoc "$T"/technical/*.html
+ do
+-	h=$(expr "$th" : "$strip_leading"'\(.*\)')
++	# Use POSIX parameter expansion instead of `expr "$th" : ...`
++	# (one fork per existing destination file) to strip the "$T/"
++	# prefix. This also removes the need for the `strip_leading`
++	# pre-computation and the `echo | sed` it used to set up.
++	h=${th#"$T"/}
+ 	case "$h" in
+ 	RelNotes-*.adoc | index.html) continue ;;
+ 	esac
