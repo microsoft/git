@@ -2723,7 +2723,7 @@ static int verify_loose_object(const char *path,
 {
 	enum object_type type;
 	void *contents = NULL;
-	unsigned long size;
+	size_t size;
 	int ret;
 	struct object_info oi = OBJECT_INFO_INIT;
 	struct object_id real_oid = *null_oid(the_hash_algo);
