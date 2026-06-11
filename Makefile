@@ -946,9 +946,9 @@ TEST_SHELL_PATH = $(SHELL_PATH)
 LIB_FILE = libgit.a
 
 ifdef DEBUG
-RUST_TARGET_DIR = target/debug
+RUST_TARGET_DIR = target$(if $(CARGO_TARGET),/$(CARGO_TARGET))/debug
 else
-RUST_TARGET_DIR = target/release
+RUST_TARGET_DIR = target$(if $(CARGO_TARGET),/$(CARGO_TARGET))/release
 endif
 
 ifeq ($(uname_S),Windows)
@@ -988,6 +988,7 @@ endif
 ifndef DEBUG
 CARGO_ARGS += --release
 endif
+CARGO_ARGS += $(if $(CARGO_TARGET),--target $(CARGO_TARGET))
 
 # For the 'sparse' target
 SPARSE_FLAGS ?= -std=gnu99 -D__STDC_NO_VLA__
