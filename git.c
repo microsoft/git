@@ -477,6 +477,7 @@ static int run_pre_command_hook(struct repository *r, const char **argv)
 {
 	char *lock;
 	int ret = 0;
+	int gitdir_was_unset = !r->gitdir;
 	struct run_hooks_opt opt = RUN_HOOKS_OPT_INIT;
 
 	/*
@@ -494,6 +495,24 @@ static int run_pre_command_hook(struct repository *r, const char **argv)
 	strvec_pushf(&sargv, "--git-pid=%"PRIuMAX, (uintmax_t)getpid());
 	strvec_pushv(&opt.args, sargv.v);
 	ret = run_hooks_opt(r, "pre-command", &opt);
+
+	/*
+	 * Hook discovery (build_hook_config_map() in hook.c) calls
+	 * repo_config() to read config-driven hook entries, which
+	 * initializes r->config from whatever sources are available
+	 * at that moment.  When we entered with r->gitdir == NULL --
+	 * the normal case for run_builtin(), which calls us before
+	 * the builtin sets up its repository -- that cache contains
+	 * only system/global config, with no repo-level entries.
+	 *
+	 * Later, when the builtin establishes its gitdir and calls
+	 * repo_config() itself, git_config_check_init() short-circuits
+	 * on the still-initialized cache and never re-reads, leaving
+	 * repo-level config silently invisible.  Drop the cache here
+	 * so callers re-read fresh once they know the gitdir.
+	 */
+	if (gitdir_was_unset && r->config && r->config->hash_initialized)
+		repo_config_clear(r);
 
 	if (!ret)
 		run_post_hook = 1;
