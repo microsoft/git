@@ -519,7 +519,7 @@ static enum worker_result send_loose_object(const struct object_id *oid,
 	int ret;
 	unsigned flags = 0;
 	void *content;
-	unsigned long size;
+	size_t size;
 	enum object_type type;
 	struct object_info oi = OBJECT_INFO_INIT;
 	int mayhem__corrupt_loose = string_list_has_string(&mayhem_list,
