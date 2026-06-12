@@ -529,9 +529,9 @@ verify_vfs_packfile_count () {
 }
 
 per_test_cleanup () {
-	# Stop servers with port increments 0, 1, 2, 3 to handle tests
+	# Stop servers with port increments 0, 1, 2, 3, 4 to handle tests
 	# that may use multiple servers.
-	for instance in 0 1 2 3
+	for instance in 0 1 2 3 4
 	do
 		stop_gvfs_protocol_server "$instance"
 	done
