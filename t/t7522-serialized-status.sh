@@ -79,6 +79,7 @@ test_expect_success 'verify untracked-files=complete with no conversion' '
 	touch new_change.txt &&
 
 	git status --porcelain=v2 --untracked-files=complete --ignored=matching --deserialize=serialized_status.dat >output &&
+	test_filter_gitconfig output &&
 	test_cmp expect output
 '
 
@@ -114,6 +115,7 @@ test_expect_success 'verify untracked-files=complete to untracked-files=all conv
 	touch new_change.txt &&
 
 	git status --porcelain=v2 --untracked-files=all --ignored=matching --deserialize=serialized_status.dat >output &&
+	test_filter_gitconfig output &&
 	test_cmp expect output
 '
 
@@ -134,6 +136,7 @@ test_expect_success 'verify serialized status with non-convertible ignore mode d
 	touch new_change.txt &&
 
 	git status --porcelain=v2 --ignored --deserialize=serialized_status.dat >output &&
+	test_filter_gitconfig output &&
 	test_cmp expect output
 '
 

@@ -33,6 +33,7 @@ test_expect_success 'verify untracked-files=complete' '
 	EOF
 
 	git status --porcelain=v2 --untracked-files=complete --ignored >output &&
+	test_filter_gitconfig output &&
 	test_cmp expect output
 '
 
