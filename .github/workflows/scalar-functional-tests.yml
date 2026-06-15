@@ -69,7 +69,7 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get -q -y install libssl-dev libcurl4-openssl-dev gettext
+          sudo apt-get -q -y install libssl-dev libcurl4-openssl-dev gettext cargo
 
       - name: Build and install Git
         shell: bash
