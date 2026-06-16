@@ -855,6 +855,25 @@ extends:
                       # at the worktree root in the previous step.
                       cp config.mak "payload/git-$BUILD_VERSION/config.mak"
 
+                      # Build a universal (arm64 + x86_64) Rust static
+                      # library. The C code is compiled with
+                      # `-arch arm64 -arch x86_64` via config.mak, but
+                      # `cargo build` only targets the host architecture
+                      # by default, so we must build both targets
+                      # explicitly and lipo them together before `make`
+                      # tries to link the final binary.
+                      rustup target add x86_64-apple-darwin
+                      (
+                        cd "payload/git-$BUILD_VERSION"
+                        cargo build --release --target aarch64-apple-darwin
+                        cargo build --release --target x86_64-apple-darwin
+                        mkdir -p target/release
+                        lipo -create \
+                          target/aarch64-apple-darwin/release/libgitcore.a \
+                          target/x86_64-apple-darwin/release/libgitcore.a \
+                          -output target/release/libgitcore.a
+                      )
+
                       make -C .github/macos-installer V=1 payload
 
                       # NOTE: the macos-installer Makefile produces
