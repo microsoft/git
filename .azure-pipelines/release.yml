@@ -1244,7 +1244,7 @@ extends:
                 - bash: |
                     set -e
                     actual=$(git --version | sed 's/^git version //')
-                    expect=$(echo "$(git_version)" | sed 's/-rc/.rc/g')
+                    expect="$(git_version)"
                     echo "Expected: $expect"
                     echo "Actual:   $actual"
                     test "$actual" = "$expect"
