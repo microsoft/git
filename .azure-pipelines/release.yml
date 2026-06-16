@@ -753,7 +753,7 @@ extends:
 
                       VERSION="$(git_version)"
                       # Git's GIT-VERSION-GEN expects .rc rather than -rc
-                      BUILD_VERSION="$(echo "$VERSION" | sed 's/-rc/.rc/g')"
+                      BUILD_VERSION="$VERSION"
                       echo "$BUILD_VERSION" >version
 
                       # HOST_CPU is a bit of a lie and is only used in
@@ -1089,7 +1089,7 @@ extends:
                 - bash: |
                     set -e
                     actual=$(git --version | sed 's/^git version //')
-                    expect=$(echo "$(git_version)" | sed 's/-rc/.rc/g')
+                    expect="$(git_version)"
                     echo "Expected: $expect"
                     echo "Actual:   $actual"
                     test "$actual" = "$expect"
