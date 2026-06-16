@@ -867,6 +867,7 @@ extends:
                       rustup target add x86_64-apple-darwin
                       (
                         cd "payload/git-$BUILD_VERSION"
+                        make GIT-PREFIX GIT-CFLAGS GIT-LDFLAGS
                         cargo build --release --target aarch64-apple-darwin
                         cargo build --release --target x86_64-apple-darwin
                         mkdir -p target/release
