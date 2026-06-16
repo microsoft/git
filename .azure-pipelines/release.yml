@@ -840,7 +840,7 @@ extends:
                       # tries to link the final binary.
                       rustup target add x86_64-apple-darwin
                       build_universal_libgitcore () {
-                        make GIT-PREFIX GIT-CFLAGS GIT-LDFLAGS
+                        make libgit.a # this is a dependency of libgitcore.a
                         cargo build --release --target aarch64-apple-darwin
                         cargo build --release --target x86_64-apple-darwin
                         mkdir -p target/release
