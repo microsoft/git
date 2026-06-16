@@ -831,6 +831,26 @@ extends:
                       # this build.
                       export GIT_CONFIG_PARAMETERS="'maintenance.auto=false'"
 
+                      # Build a universal (arm64 + x86_64) Rust static
+                      # library. The C code is compiled with
+                      # `-arch arm64 -arch x86_64` via config.mak, but
+                      # `cargo build` only targets the host architecture
+                      # by default, so we must build both targets
+                      # explicitly and lipo them together before `make`
+                      # tries to link the final binary.
+                      rustup target add x86_64-apple-darwin
+                      build_universal_libgitcore () {
+                        make GIT-PREFIX GIT-CFLAGS GIT-LDFLAGS
+                        cargo build --release --target aarch64-apple-darwin
+                        cargo build --release --target x86_64-apple-darwin
+                        mkdir -p target/release
+                        lipo -create \
+                          target/aarch64-apple-darwin/release/libgitcore.a \
+                          target/x86_64-apple-darwin/release/libgitcore.a \
+                          -output target/release/libgitcore.a
+                      }
+                      build_universal_libgitcore
+
                       make -j"$(sysctl -n hw.physicalcpu)" GIT-VERSION-FILE dist dist-doc
 
                       # Recover the source-tree commit OID from the dist
@@ -858,25 +878,11 @@ extends:
                       # at the worktree root in the previous step.
                       cp config.mak "payload/git-$BUILD_VERSION/config.mak"
 
-                      # Build a universal (arm64 + x86_64) Rust static
-                      # library. The C code is compiled with
-                      # `-arch arm64 -arch x86_64` via config.mak, but
-                      # `cargo build` only targets the host architecture
-                      # by default, so we must build both targets
-                      # explicitly and lipo them together before `make`
-                      # tries to link the final binary.
-                      rustup target add x86_64-apple-darwin
+                      # Build the universal libgitcore.a also in `payload/git-*/`
                       (
                         set -x
                         cd "payload/git-$BUILD_VERSION"
-                        make GIT-PREFIX GIT-CFLAGS GIT-LDFLAGS
-                        cargo build --release --target aarch64-apple-darwin
-                        cargo build --release --target x86_64-apple-darwin
-                        mkdir -p target/release
-                        lipo -create \
-                          target/aarch64-apple-darwin/release/libgitcore.a \
-                          target/x86_64-apple-darwin/release/libgitcore.a \
-                          -output target/release/libgitcore.a
+                        build_universal_libgitcore
                       )
 
                       make -C .github/macos-installer V=1 payload
