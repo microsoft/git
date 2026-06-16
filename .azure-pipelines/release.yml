@@ -816,7 +816,7 @@ extends:
                       set -x
 
                       VERSION="$(git_version)"
-                      BUILD_VERSION="$(echo "$VERSION" | sed 's/-rc/.rc/g')"
+                      BUILD_VERSION="$VERSION"
 
                       # The asciidoc/xmlto build steps need the catalogs
                       # from Homebrew docbook.
