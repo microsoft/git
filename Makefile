@@ -3059,6 +3059,7 @@ ifeq (,$(BUILD_UNIVERSAL_LIBGITCORE))
 else
 	$(QUIET_CARGO)cargo build $(CARGO_ARGS) --target aarch64-apple-darwin && \
 		cargo build $(CARGO_ARGS) --target x86_64-apple-darwin && \
+		ls -laR && \
 		mkdir -p target/release && \
 		lipo -create \
 			target/aarch64-apple-darwin/release/libgitcore.a \

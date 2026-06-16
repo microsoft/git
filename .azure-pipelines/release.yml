@@ -813,6 +813,7 @@ extends:
                     targetType: inline
                     script: |
                       set -euo pipefail
+                      set -x
 
                       VERSION="$(git_version)"
                       BUILD_VERSION="$VERSION"
