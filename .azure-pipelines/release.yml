@@ -866,6 +866,7 @@ extends:
                       # tries to link the final binary.
                       rustup target add x86_64-apple-darwin
                       (
+                        set -x
                         cd "payload/git-$BUILD_VERSION"
                         make GIT-PREFIX GIT-CFLAGS GIT-LDFLAGS
                         cargo build --release --target aarch64-apple-darwin
