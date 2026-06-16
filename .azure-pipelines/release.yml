@@ -839,17 +839,8 @@ extends:
                       # explicitly and lipo them together before `make`
                       # tries to link the final binary.
                       rustup target add x86_64-apple-darwin
-                      build_universal_libgitcore () {
-                        make libgit.a # this is a dependency of libgitcore.a
-                        cargo build --release --target aarch64-apple-darwin
-                        cargo build --release --target x86_64-apple-darwin
-                        mkdir -p target/release
-                        lipo -create \
-                          target/aarch64-apple-darwin/release/libgitcore.a \
-                          target/x86_64-apple-darwin/release/libgitcore.a \
-                          -output target/release/libgitcore.a
-                      }
-                      build_universal_libgitcore
+                      BUILD_UNIVERSAL_LIBGITCORE=YesPlease
+                      export BUILD_UNIVERSAL_LIBGITCORE
 
                       make -j"$(sysctl -n hw.physicalcpu)" GIT-VERSION-FILE dist dist-doc
 
@@ -877,13 +868,6 @@ extends:
                       # tree, against a copy of the config.mak we wrote
                       # at the worktree root in the previous step.
                       cp config.mak "payload/git-$BUILD_VERSION/config.mak"
-
-                      # Build the universal libgitcore.a also in `payload/git-*/`
-                      (
-                        set -x
-                        cd "payload/git-$BUILD_VERSION"
-                        build_universal_libgitcore
-                      )
 
                       make -C .github/macos-installer V=1 payload
 
