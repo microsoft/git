@@ -3057,12 +3057,13 @@ $(RUST_LIB): Cargo.toml $(RUST_SOURCES) $(LIB_FILE)
 ifeq (,$(BUILD_UNIVERSAL_LIBGITCORE))
 	$(QUIET_CARGO)cargo build $(CARGO_ARGS)
 else
-	$(QUIET_CARGO aarch64)cargo build $(CARGO_ARGS) --target aarch64-apple-darwin
-	$(QUIET_CARGO x86_64)cargo build $(CARGO_ARGS) --target x86_64-apple-darwin
-	$(QUIET_CARGO lipo)mkdir -p target/release && lipo -create \
-		target/aarch64-apple-darwin/release/libgitcore.a \
-		x86_64-apple-darwin/release/libgitcore.a \
-		-output $(RUST_LIB)
+	$(QUIET_CARGO)cargo build $(CARGO_ARGS) --target aarch64-apple-darwin && \
+		cargo build $(CARGO_ARGS) --target x86_64-apple-darwin && \
+		mkdir -p target/release && \
+		lipo -create \
+			target/aarch64-apple-darwin/release/libgitcore.a \
+			target/x86_64-apple-darwin/release/libgitcore.a \
+			-output $(RUST_LIB)
 endif
 
 .PHONY: rust
