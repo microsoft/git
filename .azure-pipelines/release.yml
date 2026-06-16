@@ -1141,7 +1141,7 @@ extends:
                         build-essential \
                         tcl tk gettext asciidoc xmlto \
                         libcurl4-gnutls-dev libpcre2-dev zlib1g-dev libexpat-dev \
-                        curl ca-certificates
+                        curl ca-certificates cargo
                 - task: Bash@3
                   displayName: 'Build microsoft-git Debian package'
                   inputs:
