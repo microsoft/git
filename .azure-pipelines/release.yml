@@ -290,6 +290,8 @@ extends:
                 - task: Bash@3
                   displayName: 'Build mingw-w64-git package'
                   env:
+                    # Git v2.55 still builds without Rust.
+                    NO_RUST: ForNow
                     # The mingw-w64-git build is heavy on parallel work
                     # that the underlying compile (and especially the
                     # contrib + doc + i18n + perl-script generation
