@@ -2447,6 +2447,7 @@ static int prefetch_get_next_task(struct child_process *cp,
 	strvec_pushl(&cp->args, "-o", entry->temp_path_idx.buf, NULL);
 	strvec_push(&cp->args, entry->temp_path_pack.buf);
 	cp->no_stdin = 1;
+	cp->no_stdout = 1;
 
 	return 1;
 }
