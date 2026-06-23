@@ -21,6 +21,7 @@ do_prefetch_all () {
 		--no-progress \
 		prefetch >OUT.output 2>OUT.stderr &&
 
+	test_must_be_empty OUT.stderr &&
 	verify_received_packfile_count 3 &&
 	verify_prefetch_keeps 1200000000
 }
@@ -34,6 +35,7 @@ do_prefetch_since () {
 		--no-progress \
 		prefetch --since="1000000000" >OUT.output 2>OUT.stderr &&
 
+	test_must_be_empty OUT.stderr &&
 	verify_received_packfile_count 2 &&
 	verify_prefetch_keeps 1200000000
 }
@@ -47,6 +49,7 @@ do_prefetch_up_to_date () {
 		--no-progress \
 		prefetch --since="1000000000" >OUT.output 2>OUT.stderr &&
 
+	test_must_be_empty OUT.stderr &&
 	verify_received_packfile_count 2 &&
 	verify_prefetch_keeps 1200000000 &&
 
@@ -57,6 +60,7 @@ do_prefetch_up_to_date () {
 		--no-progress \
 		prefetch >OUT.output 2>OUT.stderr &&
 
+	test_must_be_empty OUT.stderr &&
 	verify_received_packfile_count 0 &&
 	verify_prefetch_keeps 1200000000
 }
