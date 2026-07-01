@@ -122,44 +122,40 @@ To download and validate the signature of this package, run the following:
 sudo apt-get install -y curl debsig-verify
 
 # Download public key signature file
-curl -s https://api.github.com/repos/microsoft/git/releases/latest \
-| grep -E 'browser_download_url.*msft-git-public.asc' \
-| cut -d : -f 2,3 \
-| tr -d \" \
-| xargs -I 'url' curl -L -o msft-git-public.asc 'url'
+curl -Os https://packages.microsoft.com/keys/microsoft-2025.asc
 
 # De-armor public key signature file
-gpg --output msft-git-public.gpg --dearmor msft-git-public.asc
+gpg --output microsoft-2025.gpg --dearmor microsoft-2025.asc
 
-# Note that the fingerprint of this key is "B8F12E25441124E1", which you can
+# Note that the fingerprint of this key is "EE4D7792F748182B", which you can
 # determine by running:
-gpg --show-keys msft-git-public.asc | head -n 2 | tail -n 1 | tail -c 17
+gpg --show-keys microsoft-2025.asc | head -n 2 | tail -n 1 | tail -c 17
 
 # Copy de-armored public key to debsig keyring folder
-sudo mkdir /usr/share/debsig/keyrings/B8F12E25441124E1
-sudo mv msft-git-public.gpg /usr/share/debsig/keyrings/B8F12E25441124E1/
+sudo mkdir /usr/share/debsig/keyrings/EE4D7792F748182B
+sudo mv microsoft-2025.gpg /usr/share/debsig/keyrings/EE4D7792F748182B/
 
 # Create an appropriate policy file
-sudo mkdir /etc/debsig/policies/B8F12E25441124E1
+sudo mkdir /etc/debsig/policies/EE4D7792F748182B
 cat > generic.pol << EOL
 <?xml version="1.0"?>
 <!DOCTYPE Policy SYSTEM "https://www.debian.org/debsig/1.0/policy.dtd">
 <Policy xmlns="https://www.debian.org/debsig/1.0/">
-  <Origin Name="Microsoft Git" id="B8F12E25441124E1" Description="Microsoft Git public key"/>
+  <Origin Name="Microsoft Git" id="EE4D7792F748182B" Description="Microsoft Git public key"/>
   <Selection>
-    <Required Type="origin" File="msft-git-public.gpg" id="B8F12E25441124E1"/>
+    <Required Type="origin" File="microsoft-2025.gpg" id="EE4D7792F748182B"/>
   </Selection>
   <Verification MinOptional="0">
-    <Required Type="origin" File="msft-git-public.gpg" id="B8F12E25441124E1"/>
+    <Required Type="origin" File="microsoft-2025.gpg" id="EE4D7792F748182B"/>
   </Verification>
 </Policy>
 EOL
 
-sudo mv generic.pol /etc/debsig/policies/B8F12E25441124E1/generic.pol
+sudo mv generic.pol /etc/debsig/policies/EE4D7792F748182B/generic.pol
 
-# Download Debian package
+# Download Debian package (substitute `amd64` with `arm64` on ARM machines)
 curl -s https://api.github.com/repos/microsoft/git/releases/latest \
-| grep "browser_download_url.*deb" \
+| grep "browser_download_url.*amd64.deb" \
 | cut -d : -f 2,3 \
 | tr -d \" \
 | xargs -I 'url' curl -L -o msft-git.deb 'url'
