@@ -1179,13 +1179,13 @@ extends:
                       version: '8.x'
                   - template: .azure-pipelines/esrp/sign.yml@self
                     parameters:
-                      displayName: 'Example sign Debian package'
+                      displayName: 'Sign Debian package'
                       folderPath: '$(Build.ArtifactStagingDirectory)/app'
                       pattern: '**/*.deb'
                       inlineOperation: |
                         [
                           {
-                            "KeyCode": "CP-453387-Pgp",
+                            "KeyCode": "CP-500207-Pgp",
                             "OperationCode": "LinuxSign",
                             "ToolName": "sign",
                             "ToolVersion": "1.0",
