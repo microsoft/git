@@ -60,7 +60,7 @@ continues to exist for two key reasons:
    test, and spike features before undertaking the lengthy upstream
    contribution process.
 
-2. **GVFS Protocol support**: Historically, Azure DevOps did not support
+3. **GVFS Protocol support**: Historically, Azure DevOps did not support
    Git's partial clone protocol. The GVFS protocol (implemented via
    `gvfs-helper`) allows Microsoft Git to emulate partial clone functionality
    when working with Azure Repos. This is the only Git fork that supports
