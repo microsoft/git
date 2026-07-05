@@ -19,23 +19,23 @@ Windows.
 large monorepos, particularly those hosted on Azure DevOps. Unlike Git for
 Windows, Microsoft Git also ships macOS and Linux packages.
 
-### The VFSforGit Era
+### The VFS for Git Era
 
 Microsoft Git was originally created to support
-[VFSforGit](https://github.com/microsoft/VFSforGit) (originally called "GVFS",
+[VFS for Git](https://github.com/microsoft/VFSforGit) (originally called "GVFS",
 Git Virtual File System, renamed because it clashed with the GNOME Virtual File
-System). VFSforGit uses a virtual file system driver to present a
+System). VFS for Git uses a virtual file system driver to present a
 fully-populated working directory while only materializing files on demand.
 
 However, the virtual file system approach proved to be a dead end. The
 functionality required for macOS support had been removed from the targeted
-macOS versions, making it impossible to extend VFSforGit to that platform.
+macOS versions, making it impossible to extend VFS for Git to that platform.
 
 ### The Scalar Era
 
-As a consequence of VFSforGit's limitations, the **Scalar** project was
+As a consequence of VFS for Git's limitations, the **Scalar** project was
 created. Originally [a .NET application](https://github.com/microsoft/scalar)
-and a close fork of VFSforGit, Scalar takes a different approach that does not
+and a close fork of VFS for Git, Scalar takes a different approach that does not
 require a virtual file system. Instead, it relies on:
 
 - **Partial clone** - Fetching only needed objects from the server
@@ -52,7 +52,7 @@ part of upstream Git.
 Despite successful upstreaming of many features, the Microsoft Git fork
 continues to exist for two key reasons:
 
-1. **VFSforGit**: The VFSforGit program is still in active use by a project
+1. **VFS for Git**: The VFS for Git program is still in active use by a project
    whose repository shape is not supported by cone-mode sparse checkouts.
 
 2. **Test bed for new features**: The upstream Git project's contribution
