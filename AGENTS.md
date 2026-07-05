@@ -16,7 +16,8 @@ Git for Windows provides the necessary adaptations to make Git work well on
 Windows.
 
 **Microsoft Git** builds on Git for Windows to add features specifically for
-large monorepos, particularly those hosted on Azure DevOps.
+large monorepos, particularly those hosted on Azure DevOps. Unlike Git for
+Windows, Microsoft Git also ships macOS and Linux packages.
 
 ### The VFSforGit Era
 
