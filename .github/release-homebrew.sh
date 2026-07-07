@@ -1,0 +1,120 @@
+#!/bin/sh
+#
+# Promote a microsoft/git release into the microsoft/homebrew-git tap.
+#
+# Usage:
+#   .github/release-homebrew.sh <TAG_NAME>
+#
+# Prerequisites:
+#   - `gh` authenticated (via `gh auth login`) as a user with push
+#     access to microsoft/homebrew-git.
+#   - `git`, `jq`, and `sed` on PATH.
+#
+# Given a release tag on microsoft/git (e.g. v2.54.0.vfs.0.4), this
+# script looks up the macOS installer asset for that tag, extracts the
+# SHA-256 digest reported by the GitHub Releases API (deliberately not
+# re-hashed locally; see microsoft/homebrew-git#102), edits the
+# `microsoft-git` cask in place preserving its indentation and quote
+# style, pushes the update to the tap under a datetime-keyed branch,
+# and opens a PR.
+#
+# This mirrors the behaviour of mjcheetham/update-homebrew@v1.5.1
+# invoked with `type: cask`, `alwaysUsePullRequest: true`.
+
+set -eu
+
+die () {
+	echo "error: $*" >&2
+	exit 1
+}
+
+TAG_NAME=${1-}
+test -n "$TAG_NAME" || die "usage: $0 <TAG_NAME>"
+
+echo "==> Tag:       $TAG_NAME"
+
+version=${TAG_NAME#v}
+echo "==> Version:   $version"
+
+echo "==> Fetching release metadata"
+release_json=$(gh api \
+	-H "Accept: application/vnd.github+json" \
+	-H "X-GitHub-Api-Version: 2022-11-28" \
+	"repos/microsoft/git/releases/tags/$TAG_NAME")
+
+asset_pattern='git-(.*)\.pkg'
+asset_json=$(jq -n \
+	--argjson release "$release_json" \
+	--arg pat "$asset_pattern" '
+	[ $release.assets[] | select(.name | test($pat)) ] as $matches
+	| if ($matches | length) == 0 then
+		error("no asset matches pattern \($pat)")
+	  elif ($matches | length) > 1 then
+		error("multiple assets match pattern \($pat): " +
+		      ([$matches[].name] | join(", ")))
+	  else $matches[0] end')
+
+digest=$(jq -n -r --argjson a "$asset_json" '$a.digest // ""')
+case "$digest" in
+sha256:*) sha256=${digest#sha256:} ;;
+"")	die "asset has no 'digest' field" ;;
+*)	die "asset digest is not sha256: $digest" ;;
+esac
+
+# Enforce 64 lowercase hex chars without spawning grep.
+case "$sha256" in
+*[!0-9a-f]* | "")
+	die "asset digest is not lowercase hex: $sha256" ;;
+esac
+test ${#sha256} -eq 64 ||
+	die "asset digest is not 64 chars long: $sha256"
+
+echo "==> Asset:     $(jq -n -r --argjson a "$asset_json" '$a.name')"
+echo "==> SHA-256:   $sha256"
+
+workdir=$(mktemp -d)
+trap 'rm -rf "$workdir"' EXIT
+
+echo "==> Cloning microsoft/homebrew-git"
+REPO=microsoft/homebrew-git
+gh repo clone "$REPO" "$workdir/homebrew-git" -- \
+	--depth=1 --quiet
+
+cd "$workdir/homebrew-git"
+
+# Preserve existing indentation and quote style, replacing only the
+# value; matches mjcheetham/update-homebrew's setField regex. The
+# `<file >file.new && mv -f file.new file` idiom sidesteps the
+# incompatible `sed -i` spellings between GNU and BSD sed.
+f=Casks/microsoft-git.rb
+# Capture opening quote as \2, match value up to the matching quote.
+q='(['\''"])[^'\''"]+\2'
+sed -E \
+	-e "s/^([[:space:]]*)version +$q/\\1version \\2$version\\2/" \
+	-e "s/^([[:space:]]*)sha256 +$q/\\1sha256 \\2$sha256\\2/" \
+	<"$f" >"$f.new" &&
+mv -f "$f.new" "$f"
+
+if git diff --quiet -- Casks/microsoft-git.rb; then
+	echo "==> No changes needed; cask is already at $version."
+	exit 0
+fi
+
+git --no-pager diff -- Casks/microsoft-git.rb
+
+BRANCH=update-$(date +%Y-%m-%d-%H-%M-%S)
+git switch -c $BRANCH
+TITLE="microsoft-git: update to $version"
+git commit -m "$TITLE" \
+	-- Casks/microsoft-git.rb
+
+git push origin HEAD
+
+echo "==> Pushed:    $(git log -1 --format='%h %s')"
+
+pr_url=$(gh pr create \
+	--repo "$REPO" \
+	--head "$BRANCH" \
+	--title "$TITLE")
+
+echo "==> Created:   $pr_url"
