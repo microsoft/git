@@ -66,7 +66,7 @@ if [ "$lowest" = "$TAG_NAME" ]; then
 	test -n "$force" ||
 	die "regression: GIT_VERSION is $current_tag," \
 		"refusing to downgrade to $TAG_NAME"
-	echo "warning: **downgrading** from $current_version to $TAG_NAME" >&2
+	echo "warning: **downgrading** from $current_tag to $TAG_NAME" >&2
 fi
 
 workdir=$(mktemp -d)
