@@ -7,7 +7,7 @@
 #
 # If TAG_NAME is omitted, the latest microsoft/git release is used.
 #
-# Dowgrades require `--force`.
+# Downgrades require `--force`.
 #
 # Prerequisites:
 #   - `gh` authenticated (via `gh auth login`) as a user with push
