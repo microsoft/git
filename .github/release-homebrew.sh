@@ -3,9 +3,11 @@
 # Promote a microsoft/git release into the microsoft/homebrew-git tap.
 #
 # Usage:
-#   .github/release-homebrew.sh [<TAG_NAME>]
+#   .github/release-homebrew.sh [--force] [<TAG_NAME>]
 #
 # If TAG_NAME is omitted, the latest microsoft/git release is used.
+#
+# Dowgrades require `--force`.
 #
 # Prerequisites:
 #   - `gh` authenticated (via `gh auth login`) as a user with push
@@ -29,6 +31,11 @@ die () {
 	echo "error: $*" >&2
 	exit 1
 }
+
+case "$1" in
+--force) force=t; shift;;
+*) force=;;
+esac
 
 TAG_NAME=${1-}
 if [ -z "$TAG_NAME" ]; then
@@ -61,8 +68,10 @@ fi
 lowest=$(printf '%s\n%s\n' "$version" "$current_version" |
 	sort -V | sed 1q)
 if [ "$lowest" = "$version" ]; then
+	test -n "$force" ||
 	die "regression: cask is at $current_version," \
 		"refusing to downgrade to $version"
+	echo "warning: **downgrading** from $current_version to $version" >&2
 fi
 
 echo "==> Fetching release metadata"

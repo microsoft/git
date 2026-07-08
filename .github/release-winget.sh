@@ -3,9 +3,11 @@
 # Promote a microsoft/git release into the microsoft/winget-pkgs repo.
 #
 # Usage:
-#   .github/release-winget.sh [<TAG_NAME>]
+#   .github/release-winget.sh [--force] [<TAG_NAME>]
 #
 # If TAG_NAME is omitted, the latest microsoft/git release is used.
+#
+# Dowgrades require `--force`.
 #
 # Prerequisites:
 #   - Runs on Windows (the winget authoring tool wingetcreate.exe is
@@ -45,6 +47,11 @@ Linux)
 	die "this script requires Git for Windows / MSYS:" \
 		"wingetcreate is a Windows-only tool"
 	;;
+esac
+
+case "$1" in
+--force) force=t; shift;;
+*) force=;;
 esac
 
 TAG_NAME=${1-}
@@ -98,8 +105,10 @@ fi
 lowest=$(printf '%s\n%s\n' "$version" "$current_version" |
 	sort -V | sed 1q)
 if [ "$lowest" = "$version" ]; then
+	test -n "$force" ||
 	die "regression: package is at $current_version," \
 		"refusing to downgrade to $version"
+	echo "warning: **downgrading** from $current_version to $version" >&2
 fi
 
 echo "==> Fetching release metadata"

@@ -3,9 +3,11 @@
 # Promote a microsoft/git release into the microsoft/VFSForGit repo.
 #
 # Usage:
-#   .github/release-vfsforgit.sh [<TAG_NAME>]
+#   .github/release-vfsforgit.sh [--force] [<TAG_NAME>]
 #
 # If TAG_NAME is omitted, the latest microsoft/git release is used.
+#
+# Dowgrades require `--force`.
 #
 # Prerequisites:
 #   - `gh` authenticated (via `gh auth login`) as a user with push
@@ -23,6 +25,11 @@ die () {
 	echo "error: $*" >&2
 	exit 1
 }
+
+case "$1" in
+--force) force=t; shift;;
+*) force=;;
+esac
 
 TAG_NAME=${1-}
 if [ -z "$TAG_NAME" ]; then
@@ -56,8 +63,10 @@ fi
 lowest=$(printf '%s\n%s\n' "$TAG_NAME" "$current_tag" |
 	sort -V | sed 1q)
 if [ "$lowest" = "$TAG_NAME" ]; then
+	test -n "$force" ||
 	die "regression: GIT_VERSION is $current_tag," \
 		"refusing to downgrade to $TAG_NAME"
+	echo "warning: **downgrading** from $current_version to $TAG_NAME" >&2
 fi
 
 workdir=$(mktemp -d)
