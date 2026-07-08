@@ -43,6 +43,28 @@ echo "==> Tag:       $TAG_NAME"
 version=${TAG_NAME#v}
 echo "==> Version:   $version"
 
+# Refuse to downgrade the cask and short-circuit no-op runs. Look up
+# the version currently in the tap and compare before fetching the
+# release JSON or cloning.
+current_content=$(gh api \
+	repos/microsoft/homebrew-git/contents/Casks/microsoft-git.rb \
+	-H "Accept: application/vnd.github.raw")
+current_version=$(printf '%s\n' "$current_content" | sed -nE \
+	"s/^[[:space:]]*version *['\"]([^'\"]*)['\"].*/\\1/p")
+test -n "$current_version" || die "could not parse current cask version"
+echo "==> Current:   $current_version"
+
+if [ "$version" = "$current_version" ]; then
+	echo "warning: cask is already at $version; nothing to do." >&2
+	exit 0
+fi
+lowest=$(printf '%s\n%s\n' "$version" "$current_version" |
+	sort -V | sed 1q)
+if [ "$lowest" = "$version" ]; then
+	die "regression: cask is at $current_version," \
+		"refusing to downgrade to $version"
+fi
+
 echo "==> Fetching release metadata"
 release_json=$(gh api \
 	-H "Accept: application/vnd.github+json" \

@@ -39,6 +39,27 @@ BRANCH="automation/gitrelease-$TAG_NAME"
 FILE=.github/workflows/build.yaml
 RELEASE_URL="https://github.com/microsoft/git/releases/tag/$TAG_NAME"
 
+# Refuse to downgrade and short-circuit no-op runs. Read the current
+# GIT_VERSION default straight from build.yaml on the VFSForGit
+# default branch before cloning anything.
+current_content=$(gh api "repos/$REPO/contents/$FILE" \
+	-H "Accept: application/vnd.github.raw")
+current_tag=$(printf '%s\n' "$current_content" | sed -nE \
+	"/GIT_VERSION/s/.*\\|\\| *'([^']*)' *\\}\\}.*/\\1/p")
+test -n "$current_tag" || die "could not parse current GIT_VERSION"
+echo "==> Current:   $current_tag"
+
+if [ "$TAG_NAME" = "$current_tag" ]; then
+	echo "warning: GIT_VERSION is already $TAG_NAME; nothing to do." >&2
+	exit 0
+fi
+lowest=$(printf '%s\n%s\n' "$TAG_NAME" "$current_tag" |
+	sort -V | sed 1q)
+if [ "$lowest" = "$TAG_NAME" ]; then
+	die "regression: GIT_VERSION is $current_tag," \
+		"refusing to downgrade to $TAG_NAME"
+fi
+
 workdir=$(mktemp -d)
 trap 'rm -rf "$workdir"' EXIT
 

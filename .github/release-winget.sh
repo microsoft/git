@@ -62,6 +62,46 @@ echo "==> Tag:       $TAG_NAME"
 version=$(printf '%s' "${TAG_NAME#v}" | sed 's/vfs\.//')
 echo "==> Version:   $version"
 
+workdir=$(mktemp -d)
+success=0
+cleanup () {
+	if [ "$success" = 1 ]; then
+		rm -rf "$workdir"
+	else
+		echo "==> Workdir retained for inspection: $workdir" >&2
+	fi
+}
+trap cleanup EXIT
+
+cd "$workdir"
+echo "==> Working in $workdir"
+
+echo "==> Downloading wingetcreate"
+test -x wingetcreate.exe || {
+	curl -fsSL https://aka.ms/wingetcreate/latest -o wingetcreate.exe &&
+	chmod +x wingetcreate.exe
+} || die "Could not initialize wingetcreate.exe"
+
+# Refuse to downgrade the package and short-circuit no-op runs. Look up
+# the version currently in the manifest and compare before trying to
+# update.
+info="$(./wingetcreate.exe show Microsoft.Git)"
+current_version=${info##*PackageVersion: }
+current_version=${current_version%%[!0-9.]*}
+test -n "$current_version" || die "could not parse current package version"
+echo "==> Current:   $current_version"
+
+if [ "$version" = "$current_version" ]; then
+	echo "warning: package is already at $version; nothing to do." >&2
+	exit 0
+fi
+lowest=$(printf '%s\n%s\n' "$version" "$current_version" |
+	sort -V | sed 1q)
+if [ "$lowest" = "$version" ]; then
+	die "regression: package is at $current_version," \
+		"refusing to downgrade to $version"
+fi
+
 echo "==> Fetching release metadata"
 release_json=$(gh api \
 	-H "Accept: application/vnd.github+json" \
@@ -89,26 +129,6 @@ arm64_url=$(printf '%s' "$arm64_asset" | jq -r .browser_download_url)
 
 echo "==> x64 asset: $(printf '%s' "$x64_asset" | jq -r .name)"
 echo "==> arm64:     $(printf '%s' "$arm64_asset" | jq -r .name)"
-
-workdir=$(mktemp -d)
-success=0
-cleanup () {
-	if [ "$success" = 1 ]; then
-		rm -rf "$workdir"
-	else
-		echo "==> Workdir retained for inspection: $workdir" >&2
-	fi
-}
-trap cleanup EXIT
-
-cd "$workdir"
-echo "==> Working in $workdir"
-
-echo "==> Downloading wingetcreate"
-test -x wingetcreate.exe || {
-	curl -fsSL https://aka.ms/wingetcreate/latest -o wingetcreate.exe &&
-	chmod +x wingetcreate.exe
-} || die "Could not initialize wingetcreate.exe"
 
 # wingetcreate reads its GitHub token from this env var; hand it the
 # operator's own gh session token so no PAT needs to be stashed.
