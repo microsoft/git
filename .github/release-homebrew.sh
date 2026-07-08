@@ -3,7 +3,9 @@
 # Promote a microsoft/git release into the microsoft/homebrew-git tap.
 #
 # Usage:
-#   .github/release-homebrew.sh <TAG_NAME>
+#   .github/release-homebrew.sh [<TAG_NAME>]
+#
+# If TAG_NAME is omitted, the latest microsoft/git release is used.
 #
 # Prerequisites:
 #   - `gh` authenticated (via `gh auth login`) as a user with push
@@ -29,7 +31,12 @@ die () {
 }
 
 TAG_NAME=${1-}
-test -n "$TAG_NAME" || die "usage: $0 <TAG_NAME>"
+if [ -z "$TAG_NAME" ]; then
+	echo "==> No tag given; resolving latest microsoft/git release"
+	TAG_NAME=$(gh release view -R microsoft/git \
+		--json tagName --jq .tagName)
+	test -n "$TAG_NAME" || die "could not determine latest release tag"
+fi
 
 echo "==> Tag:       $TAG_NAME"
 

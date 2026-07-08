@@ -3,7 +3,9 @@
 # Promote a microsoft/git release into the microsoft/winget-pkgs repo.
 #
 # Usage:
-#   .github/release-winget.sh <TAG_NAME>
+#   .github/release-winget.sh [<TAG_NAME>]
+#
+# If TAG_NAME is omitted, the latest microsoft/git release is used.
 #
 # Prerequisites:
 #   - Runs on Windows (the winget authoring tool wingetcreate.exe is
@@ -46,6 +48,13 @@ Linux)
 esac
 
 TAG_NAME=${1-}
+if [ -z "$TAG_NAME" ]; then
+	echo "==> No tag given; resolving latest microsoft/git release"
+	TAG_NAME=$(gh release view -R microsoft/git \
+		--json tagName --jq .tagName)
+	test -n "$TAG_NAME" || die "could not determine latest release tag"
+fi
+
 echo "==> Tag:       $TAG_NAME"
 
 # Elide the leading 'v' and the 'vfs.' segment:
