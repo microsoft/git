@@ -528,9 +528,12 @@ static int run_post_command_hook(struct repository *r)
 
 	/*
 	 * Only run post_command if pre_command succeeded in this process
+	 * and we haven't attempted post_command yet.
 	 */
 	if (!run_post_hook)
 		return 0;
+	run_post_hook = 0;
+
 	lock = getenv("COMMAND_HOOK_LOCK");
 	if (!lock || strcmp(lock, "true"))
 		return 0;
@@ -538,8 +541,6 @@ static int run_post_command_hook(struct repository *r)
 	strvec_pushv(&opt.args, sargv.v);
 	strvec_pushf(&opt.args, "--exit_code=%u", exit_code);
 	ret = run_hooks_opt(r, "post-command", &opt);
-
-	run_post_hook = 0;
 
 	errno = saved_errno;
 	strvec_clear(&sargv);
