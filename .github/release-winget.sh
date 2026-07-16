@@ -49,7 +49,7 @@ Linux)
 	;;
 esac
 
-case "$1" in
+case "${1-}" in
 --force) force=t; shift;;
 *) force=;;
 esac
@@ -70,8 +70,10 @@ version=$(printf '%s' "${TAG_NAME#v}" | sed 's/vfs\.//')
 echo "==> Version:   $version"
 
 workdir=$(mktemp -d)
+origdir="$(pwd)"
 success=0
 cleanup () {
+	cd "$origdir"
 	if [ "$success" = 1 ]; then
 		rm -rf "$workdir"
 	else
