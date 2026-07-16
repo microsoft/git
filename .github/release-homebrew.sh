@@ -32,7 +32,7 @@ die () {
 	exit 1
 }
 
-case "$1" in
+case "${1-}" in
 --force) force=t; shift;;
 *) force=;;
 esac
