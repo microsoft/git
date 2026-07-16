@@ -153,6 +153,7 @@ echo "==> Pushed:    $(git log -1 --format='%h %s')"
 pr_url=$(gh pr create \
 	--repo "$REPO" \
 	--head "$BRANCH" \
-	--title "$TITLE")
+	--title "$TITLE" \
+	--body "See https://github.com/microsoft/git/releases/tag/$TAG_NAME")
 
 echo "==> Created:   $pr_url"
