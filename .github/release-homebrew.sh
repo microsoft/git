@@ -100,7 +100,9 @@ sha256:*) sha256=${digest#sha256:} ;;
 esac
 
 # Enforce 64 lowercase hex chars without spawning grep.
-	*[!0-9a-f]*|"")
+case "$sha256" in
+*[!0-9a-f]*|"")
+       die "asset digest is not lowercase hex: $sha256" ;;
 esac
 test ${#sha256} -eq 64 ||
 	die "asset digest is not 64 chars long: $sha256"
