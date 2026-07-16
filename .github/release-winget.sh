@@ -49,7 +49,7 @@ Linux)
 	;;
 esac
 
-case "$1" in
+case "${1-}" in
 --force) force=t; shift;;
 *) force=;;
 esac
