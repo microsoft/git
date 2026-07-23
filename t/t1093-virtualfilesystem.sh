@@ -483,4 +483,101 @@ test_expect_success MINGW,FSMONITOR_DAEMON 'virtualfilesystem hook disables buil
 	test_must_fail git fsmonitor--daemon status
 '
 
+# reset --mixed tests for virtual filesystem mode
+#
+# Background: reset --mixed moves HEAD and updates the index to match the
+# target commit, but leaves the working tree untouched. In a normal repo,
+# files whose index entry changed show as "unstaged changes" because the
+# working tree still has the pre-reset content.
+#
+# In VFS mode, most files have skip-worktree set and don't exist on disk.
+# The VFS-specific code in update_index_from_diff() handles this:
+#
+#   - Files NOT on disk (virtual/placeholder): git writes the pre-reset
+#     content to disk via checkout_entry() and clears skip-worktree, so
+#     they correctly appear as "modified" in status.
+#
+#   - Files already on disk (hydrated by a previous read): their on-disk
+#     content is still the pre-reset version. Skip-worktree must also be
+#     cleared for these so refresh_index() compares them against the new
+#     index entry and reports them as modified.
+#
+# A bug existed where hydrated files (file_exists returns true) kept
+# skip-worktree set after the reset, making them invisible to status.
+
+test_expect_success 'reset --mixed reports hydrated files as modified in VFS mode' '
+	clean_repo &&
+
+	# Create a second commit that modifies dir1/file1.txt
+	git -c core.virtualfilesystem= checkout -b reset-hydrated-test &&
+	echo "modified content" >dir1/file1.txt &&
+	git -c core.virtualfilesystem= add dir1/file1.txt &&
+	git -c core.virtualfilesystem= commit -m "modify dir1/file1.txt" &&
+
+	# VFS hook: nothing in ModifiedPaths — all files get skip-worktree
+	write_script .git/hooks/virtualfilesystem <<-\EOF &&
+		printf ""
+	EOF
+
+	# dir1/file1.txt is on disk with the new commit content (simulates
+	# a hydrated file that was read but never written to ModifiedPaths).
+	# file_exists() will return true for it.
+	test_path_is_file dir1/file1.txt &&
+
+	# reset --mixed to parent: index moves to old content, working tree
+	# keeps new content. dir1/file1.txt should show as modified in
+	# the reset output because skip-worktree is cleared during the
+	# reset so refresh_index detects the mismatch.
+	git reset HEAD~1 >actual_stdout &&
+	grep "dir1/file1.txt" actual_stdout
+'
+
+test_expect_success 'reset --mixed reports non-hydrated files as modified in VFS mode' '
+	clean_repo &&
+
+	# Create a second commit that modifies dir1/file1.txt
+	git -c core.virtualfilesystem= checkout -b reset-virtual-test &&
+	echo "modified content" >dir1/file1.txt &&
+	git -c core.virtualfilesystem= add dir1/file1.txt &&
+	git -c core.virtualfilesystem= commit -m "modify dir1/file1.txt" &&
+
+	# VFS hook: nothing in ModifiedPaths
+	write_script .git/hooks/virtualfilesystem <<-\EOF &&
+		printf ""
+	EOF
+
+	# Remove the file from disk to simulate a non-hydrated virtual file.
+	# file_exists() will return false for it.
+	rm -f dir1/file1.txt &&
+
+	# reset --mixed to parent: git should write pre-reset content to
+	# disk and clear skip-worktree, reporting the file as modified.
+	git reset HEAD~1 >actual_stdout &&
+	grep "dir1/file1.txt" actual_stdout &&
+
+	# The pre-reset content should have been written to disk
+	test_path_is_file dir1/file1.txt
+'
+
+test_expect_success 'reset --mixed with hydrated file leaves other skip-worktree intact' '
+	clean_repo &&
+
+	# Create a commit that modifies dir1/file1.txt but NOT dir2/file1.txt
+	git -c core.virtualfilesystem= checkout -b reset-partial-test &&
+	echo "modified content" >dir1/file1.txt &&
+	git -c core.virtualfilesystem= add dir1/file1.txt &&
+	git -c core.virtualfilesystem= commit -m "modify dir1/file1.txt only" &&
+
+	# VFS hook: nothing in ModifiedPaths
+	write_script .git/hooks/virtualfilesystem <<-\EOF &&
+		printf ""
+	EOF
+
+	# Reset: only dir1/file1.txt changed between HEAD and HEAD~1.
+	# dir2/file1.txt should not appear in the output at all.
+	git reset HEAD~1 >actual_stdout &&
+	grep "dir1/file1.txt" actual_stdout &&
+	! grep "dir2/file1.txt" actual_stdout
+'
+
 test_done
