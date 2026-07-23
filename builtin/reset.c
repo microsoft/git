@@ -173,18 +173,24 @@ static void update_index_from_diff(struct diff_queue_struct *q,
 		struct checkout state = CHECKOUT_INIT;
 
 		/*
-		 * When using the virtual filesystem feature, the cache entries that are
-		 * added here will not have the skip-worktree bit set.
+		 * When using the virtual filesystem feature, all entries
+		 * being reset should have skip-worktree cleared so that
+		 * refresh_index will compare them against the working tree
+		 * and report them as modified.
 		 *
-		 * Without this code there is data that is lost because the files that
-		 * would normally be in the working directory are not there and show as
-		 * deleted for the next status or in the case of added files just disappear.
-		 * We need to create the previous version of the files in the working
-		 * directory so that they will have the right content and the next
-		 * status call will show modified or untracked files correctly.
+		 * For files that don't exist on disk (virtual/placeholder),
+		 * we also need to write the pre-reset content to disk so
+		 * that they show as modified rather than deleted.
+		 *
+		 * For files that already exist on disk (hydrated), the
+		 * on-disk content is the pre-reset version, so no write
+		 * is needed — just clearing skip-worktree is sufficient.
 		 */
-		if (core_virtualfilesystem && !file_exists(two->path))
-		{
+		if (!core_virtualfilesystem)
+			; /* not in virtual filesystem mode; nothing to special-case */
+		else if (file_exists(two->path))
+			respect_skip_worktree = 0; /* hydrated: on-disk content is already the pre-reset version */
+		else {
 			respect_skip_worktree = 0;
 			pos = index_name_pos(the_repository->index, two->path, strlen(two->path));
 
