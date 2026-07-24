@@ -45,13 +45,14 @@ int option_parse_push_signed(const struct option *opt,
 
 static void append_negative_object(struct repository *r,
 				   struct oid_array *haves,
-				   const struct object_id *oid)
+				   const struct object_id *oid,
+				   int check_missing)
 {
 	/*
 	 * The remote end may have advertised objects that we do not have in
 	 * our object database. Skip those, as we cannot use them as boundary.
 	 */
-	if (!gvfs_config_is_set(r, GVFS_MISSING_OK) && !odb_has_object(r->objects, oid, 0))
+	if (check_missing && !odb_has_object(r->objects, oid, 0))
 		return;
 	oid_array_append(haves, oid);
 }
@@ -67,6 +68,8 @@ static int pack_objects(struct repository *r,
 	struct odb_generate_pack_options opts = ODB_GENERATE_PACK_OPTIONS_INIT;
 	struct odb_pack_generator *generator;
 	int rc;
+	int negative_ref_check = 0;
+	int check_missing;
 
 	trace2_region_enter("send_pack", "pack_objects", r);
 
@@ -85,14 +88,33 @@ static int pack_objects(struct repository *r,
 	 */
 	opts.pack_fd = args->stateless_rpc ? -1 : fd;
 
+	/*
+	 * Normally we omit a negative (exclusion) object that we do not have
+	 * locally. The core.gvfs GVFS_MISSING_OK bit disables that check, so
+	 * missing negatives are still fed to pack-objects. Under the GVFS
+	 * protocol that is harmful: pack-objects treats each fed exclusion as
+	 * an edge and lazily downloads every one that is absent while hunting
+	 * for preferred delta bases -- one immediate object request per
+	 * advertised ref. Setting gvfs.negativeRefCheck restores the vanilla
+	 * behavior of omitting a negative object we do not have, using a
+	 * non-fetching existence check (odb_has_object() with flags 0 implies
+	 * OBJECT_INFO_QUICK | OBJECT_INFO_SKIP_FETCH_OBJECT).
+	 */
+	repo_config_get_bool(r, "gvfs.negativeRefCheck", &negative_ref_check);
+	check_missing = negative_ref_check ||
+			!gvfs_config_is_set(r, GVFS_MISSING_OK);
+
 	for (size_t i = 0; i < advertised->nr; i++)
-		append_negative_object(r, &opts.haves, &advertised->oid[i]);
+		append_negative_object(r, &opts.haves, &advertised->oid[i],
+				       check_missing);
 	for (size_t i = 0; i < negotiated->nr; i++)
-		append_negative_object(r, &opts.haves, &negotiated->oid[i]);
+		append_negative_object(r, &opts.haves, &negotiated->oid[i],
+				       check_missing);
 
 	while (refs) {
 		if (!is_null_oid(&refs->old_oid))
-			append_negative_object(r, &opts.haves, &refs->old_oid);
+			append_negative_object(r, &opts.haves, &refs->old_oid,
+					       check_missing);
 		if (!is_null_oid(&refs->new_oid))
 			oid_array_append(&opts.wants, &refs->new_oid);
 		refs = refs->next;
