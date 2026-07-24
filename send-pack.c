@@ -44,9 +44,11 @@ int option_parse_push_signed(const struct option *opt,
 }
 
 static void feed_object(struct repository *r,
-			const struct object_id *oid, FILE *fh, int negative)
+			const struct object_id *oid, FILE *fh, int negative,
+			int check_missing)
 {
-	if (negative && !gvfs_config_is_set(r, GVFS_MISSING_OK) && !odb_has_object(r->objects, oid, 0))
+	if (negative && check_missing &&
+	    !odb_has_object(r->objects, oid, 0))
 		return;
 
 	if (negative)
@@ -71,6 +73,8 @@ static int pack_objects(struct repository *r,
 	struct child_process po = CHILD_PROCESS_INIT;
 	FILE *po_in;
 	int rc;
+	int negative_ref_check = 0;
+	int check_missing;
 
 	trace2_region_enter("send_pack", "pack_objects", r);
 	strvec_push(&po.args, "pack-objects");
@@ -103,16 +107,33 @@ static int pack_objects(struct repository *r,
 	 * parameters by writing to the pipe.
 	 */
 	po_in = xfdopen(po.in, "w");
+
+	/*
+	 * Normally we omit a negative (exclusion) object that we do not have
+	 * locally. The core.gvfs GVFS_MISSING_OK bit disables that check, so
+	 * missing negatives are still fed to pack-objects. Under the GVFS
+	 * protocol that is harmful: pack-objects treats each fed exclusion as
+	 * an edge and lazily downloads every one that is absent while hunting
+	 * for preferred delta bases -- one immediate object request per
+	 * advertised ref. Setting gvfs.negativeRefCheck restores the vanilla
+	 * behavior of omitting a negative object we do not have, using a
+	 * non-fetching existence check (odb_has_object() with flags 0 implies
+	 * OBJECT_INFO_QUICK | OBJECT_INFO_SKIP_FETCH_OBJECT).
+	 */
+	repo_config_get_bool(r, "gvfs.negativeRefCheck", &negative_ref_check);
+	check_missing = negative_ref_check ||
+			!gvfs_config_is_set(r, GVFS_MISSING_OK);
+
 	for (size_t i = 0; i < advertised->nr; i++)
-		feed_object(r, &advertised->oid[i], po_in, 1);
+		feed_object(r, &advertised->oid[i], po_in, 1, check_missing);
 	for (size_t i = 0; i < negotiated->nr; i++)
-		feed_object(r, &negotiated->oid[i], po_in, 1);
+		feed_object(r, &negotiated->oid[i], po_in, 1, check_missing);
 
 	while (refs) {
 		if (!is_null_oid(&refs->old_oid))
-			feed_object(r, &refs->old_oid, po_in, 1);
+			feed_object(r, &refs->old_oid, po_in, 1, check_missing);
 		if (!is_null_oid(&refs->new_oid))
-			feed_object(r, &refs->new_oid, po_in, 0);
+			feed_object(r, &refs->new_oid, po_in, 0, check_missing);
 		refs = refs->next;
 	}
 
