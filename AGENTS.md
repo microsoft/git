@@ -1,29 +1,197 @@
-# Git for Windows - Development Guide
+# Microsoft Git Fork - Development Guide
 
-## Background
+## Background and History
 
-Git for Windows is a fork of upstream Git that provides the necessary
-adaptations to make Git work well on Windows. While the primary target is
-Windows, the project also maintains working builds on other platforms (Linux,
-macOS) because cross-platform builds often catch mistakes that might be missed
-when testing only on Windows.
+### Fork Hierarchy
 
-There are downstream projects that build on Git for Windows, such as Microsoft
-Git, which adds features for large monorepos hosted on Azure DevOps.
+Microsoft Git is a fork of Git for Windows, which is itself a fork of
+upstream Git:
+
+```
+Git (upstream) -> Git for Windows -> Microsoft Git
+```
+
+**Git for Windows** exists because upstream Git has limited Windows support.
+Git for Windows provides the necessary adaptations to make Git work well on
+Windows.
+
+**Microsoft Git** builds on Git for Windows to add features specifically for
+large monorepos, particularly those hosted on Azure DevOps. Unlike Git for
+Windows, Microsoft Git also ships macOS and Linux packages.
+
+### The VFS for Git Era
+
+Microsoft Git was originally created to support
+[VFS for Git](https://github.com/microsoft/VFSforGit) (originally called "GVFS",
+Git Virtual File System, renamed because it clashed with the GNOME Virtual File
+System). VFS for Git uses a virtual file system driver to present a
+fully-populated working directory while only materializing files on demand.
+
+However, the virtual file system approach proved to be a dead end. The
+functionality required for macOS support had been removed from the targeted
+macOS versions, making it impossible to extend VFS for Git to that platform.
+
+### The Scalar Era
+
+As a consequence of VFS for Git's limitations, the **Scalar** project was
+created. Originally [a .NET application](https://github.com/microsoft/scalar)
+and a close fork of VFS for Git, Scalar takes a different approach that does not
+require a virtual file system. Instead, it relies on:
+
+- **Partial clone** - Fetching only needed objects from the server
+- **Sparse checkout (cone mode)** - Only checking out a subset of files
+- **Sparse index** - Optimizing the index for sparse checkouts
+
+These features were developed and tested in the Microsoft Git fork, then
+painstakingly upstreamed to the Git project over time. Eventually, Scalar
+itself was ported from .NET to plain C and also upstreamed - Scalar is now
+part of upstream Git.
+
+### Why the Fork Still Exists
+
+Despite successful upstreaming of many features, the Microsoft Git fork
+continues to exist for two key reasons:
+
+1. **VFS for Git**: The VFS for Git program is still in active use by a project
+   whose repository shape is not supported by cone-mode sparse checkouts.
+
+2. **Test bed for new features**: The upstream Git project's contribution
+   process is slow and rigorous. Microsoft Git serves as a place to develop,
+   test, and spike features before undertaking the lengthy upstream
+   contribution process.
+
+3. **GVFS Protocol support**: Historically, Azure DevOps did not support
+   Git's partial clone protocol. The GVFS protocol (implemented via
+   `gvfs-helper`) allows Microsoft Git to emulate partial clone functionality
+   when working with Azure Repos. This is the only Git fork that supports
+   the GVFS protocol. Scalar clones, however, run more efficiently using
+   that GVFS protocol than the partial clone feature of upstream Git.
+
+### GVFS Protocol Advantages
+
+The GVFS protocol is more efficient than Git's native partial clone in
+several ways:
+
+- **Individual commit fetching**: Git's partial clone cannot fetch a single
+  commit without also fetching its entire parent chain (unless it's a root
+  commit). The GVFS protocol allows fetching individual commits or arbitrary
+  batches of commits.
+- **CI optimization**: This efficiency is particularly valuable in CI
+  scenarios.
+
+### Limitations
+
+The GVFS protocol only works with Git forges that implement it. Currently,
+**Azure Repos (Azure DevOps)** is the only forge that supports this protocol.
+This is unlikely to change, ever. This Azure-specific nature means the GVFS
+helper functionality will never be upstreamed to Git.
 
 ## Overview
 
-This document provides guidance for developing and debugging in
-Git for Windows.
+This document provides guidance for developing and debugging in the
+Microsoft Git fork.
+
+## Working Style
+
+The most effective way to drive AI-assisted work on this codebase is
+not through fancy prompts but through a disciplined, iterative workflow
+that keeps the human firmly in the loop. As the agent, your default
+mode of operation should be to slow down, surface what you are about
+to do, and let the user steer.
+
+### Start by Understanding
+
+Before proposing any changes, take time to understand the relevant
+slice of the codebase. Answer concrete questions:
+
+- Where are the important functions for this area?
+- How does control flow through the code base for the relevant
+  scenario?
+- Where are the existing tests, and what do they cover?
+
+When you do not yet know the answers, do not start editing code. Read
+first. Use `git grep`, `git log -L`, and the rest of the tooling
+described elsewhere in this document to build a real understanding.
+If you cannot find something, ask the user; do not guess.
+
+Surface what you have learned in your response so the user can correct
+misunderstandings before they become bad code.
+
+### Plan Before Implementing
+
+For anything beyond a trivial one-line change, produce a written plan
+before touching code. The plan must be commit-by-commit:
+
+- Each entry in the plan corresponds to one commit, which should be a
+  coherent, independently reviewable unit (one logical change).
+- For each commit, state the title, the intent, and the files or
+  areas that will change.
+- Include concrete code sketches for non-obvious changes. The user
+  will review the snippets carefully; a few lines of pseudo-code are
+  worth more than a paragraph of prose.
+
+Save the plan where the user can edit it (e.g. in the session
+workspace) and wait for approval or amendments before starting
+implementation. The plan is the contract; do not deviate from it
+without checking back in.
+
+### Implement One Commit at a Time
+
+Execute the plan one commit at a time. After each commit:
+
+1. Stop. Do not start the next commit on your own initiative.
+2. Surface what you did: the commit title, the diff, and anything
+   surprising you ran into.
+3. Wait for the user to review and either approve, request changes,
+   or tell you to move on.
+
+Resist the temptation to "knock out a few related commits while the
+context is fresh". The user wants to review each commit before the
+next one builds on it; bundling work together defeats this.
+
+### Expect Heavy Review and Iteration
+
+Assume that every commit will be reviewed in detail and that some
+will need adjustment. The user will frequently:
+
+- Drive the incremental rebase themselves (autosquash, reword,
+  rearrange) rather than delegating it.
+- Then prompt you to make specific follow-up edits on top of the
+  rewritten history.
+
+When you receive such a prompt, do not redo the rebase or rewrite
+unrelated history. Make the requested changes as `fixup!` commits
+(or direct edits to the working tree if the user says so) and let
+the user fold them in.
+
+This human-in-the-loop iteration is the point. Optimize for making
+each round of review fast and surgical.
 
 ## Repository Structure
+
+### Key Custom Components
+
+| Component            | Files                          | Purpose             |
+|----------------------|--------------------------------|---------------------|
+| GVFS Helper          | `gvfs-helper*.c`               | GVFS Protocol       |
+| Virtual Filesystem   | `virtualfilesystem.c`          | Sparse working dir  |
+| Scalar               | `scalar.c`                     | Monorepo management |
+| Status Serialization | `wt-status-serialize.c`        | Large repo perf     |
 
 ### Branch Naming Patterns
 
 Based on actual repository usage:
 
-- `main` - The primary development branch
-- Feature branches use descriptive topic names, targeting the main branch
+- `vfs-X.Y.Z` - Release branches based on upstream Git version X.Y.Z
+- The latest release corresponds to a commit on such a `vfs-X.Y.Z` branch.
+- The branch corresponding to the latest release is the default branch.
+- `tentative/vfs-X.Y.Z` - Work-in-progress rebases onto new upstream versions.
+  Once "merged" (or, pushed to fast-forward), the corresponding `vfs-X.Y.Z`
+  branch will become the new default branch.
+- Feature branches use descriptive topic names (e.g., `prefetch-since`,
+  `scalar-gvfs-verb`, `fix-mimalloc-crash-in-post-command`), targeting the
+  default branch (potentially needing porting to in-flight `tentative/*`
+  branches).
 
 ## Building and Testing
 
@@ -42,14 +210,26 @@ make -j15
 ### Run Specific Tests
 
 ```bash
-cd t && sh t0001-init.sh      # Run normally
-cd t && sh t0001-init.sh -v   # Verbose
-cd t && sh t0001-init.sh -ivx # verbose, trace, fail-fast
+cd t && sh t5793-gvfs-helper-integration.sh      # Run normally
+cd t && sh t5793-gvfs-helper-integration.sh -v   # Verbose
+cd t && sh t5793-gvfs-helper-integration.sh -ivx # verbose, trace, fail-fast
 ```
 
 Some tests are expensive and skipped by default. When a test exits immediately
 with "skip all", check the test script header for `test_bool_env GIT_TEST_*`
 to find which environment variable enables it.
+
+### GVFS Test Files
+
+| File                                 | Purpose                       |
+|--------------------------------------|-------------------------------|
+| `t/t5790-gvfs-helper-basic.sh`       | Basic GVFS helper tests       |
+| `t/t5791-gvfs-helper-errors.sh`      | Error handling tests          |
+| `t/t5792-gvfs-helper-auth.sh`        | Authentication tests          |
+| `t/t5793-gvfs-helper-integration.sh` | Integration with Git commands |
+| `t/t5794-gvfs-helper-packfiles.sh`   | Packfile handling tests       |
+| `t/t5795-gvfs-helper-verb-cache.sh`  | Cache server verb tests       |
+| `t/lib-gvfs-helper.sh`               | Shared test helper functions  |
 
 ## Git Source Code Structure
 
@@ -140,6 +320,122 @@ To lint documentation:
 make -C Documentation lint-docs
 ```
 
+## GVFS Architecture
+
+### Object Fetching Paths
+
+Two mechanisms exist for fetching missing objects:
+
+1. **Batch Queue** (efficient): `gh_client__queue_oid()` ->
+   `gh_client__drain_queue()`
+   - Collects multiple OIDs and fetches via single POST request
+   - Used by promisor-remote code path
+
+2. **Immediate Fetch** (fallback): `gh_client__get_immediate()`
+   - Fetches single object via GET request
+   - More expensive, used when batch isn't possible
+
+### Shared Cache
+
+GVFS uses a shared object cache (`gvfs.sharedCache` config) to avoid
+redundant downloads across repos. Key points:
+
+- Objects are written to `gh_client__chosen_odb`, typically the shared cache
+- The shared cache is an ODB alternate, not the primary `.git/objects`
+- After writing objects, the correct packfile store must be refreshed
+
+### Object Database Structure
+
+The ODB has multiple sources in a linked list:
+```
+the_repository->objects->sources  ->  sources->next  ->  ...
+         (primary .git/objects)        (alternates)
+```
+
+Each source has its own:
+- `packfiles` - Packfile store
+- `loose` - Loose object cache
+- `path` - Directory path
+
+## GVFS Integration Points
+
+This section describes how GVFS-specific code hooks into Git's core object
+machinery. For a general overview of Git's source code, see the "A birds-eye
+view of Git's source code" section in `Documentation/user-manual.adoc`.
+
+### Key Files
+
+| File                    | Purpose                                          |
+|-------------------------|--------------------------------------------------|
+| `gvfs-helper.c`         | Standalone helper for Azure Repos via GVFS       |
+| `gvfs-helper-client.c`  | Client that communicates with gvfs-helper        |
+| `gvfs.c`, `gvfs.h`      | GVFS configuration and utility functions         |
+| `odb.c`                 | Object database - GVFS hooks for on-demand fetch |
+| `promisor-remote.c`     | Promisor remote - GVFS helper for batch fetches  |
+| `environment.h`         | Declares `core_use_gvfs_helper` and related      |
+
+### Object Lookup Flow
+
+When Git needs an object, it calls `do_oid_object_info_extended()` in `odb.c`.
+The GVFS integration adds two fetch paths to this function:
+
+1. **Immediate fetch** (lines ~935-957 in odb.c):
+   ```c
+   if (core_use_gvfs_helper && !tried_gvfs_helper) {
+       gh_client__get_immediate(real, &ghc);
+       tried_gvfs_helper = 1;
+       if (ghc != GHC__CREATED__NOTHING)
+           continue;  /* retry lookup */
+   }
+   ```
+
+2. **Promisor/batch fetch** (via `promisor_remote_get_direct()` in
+   promisor-remote.c):
+   ```c
+   if (core_use_gvfs_helper) {
+       gh_client__queue_oid_array(oids, oid_nr);
+       gh_client__drain_queue(&ghc);
+       return;
+   }
+   ```
+
+The batch path is more efficient as it fetches multiple objects in one request.
+
+### Shared Cache Integration
+
+The shared cache is configured via `gvfs.sharedCache` and handled in `odb.c`:
+
+1. `odb_add_source()` (lines ~97-153) detects when an alternate matches the
+   configured shared cache path
+2. `odb_prepare_alternates()` (lines ~674-707) adds the shared cache as an
+   alternate if not already present
+3. `gh_client__choose_odb()` in `gvfs-helper-client.c` selects the shared cache
+   as the target for downloaded objects
+
+### gvfs-helper Communication
+
+The client (`gvfs-helper-client.c`) communicates with `gvfs-helper` using
+Git's long-running process protocol (see
+`Documentation/technical/long-running-process-protocol.adoc`):
+
+```
+git process                    gvfs-helper
+    |                              |
+    |-- objects.post ------------->|
+    |-- <oid1> ------------------->|
+    |-- <oid2> ------------------->|
+    |-- <flush> ------------------>|
+    |                              |  (fetches from server)
+    |<-- odb <path> ---------------|
+    |<-- packfile <name> ----------|
+    |<-- ok -----------------------|
+    |<-- <flush> ------------------|
+```
+
+After receiving a packfile response, the client must call
+`packfile_store_reprepare()` on the correct ODB source so that
+subsequent object lookups can find the newly downloaded objects.
+
 ## Debugging Techniques
 
 ### Debugging Philosophy
@@ -223,12 +519,17 @@ git grep -n -w "word"                 # Whole-word matches only
 git grep -n -i "pattern" -- "*.c"     # Search only C files
 ```
 
-### Trace2
+### Trace2 for Object Fetching
 
-Enable tracing to see command execution patterns:
+Enable tracing to see object fetch patterns:
 ```bash
 GIT_TRACE2_EVENT=/path/to/trace.txt git <command>
 ```
+
+Key trace messages:
+- `gh_client__queue_oid: <oid>` - Object added to batch queue
+- `gh_client__get_immediate: <oid>` - Object fetched immediately
+- `gh-client/objects/post` - Batch POST request region
 
 ### Instrumenting Git Internals During Tests
 
@@ -482,104 +783,23 @@ git commit -sm "fixup! release: add Mac OSX installer build" path/to/file
 
 ## Rebasing Workflow
 
-Rebases are the bread and butter of Git for Windows: topic branches are
-rebased every time upstream Git releases a new version. This section covers
-the workflow for managing downstream patches through repeated rebases.
+Rebases are the bread and butter of Microsoft Git: Whenever a new Git for
+Windows version is released, the previous `vfs-<version>` branch is rebased
+wholesale to that new upstream version. Once that is done, the upstream
+version is pushed as `vfs-<new-version>` and the rebased branch as
+`tentative/vfs-<new-version>` and a PR is opened to merge the latter into
+the former.
 
-### Merging-Rebases
+### High-Risk Areas
 
-Git for Windows uses "merging-rebases" to maintain downstream patches. Unlike
-a flat series of commits, the downstream changes are organized as topic
-branches merged together, preserving the logical grouping of related changes.
+When rebasing onto new upstream versions, pay special attention to:
 
-Each integration branch (`main`, `shears/next`, `shears/seen`) contains a
-marker commit with the message "Start the merging-rebase to \<version\>". This
-commit separates upstream history from downstream patches. Reference it with:
-
-```bash
-# Find the marker commit
-git log --oneline --grep="Start the merging-rebase" -1
-
-# Reference it using commit message search syntax
-origin/main^{/Start.the.merging-rebase}
-```
-
-When working with merging-rebases:
-
-- **Downstream patches start after the marker**: Use
-  `origin/main^{/Start.the.merging-rebase}..origin/main` to see all
-  downstream commits
-- **Topic branches are merged, not rebased flat**: Each logical feature or
-  fix is a branch merged into the integration branch
-- **Merge commits are preserved**: The rebase recreates the merge structure
-  on top of the new upstream base
-
-To compare downstream patches before and after a rebase:
-
-```bash
-# Compare the old and new downstream patch series
-git range-diff \
-  old-base^{/Start.the.merging-rebase}..old-branch \
-  new-base^{/Start.the.merging-rebase}..new-branch
-```
-
-### Starting a Merging-Rebase
-
-To rebase the downstream patches onto a new upstream version, create a marker
-commit and use it as the base for an interactive rebase:
-
-```bash
-# Variables for the commit message
-tag=v2.53.0
-# The previous marker - this becomes the exclusion point for --onto
-previousMergeOid=$(git rev-parse origin/main^{/Start.the.merging-rebase})
-tagOid=$(git rev-parse "$tag")
-tipOid=$(git rev-parse origin/main)
-
-# Create the marker commit with two parents: the tag and the current tip
-markerOid=$(git commit-tree "$tag^{tree}" -p "$tag" -p "$tipOid" -m "Start the merging-rebase to $tag
-
-This commit starts the rebase of $previousMergeOid to $tagOid")
-
-# Graft the marker to appear as if it has only the tag as parent
-git replace --graft "$markerOid" "$tag"
-
-# Use the marker as the base for rebasing (only commits after previousMergeOid)
-git rebase -r --onto "$markerOid" "$previousMergeOid" origin/main
-
-# After the rebase completes, delete the replace ref
-git replace -d "$markerOid"
-```
-
-The marker commit is created with two parents: the upstream tag and the
-current branch tip. The `git replace --graft` makes Git see only the tag as
-parent during the rebase, allowing the downstream commits to be cleanly
-rebased onto the new upstream. After the rebase completes, the replace ref
-is deleted to clean up.
-
-#### The shears/* Branches
-
-Upstream Git has four integration branches: `seen`, `next`, `master`, and
-`maint`. Git for Windows maintains a corresponding `shears/*` branch for each
-(`shears/seen`, `shears/next`, `shears/master`, `shears/maint`) that
-continuously rebases Git for Windows' `main` onto the respective upstream
-branch.
-
-These branches are updated incrementally rather than from scratch, avoiding
-re-resolution of merge conflicts. The update process leverages reachability:
-
-1. **Integrate new downstream commits**: If `origin/main` has commits not yet
-   in the shears branch, rebase them on top (using `-r` to preserve branch
-   structure). Update the marker commit's message and second parent.
-
-2. **Integrate new upstream commits**: If the upstream branch has commits not
-   yet integrated, rebase onto the new upstream tip. Update the marker commit
-   accordingly.
-
-The marker commit's second parent always points to the current `origin/main`
-tip, making it trivial to identify what downstream commits are included.
-Similarly, the marker's first parent (the upstream base) shows exactly which
-upstream version is integrated.
+| Area              | Files                      | Why                      |
+|-------------------|----------------------------|--------------------------|
+| Object lookup     | `odb.c`, `object-file.c`   | GVFS hooks lookup paths  |
+| Packfile handling | `packfile.c`, `packfile.h` | Shared cache packfiles   |
+| Repository struct | `repository.[ch]`,         | GVFS adds custom fields  |
+| Config parsing    | `config.c`                 | GVFS-specific options    |
 
 ### When to Skip a Patch
 
@@ -859,16 +1079,62 @@ gets squashed into.
 
 Run affected tests before finalizing.
 
+### GitHub Actions Version Bumps (Dependabot)
+
+The repository uses Dependabot to monitor GitHub Actions versions
+(configured in `.github/dependabot.yml`). When Dependabot proposes
+version bumps, the resulting changes must be split by ownership layer,
+because each layer is handled differently during rebases.
+
+There are three ownership layers for workflows in this repository:
+
+1. **Upstream Git**: Core CI workflows and jobs that exist in the upstream
+   Git project (e.g., the core jobs in `.github/workflows/main.yml`,
+   `.github/workflows/check-whitespace.yml`).
+2. **Git for Windows**: Additional workflows and workflow sections added
+   by Git for Windows on top of upstream (e.g., GfW-specific jobs in
+   `main.yml`, `.github/workflows/check-style.yml`,
+   `.github/workflows/l10n.yml`).
+3. **Microsoft Git**: Fork-specific workflows added by the Microsoft Git
+   fork (e.g., `.github/workflows/build-git-installers.yml`,
+   `.github/workflows/release-*.yml`,
+   `.github/workflows/scalar-functional-tests.yml`,
+   `.github/workflows/vfs-functional-tests.yml`).
+
+Ownership is determined **per changed line/section**, not per file.
+A single workflow file like `main.yml` contains sections owned by all
+three layers. Use `git blame` or `git log -L` on the changed lines to
+determine which downstream commit introduced them.
+
+**How to handle each layer:**
+
+- **Upstream Git**: Create standalone commits with rewritten commit
+  messages (not the auto-generated Dependabot text). The message must
+  include a risk analysis: what the new version changes, whether it
+  affects our usage, and any preconditions (e.g., minimum runner
+  version). These commits are intended to be submitted upstream via
+  GitGitGadget.
+- **Git for Windows**: Create `fixup!` commits targeting the Git for
+  Windows commit that introduced the affected workflow or section. Use
+  `git log -L` or `git blame` to find the right target.
+- **Microsoft Git**: Create `fixup!` commits targeting the Microsoft
+  Git commit that introduced the affected workflow or section.
+
+When a single Dependabot update touches lines from multiple layers,
+**split the changes into separate commits**, one per layer. Each commit
+follows the rules for its respective layer.
+
 ### Common Adaptation Patterns
 
 **Struct field moves**: When upstream moves fields between structs, update
-all downstream code that accesses those fields.
+all GVFS code that accesses those fields.
 
 **API changes**: When upstream changes function signatures, update callers
-and verify semantics are preserved.
+in GVFS code and verify semantics are preserved.
 
-**New abstractions**: When upstream introduces new layers, ensure downstream
-code uses the correct instance.
+**New abstractions**: When upstream introduces new layers (e.g., per-source
+packfile stores), ensure GVFS code uses the correct instance (e.g., the
+shared cache source, not just the first source).
 
 ## Coding Conventions
 
@@ -947,6 +1213,33 @@ Choose descriptive variable names (`header` for pack headers, not generic
 On Windows, `unsigned long` is 32 bits even on 64-bit systems. Use `size_t`
 for sizes that may exceed 4GB. Be careful with format strings: use `PRIuMAX`
 with a cast for `size_t` values.
+
+## Configuration Options
+
+### GVFS-specific
+
+| Config                 | Purpose                                    |
+|------------------------|--------------------------------------------|
+| `core.useGVFSHelper`   | Enable GVFS helper for object fetching     |
+| `gvfs.sharedCache`     | Path to shared object cache directory      |
+| `gvfs.cache-server`    | URL of GVFS cache server                   |
+| `gvfs.fallback`        | Whether to fall back to origin if CS fails |
+| `gvfs.sessionKey`      | Custom session key for GVFS HTTP headers   |
+| `gvfs.prefetchThreads` | Parallel index-pack processes for prefetch |
+
+### Rename detection and blame
+
+These configuration options are downstream enhancements that do not
+exist in upstream Git (yet).
+
+| Config                   | Purpose                                  |
+|--------------------------|------------------------------------------|
+| `diff.renameThreshold`   | Min similarity for rename detection      |
+| `merge.renameThreshold`  | Override for merges                      |
+| `status.renameThreshold` | Override for status                      |
+| `blame.renames`          | Enable/disable rename following in blame |
+| `blame.renameThreshold`  | Min similarity for blame renames         |
+| `blame.renameLimit`      | Limit on blame rename detection candidates |
 
 ## Contributing to Upstream Git via GitGitGadget
 
@@ -1101,7 +1394,8 @@ commit range and replay just those commits.
 
 ## Resources
 
-- [Git for Windows](https://gitforwindows.org/)
+- [GVFS Protocol Specification](https://github.com/microsoft/VFSForGit)
+- [Scalar Documentation](https://github.com/microsoft/scalar)
 - [Git Internals](https://git-scm.com/book/en/v2/Git-Internals-Plumbing-and-Porcelain)
 - [GitGitGadget](https://gitgitgadget.github.io/) - Bridge GitHub PRs to
   the Git mailing list
