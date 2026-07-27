@@ -27,6 +27,18 @@ gvfs.fallback::
 	server fails to connect. This will alert users to failures with the cache
 	server, but avoid causing throttling on the origin server.
 
+gvfs.negativeRefCheck::
+	When using the GVFS Protocol, the `core.gvfs` `GVFS_MISSING_OK` bit
+	allows objects behind local refs to be missing, so `git push`
+	normally feeds every advertised ref to `git pack-objects` as an
+	exclusion, even ones that are absent locally. `pack-objects` then
+	lazily downloads each missing exclusion while searching for delta
+	bases, issuing one object request per advertised ref. If set to
+	`true`, `git push` instead performs a non-fetching existence check
+	and omits any advertised object it does not have locally, matching
+	the behavior of Git without the `GVFS_MISSING_OK` bit. Defaults to
+	`false`.
+
 gvfs.sessionKey::
 	If set to a string, then the value is a config key name that will be used
 	to set a prefix in the `X-Session-Id` header sent to the server for all
