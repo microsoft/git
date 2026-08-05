@@ -728,6 +728,9 @@ extends:
                         "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
                       arch -x86_64 /usr/local/bin/brew install gettext
 
+                      # Ensure native Homebrew (arm64) is up-to-date beforehand.
+                      HOMEBREW_NO_AUTO_UPDATE='' brew update
+
                       # Native (arm64) build dependencies.
                       brew install automake asciidoc xmlto docbook
                       brew link --force gettext
