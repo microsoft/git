@@ -333,6 +333,18 @@ enum object_info_flags {
 	OBJECT_INFO_SECOND_READ = (1 << 4),
 
 	/*
+	 * Only consult the packed object store of a source, skipping its loose
+	 * object store (OBJECT_INFO_SKIP_LOOSE), or vice versa
+	 * (OBJECT_INFO_SKIP_PACKED). These are used by
+	 * odb_read_object_info_extended() to scan the packfiles of all sources
+	 * before consulting any source's loose object store, so that an object
+	 * that resides in an alternate's packfile is not preceded by a spurious
+	 * loose-object lookup on an earlier source.
+	 */
+	OBJECT_INFO_SKIP_LOOSE = (1 << 5),
+	OBJECT_INFO_SKIP_PACKED = (1 << 6),
+
+	/*
 	 * This is meant for bulk prefetching of missing blobs in a partial
 	 * clone. Implies OBJECT_INFO_SKIP_FETCH_OBJECT and OBJECT_INFO_QUICK.
 	 */
