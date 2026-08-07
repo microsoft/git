@@ -775,6 +775,27 @@ static int register_all_submodule_sources(struct object_database *odb)
 	return ret;
 }
 
+static enum odb_read_status read_object_info_from_sources(
+	struct object_database *odb, const struct object_id *oid,
+	struct object_info *oi, enum object_info_flags flags,
+	struct strbuf *errmsg)
+{
+	struct odb_source *source;
+	enum odb_read_status ret = ODB_READ_NOT_FOUND;
+
+	for (source = odb->sources; source; source = source->next) {
+		enum odb_read_status source_ret = odb_source_read_object_info(
+			source, oid, oi, flags, errmsg->len ? NULL : errmsg);
+
+		if (!source_ret)
+			return ODB_READ_OK;
+		if (source_ret != ODB_READ_NOT_FOUND)
+			ret = source_ret;
+	}
+
+	return ret;
+}
+
 static enum odb_read_status do_oid_object_info_extended(struct object_database *odb,
 							const struct object_id *oid,
 							struct object_info *oi, unsigned flags)
@@ -799,16 +820,24 @@ retry:
 
 	while (1) {
 		extern int core_use_gvfs_helper;
-		struct odb_source *source;
+		enum object_info_flags source_flags = flags;
 
-		for (source = odb->sources; source; source = source->next) {
-			ret = odb_source_read_object_info(source, real, oi, flags,
-							  corrupt_err.len ? NULL : &corrupt_err);
+		if (odb_has_alternates(odb)) {
+			ret = read_object_info_from_sources(odb, real, oi,
+				flags | OBJECT_INFO_SKIP_LOOSE, &corrupt_err);
 			if (!ret)
 				goto out;
 			if (ret != ODB_READ_NOT_FOUND)
 				corrupt = true;
+			source_flags |= OBJECT_INFO_SKIP_PACKED;
 		}
+
+		ret = read_object_info_from_sources(odb, real, oi, source_flags,
+						   &corrupt_err);
+		if (!ret)
+			goto out;
+		if (ret != ODB_READ_NOT_FOUND)
+			corrupt = true;
 
 		if (core_use_gvfs_helper && !tried_gvfs_helper &&
 		    !(flags & OBJECT_INFO_SKIP_FETCH_OBJECT)) {
@@ -838,15 +867,13 @@ retry:
 		 * caches or reload on-disk state.
 		 */
 		if (!(flags & OBJECT_INFO_QUICK)) {
-			for (source = odb->sources; source; source = source->next) {
-				ret = odb_source_read_object_info(source, real, oi,
-								  flags | OBJECT_INFO_SECOND_READ,
-								  corrupt_err.len ? NULL : &corrupt_err);
-				if (!ret)
-					goto out;
-				if (ret != ODB_READ_NOT_FOUND)
-					corrupt = true;
-			}
+			ret = read_object_info_from_sources(odb, real, oi,
+					flags | OBJECT_INFO_SECOND_READ,
+					&corrupt_err);
+			if (!ret)
+				goto out;
+			if (ret != ODB_READ_NOT_FOUND)
+				corrupt = true;
 			if (gvfs_virtualize_objects(odb->repo) && !tried_hook &&
 			    !(flags & OBJECT_INFO_SKIP_FETCH_OBJECT)) {
 				// TODO Assert or at least trace2 if gvfs-helper
