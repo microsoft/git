@@ -136,6 +136,10 @@ struct odb_source {
 	 *     second read in case they know that the first read would have
 	 *     already surfaced the object without reloading any on-disk state.
 	 *
+	 *   - `OBJECT_INFO_SKIP_LOOSE` and `OBJECT_INFO_SKIP_PACKED` tell the
+	 *     files backend not to consult its loose or packed source,
+	 *     respectively.
+	 *
 	 * The callback is expected to return an `enum odb_read_status`. Please
 	 * refer to the individual values that can be returned. In case reading
 	 * the object has failed with a generic error and `errmsg` is non-NULL,
