@@ -756,6 +756,19 @@ static int register_all_submodule_sources(struct object_database *odb)
 	return ret;
 }
 
+static int read_object_info_from_sources(struct object_database *odb,
+					 const struct object_id *oid,
+					 struct object_info *oi,
+					 enum object_info_flags flags)
+{
+	struct odb_source *source;
+
+	for (source = odb->sources; source; source = source->next)
+		if (!odb_source_read_object_info(source, oid, oi, flags))
+			return 0;
+	return -1;
+}
+
 static int do_oid_object_info_extended(struct object_database *odb,
 				       const struct object_id *oid,
 				       struct object_info *oi, unsigned flags)
@@ -781,9 +794,28 @@ retry:
 		extern int core_use_gvfs_helper;
 		struct odb_source *source;
 
-		for (source = odb->sources; source; source = source->next)
-			if (!odb_source_read_object_info(source, real, oi, flags))
+		/*
+		 * With one or more alternates, scan the packfiles of
+		 * every source before consulting any source's loose
+		 * object store. Otherwise a primary-source loose lookup
+		 * -- a filesystem stat that, without OBJECT_INFO_QUICK,
+		 * bypasses the cached loose index -- runs for every
+		 * object that resides in an alternate's packfile.
+		 * cache_tree_fully_valid() checks many tree objects that
+		 * live in an alternate, so this avoids a stat() per
+		 * object.
+		 */
+		if (odb->sources && odb->sources->next) {
+			if (!read_object_info_from_sources(odb, real, oi,
+					flags | OBJECT_INFO_SKIP_LOOSE))
 				return 0;
+			if (!read_object_info_from_sources(odb, real, oi,
+					flags | OBJECT_INFO_SKIP_PACKED))
+				return 0;
+		} else if (!read_object_info_from_sources(odb, real, oi,
+							  flags)) {
+			return 0;
+		}
 
 		if (core_use_gvfs_helper && !tried_gvfs_helper) {
 			enum gh_client__created ghc;
