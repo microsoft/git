@@ -83,17 +83,23 @@ static enum odb_read_status odb_source_files_read_object_info(struct odb_source 
 							      struct strbuf *errmsg)
 {
 	struct odb_source_files *files = odb_source_files_downcast(source);
-	enum odb_read_status ret_packed, ret_loose;
+	enum odb_read_status ret_packed = ODB_READ_NOT_FOUND;
+	enum odb_read_status ret_loose = ODB_READ_NOT_FOUND;
 
-	ret_packed = odb_source_read_object_info(&files->packed->base, oid, oi,
-						 flags, errmsg);
-	if (!ret_packed)
-		return 0;
+	if (!(flags & OBJECT_INFO_SKIP_PACKED)) {
+		ret_packed = odb_source_read_object_info(&files->packed->base,
+			oid, oi, flags, errmsg);
+		if (!ret_packed)
+			return 0;
+	}
 
-	ret_loose = odb_source_read_object_info(&files->loose->base, oid, oi, flags,
-						ret_packed == ODB_READ_NOT_FOUND ? errmsg : NULL);
-	if (!ret_loose)
-		return 0;
+	if (!(flags & OBJECT_INFO_SKIP_LOOSE)) {
+		ret_loose = odb_source_read_object_info(&files->loose->base,
+			oid, oi, flags,
+			ret_packed == ODB_READ_NOT_FOUND ? errmsg : NULL);
+		if (!ret_loose)
+			return 0;
+	}
 
 	/*
 	 * Reading the packed object may have failed even though the object
