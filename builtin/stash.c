@@ -33,6 +33,7 @@
 #include "add-interactive.h"
 #include "oid-array.h"
 #include "commit.h"
+#include "virtualfilesystem.h"
 
 #define INCLUDE_ALL_FILES 2
 
@@ -1285,15 +1286,34 @@ done:
 static int check_changes(const struct pathspec *ps, int include_untracked,
 			 struct strbuf *untracked_files)
 {
-	int ret = 0;
-	if (check_changes_tracked_files(ps))
-		ret = 1;
+	int ret = check_changes_tracked_files(ps);
+
+	if (ret < 0)
+		return ret;
 
 	if (include_untracked && get_untracked_files(ps, include_untracked,
 						     untracked_files))
 		ret = 1;
 
 	return ret;
+}
+
+static int check_tracked_files_accessible(const struct pathspec *ps)
+{
+	struct index_state *istate = the_repository->index;
+	struct stat st;
+
+	for (size_t i = 0; i < istate->cache_nr; i++) {
+		struct cache_entry *ce = istate->cache[i];
+
+		if (ce_stage(ce) || ce_skip_worktree(ce) ||
+		    !ce_path_match(istate, ce, ps, NULL))
+			continue;
+		if (lstat(ce->name, &st) < 0 &&
+		    errno != ENOENT && errno != ENOTDIR)
+			return error_errno(_("cannot stat '%s'"), ce->name);
+	}
+	return 0;
 }
 
 static int save_untracked_files(struct stash_info *info, struct strbuf *msg,
@@ -1521,9 +1541,30 @@ static int do_create_stash(const struct pathspec *ps, struct strbuf *stash_msg_b
 	prepare_fallback_ident("git stash", "git@stash");
 
 	repo_read_index_preload(the_repository, NULL, 0);
-	if (repo_refresh_and_write_index(the_repository, REFRESH_QUIET, 0, 0,
-					 NULL, NULL, NULL) < 0) {
-		ret = error(_("could not write index"));
+	ret = repo_refresh_and_write_index(the_repository,
+					   REFRESH_QUIET |
+					   REFRESH_FAIL_ON_STAT_ERROR,
+					   0, 0, NULL, NULL, NULL);
+	if (ret) {
+		ret = error(ret < 0 ?
+			    _("could not write index") :
+			    _("could not refresh index"));
+		goto done;
+	}
+
+	free_virtualfilesystem();
+	enable_fscache(0);
+	flush_fscache();
+	discard_index(the_repository->index);
+	if (repo_read_index(the_repository) < 0) {
+		ret = error(_("could not read index"));
+		goto done;
+	}
+	for (size_t i = 0; i < the_repository->index->cache_nr; i++)
+		the_repository->index->cache[i]->ce_flags &=
+			~(CE_UPTODATE | CE_FSMONITOR_VALID);
+	if (check_tracked_files_accessible(ps) < 0) {
+		ret = -1;
 		goto done;
 	}
 
@@ -1542,10 +1583,8 @@ static int do_create_stash(const struct pathspec *ps, struct strbuf *stash_msg_b
 		}
 	}
 
-	if (!check_changes(ps, include_untracked, &untracked_files)) {
-		ret = 1;
-		goto done;
-	}
+	if (include_untracked)
+		get_untracked_files(ps, include_untracked, &untracked_files);
 
 	branch_ref = refs_resolve_ref_unsafe(get_main_ref_store(the_repository),
 					     "HEAD", 0, NULL, &flags);
@@ -1731,11 +1770,15 @@ static int do_push_stash(const struct pathspec *ps, const char *stash_msg, int q
 		goto done;
 	}
 
-	if (!check_changes(ps, include_untracked, &untracked_files)) {
+	ret = check_changes(ps, include_untracked, &untracked_files);
+	if (ret < 0)
+		goto done;
+	if (!ret) {
 		if (!quiet)
 			printf_ln(_("No local changes to save"));
 		goto done;
 	}
+	ret = 0;
 
 	if (!refs_reflog_exists(get_main_ref_store(the_repository), ref_stash) && do_clear_stash()) {
 		ret = -1;

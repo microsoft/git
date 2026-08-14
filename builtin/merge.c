@@ -371,6 +371,9 @@ static int save_state(struct object_id *stash)
 		die(_("not a valid object: %s"), buffer.buf);
 	rc = 0;
 out:
+	discard_index(the_repository->index);
+	if (repo_read_index(the_repository) < 0)
+		die(_("could not read index"));
 	strbuf_release(&buffer);
 	return rc;
 }

@@ -457,6 +457,8 @@ int fake_lstat(const struct cache_entry *ce, struct stat *st);
 #define REFRESH_IN_PORCELAIN             (1 << 5) /* user friendly output, not "needs update" */
 #define REFRESH_PROGRESS                 (1 << 6) /* show progress bar if stderr is tty */
 #define REFRESH_IGNORE_SKIP_WORKTREE     (1 << 7) /* ignore skip_worktree entries */
+/* Report unexpected stat errors even when REFRESH_QUIET is set. */
+#define REFRESH_FAIL_ON_STAT_ERROR       (1 << 8)
 int refresh_index(struct index_state *, unsigned int flags, const struct pathspec *pathspec, char *seen, const char *header_msg);
 /*
  * Refresh the index and write it to disk.

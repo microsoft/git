@@ -1508,6 +1508,7 @@ int refresh_index(struct index_state *istate, unsigned int flags,
 	int not_new = (flags & REFRESH_IGNORE_MISSING) != 0;
 	int ignore_submodules = (flags & REFRESH_IGNORE_SUBMODULES) != 0;
 	int ignore_skip_worktree = (flags & REFRESH_IGNORE_SKIP_WORKTREE) != 0;
+	int fail_on_stat_error = (flags & REFRESH_FAIL_ON_STAT_ERROR) != 0;
 	int first = 1;
 	int in_porcelain = (flags & REFRESH_IN_PORCELAIN);
 	unsigned int options = (CE_MATCH_REFRESH |
@@ -1603,8 +1604,13 @@ int refresh_index(struct index_state *istate, unsigned int flags,
 				mark_fsmonitor_invalid(istate, ce);
 				istate->cache_changed |= CE_ENTRY_CHANGED;
 			}
-			if (quiet)
+			if (quiet) {
+				if (fail_on_stat_error &&
+				    cache_errno != EINVAL &&
+				    cache_errno != ENOENT)
+					has_errors = 1;
 				continue;
+			}
 
 			if (cache_errno == ENOENT)
 				fmt = deleted_fmt;
