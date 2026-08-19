@@ -25,8 +25,18 @@
 #include "trace2.h"
 #include "path.h"
 #include "json-parser.h"
+#include "gvfs.h"
 #include "remote.h"
 #include "path.h"
+
+/*
+ * The `core.gvfs` bitmask that `scalar clone` configures for enlistments
+ * that use the GVFS Protocol (historically the value `150`). See gvfs.h
+ * for the meaning of the individual bits.
+ */
+#define SCALAR_GVFS_MODE (GVFS_BLOCK_COMMANDS | GVFS_MISSING_OK | \
+			  GVFS_FETCH_SKIP_REACHABILITY_AND_UPLOADPACK | \
+			  GVFS_PREFETCH_DURING_FETCH)
 
 static int is_unattended(void) {
 	return git_env_bool("Scalar_UNATTENDED", 0);
@@ -780,7 +790,7 @@ static int cmd_clone(int argc, const char **argv)
 	const char *branch = NULL;
 	char *branch_to_free = NULL;
 	int full_clone = 0, single_branch = 0, show_progress = isatty(2);
-	int src = 1, tags = 1, maintenance = 1;
+	int src = 1, tags = 1, maintenance = 1, prefetch = 1;
 	const char *cache_server_url = NULL, *local_cache_root = NULL;
 	char *default_cache_server_url = NULL, *local_cache_root_abs = NULL;
 	const char *prefetch_server = NULL, *get_server = NULL, *post_server = NULL;
@@ -801,6 +811,9 @@ static int cmd_clone(int argc, const char **argv)
 			 N_("specify if tags should be fetched during clone")),
 		OPT_BOOL(0, "maintenance", &maintenance,
 			 N_("specify if background maintenance should be enabled")),
+		OPT_BOOL(0, "prefetch", &prefetch,
+			 N_("specify if commits and trees should be prefetched "
+			    "during clone when using the GVFS Protocol")),
 		OPT_BOOL(0, "gvfs-protocol", &gvfs_protocol,
 			 N_("force enable (or disable) the GVFS Protocol")),
 		OPT_STRING(0, "cache-server-url", &cache_server_url,
@@ -826,7 +839,8 @@ static int cmd_clone(int argc, const char **argv)
 	};
 	const char * const clone_usage[] = {
 		N_("scalar clone [--single-branch] [--branch <main-branch>] [--full-clone]\n"
-		   "\t[--[no-]src] [--[no-]tags] [--[no-]maintenance] [--ref-format <format>]\n"
+		   "\t[--[no-]src] [--[no-]tags] [--[no-]maintenance] [--[no-]prefetch]\n"
+		   "\t[--ref-format <format>]\n"
 		   "\t[--cache-server-url <url>] [--[verb]-cache-server-url <url>]\n"
 		   "\t[--local-cache-path <path>] <url> [<enlistment>]"),
 		NULL
@@ -977,7 +991,7 @@ static int cmd_clone(int argc, const char **argv)
 		if (!cache_server_url)
 			cache_server_url = default_cache_server_url;
 		if (set_config("core.useGVFSHelper=true") ||
-		    set_config("core.gvfs=150") ||
+		    set_config("core.gvfs=%d", SCALAR_GVFS_MODE) ||
 		    set_config("http.%s.version=HTTP/1.1", url)) {
 			res = error(_("could not turn on GVFS helper"));
 			goto cleanup;
@@ -1034,11 +1048,29 @@ static int cmd_clone(int argc, const char **argv)
 	if (set_recommended_config(0))
 		return error(_("could not configure '%s'"), dir);
 
-	if ((res = run_git("fetch", "--quiet",
-				show_progress ? "--progress" : "--no-progress",
-				"origin",
-				(tags ? NULL : "--no-tags"),
-				NULL))) {
+	strvec_clear(&init_argv);
+	/*
+	 * When cloning with the GVFS Protocol, the `core.gvfs` value set
+	 * above enables the GVFS_PREFETCH_DURING_FETCH bit, so the `git fetch`
+	 * below issues a `/gvfs/prefetch` request to hydrate the local object
+	 * cache. With `--no-prefetch`, skip that request for this initial
+	 * fetch only (by clearing that bit for this invocation) so the
+	 * worktree becomes ready sooner. The persisted `core.gvfs` value is
+	 * left untouched, so subsequent fetches -- including background
+	 * maintenance -- still prefetch as usual.
+	 */
+	if (gvfs_protocol && !prefetch) {
+		strvec_push(&init_argv, "-c");
+		strvec_pushf(&init_argv, "core.gvfs=%d",
+			     SCALAR_GVFS_MODE & ~GVFS_PREFETCH_DURING_FETCH);
+	}
+	strvec_pushl(&init_argv, "fetch", "--quiet",
+		     show_progress ? "--progress" : "--no-progress",
+		     "origin", NULL);
+	if (!tags)
+		strvec_push(&init_argv, "--no-tags");
+
+	if ((res = run_git_argv(&init_argv))) {
 		if (gvfs_protocol) {
 			res = error(_("failed to prefetch commits and trees"));
 			goto cleanup;

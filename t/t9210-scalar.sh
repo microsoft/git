@@ -461,6 +461,35 @@ test_expect_success '`scalar clone` with GVFS-enabled server' '
 	)
 '
 
+test_expect_success '`scalar clone --no-prefetch` skips the initial prefetch' '
+	git config --global core.askPass true &&
+
+	# A normal GVFS-enabled clone issues a "/gvfs/prefetch" request,
+	# which shows up in the trace as a "prefetch/since" data event.
+	GIT_TRACE2_EVENT="$(pwd)/with-prefetch-trace" scalar \
+		-c credential.interactive=true \
+		clone --gvfs-protocol --single-branch \
+		-- http://$ORIGIN_HOST_PORT/ with-prefetch &&
+	grep "prefetch/since" with-prefetch-trace &&
+
+	# ... but "--no-prefetch" skips that request during the clone.
+	GIT_TRACE2_EVENT="$(pwd)/no-prefetch-trace" scalar \
+		-c credential.interactive=true \
+		clone --no-prefetch --gvfs-protocol --single-branch \
+		-- http://$ORIGIN_HOST_PORT/ no-prefetch &&
+	! grep "prefetch/since" no-prefetch-trace &&
+
+	: the persisted core.gvfs still enables prefetch during fetch &&
+	echo 150 >expect &&
+	git -C no-prefetch/src config core.gvfs >actual &&
+	test_cmp expect actual &&
+
+	: and a subsequent git fetch performs the deferred prefetch &&
+	GIT_TRACE2_EVENT="$(pwd)/fetch-trace" \
+		git -C no-prefetch/src fetch origin &&
+	grep "prefetch/since" fetch-trace
+'
+
 test_expect_success '`scalar clone` with GVFS-enabled server; local cache path' '
 	: the fake cache server requires fake authentication &&
 	git config --global core.askPass true &&
