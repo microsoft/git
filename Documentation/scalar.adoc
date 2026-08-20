@@ -116,7 +116,9 @@ cloning. If the HEAD at the remote did not point at any branch when
 	issues a `/gvfs/prefetch` request to hydrate the local object cache
 	with the commits and trees that back the checked-out branch. Use
 	`--no-prefetch` to skip that request during the clone so that the
-	initial worktree becomes ready as quickly as possible.
+	initial worktree becomes ready as quickly as possible. The tip commit
+	and the trees needed for the initial checkout are still downloaded
+	through the `/gvfs/objects` endpoint.
 +
 This only affects the initial fetch performed by `scalar clone`: the
 prefetched data is still downloaded by the next `git fetch` (including the
