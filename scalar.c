@@ -26,6 +26,8 @@
 #include "path.h"
 #include "json-parser.h"
 #include "gvfs.h"
+#include "gvfs-helper-client.h"
+#include "object-name.h"
 #include "remote.h"
 #include "path.h"
 
@@ -1098,6 +1100,26 @@ static int cmd_clone(int argc, const char **argv)
 
 	strbuf_reset(&buf);
 	strbuf_addf(&buf, "origin/%s", branch);
+	if (gvfs_protocol && !prefetch) {
+		struct object_id checkout_oid;
+		enum gh_client__created ghc;
+
+		/*
+		 * A commit requested via the GVFS objects POST endpoint
+		 * includes the trees needed to check it out.
+		 */
+		repo_config(the_repository, git_default_config, NULL);
+		if (repo_get_oid(the_repository, buf.buf, &checkout_oid)) {
+			res = error(_("could not resolve '%s'"), buf.buf);
+			goto cleanup;
+		}
+		gh_client__queue_oid(&checkout_oid);
+		if (gh_client__drain_queue(&ghc)) {
+			res = error(_("failed to download trees for '%s'"),
+				    buf.buf);
+			goto cleanup;
+		}
+	}
 	res = run_git("checkout", "-f", "-t", buf.buf, NULL);
 	if (res)
 		goto cleanup;

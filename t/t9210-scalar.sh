@@ -463,6 +463,7 @@ test_expect_success '`scalar clone` with GVFS-enabled server' '
 
 test_expect_success '`scalar clone --no-prefetch` skips the initial prefetch' '
 	git config --global core.askPass true &&
+	tip=$(git rev-parse HEAD) &&
 
 	# A normal GVFS-enabled clone issues a "/gvfs/prefetch" request,
 	# which shows up in the trace as a "prefetch/since" data event.
@@ -472,12 +473,18 @@ test_expect_success '`scalar clone --no-prefetch` skips the initial prefetch' '
 		-- http://$ORIGIN_HOST_PORT/ with-prefetch &&
 	grep "prefetch/since" with-prefetch-trace &&
 
-	# ... but "--no-prefetch" skips that request during the clone.
-	GIT_TRACE2_EVENT="$(pwd)/no-prefetch-trace" scalar \
+	# ... but "--no-prefetch" skips that request during the clone while
+	# fetching the tip commit and its trees through the objects POST
+	# endpoint before checkout.
+	GIT_TRACE2_EVENT="$(pwd)/no-prefetch-trace" \
+		GIT_TRACE2_PERF="$(pwd)/no-prefetch-perf" scalar \
 		-c credential.interactive=true \
 		clone --no-prefetch --gvfs-protocol --single-branch \
 		-- http://$ORIGIN_HOST_PORT/ no-prefetch &&
 	! grep "prefetch/since" no-prefetch-trace &&
+	grep "gh_client__queue_oid: $tip" no-prefetch-perf &&
+	test_trace2_data gh-client objects/post/nr_objects 1 \
+		<no-prefetch-trace &&
 
 	: the persisted core.gvfs still enables prefetch during fetch &&
 	echo 150 >expect &&
