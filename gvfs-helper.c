@@ -390,6 +390,7 @@ static struct gh__global {
 	unsigned long connect_timeout_ms;
 
 	int prefetch_threads;
+	int post_threads;
 } gh__global;
 
 enum gh__server_type {
@@ -4690,6 +4691,16 @@ int cmd_main(int argc, const char **argv)
 			    &gh__global.prefetch_threads);
 	if (gh__global.prefetch_threads < 1)
 		gh__global.prefetch_threads = 1;
+
+	/*
+	 * Read gvfs.postThreads to control parallel POST requests.
+	 * Default to 1 (sequential) for backward compatibility.
+	 */
+	gh__global.post_threads = 1;
+	repo_config_get_int(the_repository, "gvfs.postthreads",
+			    &gh__global.post_threads);
+	if (gh__global.post_threads < 1)
+		gh__global.post_threads = 1;
 
 	argc = parse_options(argc, argv, NULL, main_options, main_usage,
 			     PARSE_OPT_STOP_AT_NON_OPTION);
