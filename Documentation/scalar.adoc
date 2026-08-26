@@ -9,7 +9,7 @@ SYNOPSIS
 --------
 [verse]
 scalar clone [--single-branch] [--branch <main-branch>] [--full-clone]
-	[--[no-]src] [--[no-]tags] [--[no-]maintenance]
+	[--[no-]src] [--[no-]tags] [--[no-]maintenance] [--[no-]prefetch]
 	[--cache-server-url <url>] [--[verb]-cache-server-url <url>]
 	[--local-cache-path <path>] <url> [<enlistment>]
 scalar list
@@ -109,6 +109,22 @@ cloning. If the HEAD at the remote did not point at any branch when
 	By default, `scalar clone` configures the enlistment to use Git's
 	background maintenance feature. Use the `--no-maintenance` to skip
 	this configuration.
+
+--prefetch::
+--no-prefetch::
+	By default, when cloning with the GVFS Protocol, `scalar clone`
+	issues a `/gvfs/prefetch` request to hydrate the local object cache
+	with the commits and trees that back the checked-out branch. Use
+	`--no-prefetch` to skip that request during the clone so that the
+	initial worktree becomes ready as quickly as possible. The tip commit
+	and the trees needed for the initial checkout are still downloaded
+	through the `/gvfs/objects` endpoint.
++
+This only affects the initial fetch performed by `scalar clone`: the
+prefetched data is still downloaded by the next `git fetch` (including the
+background maintenance `prefetch` task), so the object cache is populated
+shortly afterwards. This option has no effect when the GVFS Protocol is not
+in use.
 
 --local-cache-path <path>::
 	Override the path to the local cache root directory; Pre-fetched objects
