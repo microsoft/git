@@ -68,6 +68,8 @@ void step_active_slots(void);
 void http_init(struct remote *remote, const char *url,
 	       int proactive_auth);
 void http_cleanup(void);
+CURL *http_get_curl_handle(void);
+int http_cookies_configured(void);
 struct curl_slist *http_copy_default_headers(void);
 
 extern long int git_curl_ipresolve;
