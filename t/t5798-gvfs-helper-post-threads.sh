@@ -12,6 +12,10 @@ and to exercise both code paths in do__http_post__fetch_oidset().
 
 . "$TEST_DIRECTORY"/lib-gvfs-helper.sh
 
+test_lazy_prereq TIMEOUT '
+	type timeout >/dev/null 2>&1
+'
+
 # Helper: POST a set of OIDs and verify we get the expected packfiles.
 #
 do_post_blobs () {
@@ -97,6 +101,89 @@ verify_parallel_post_workers () {
 		sort -u | wc -l) &&
 	test "$nr_workers" -gt 1
 }
+
+do_post_corrupt_pack () {
+	test_must_fail \
+		git -C "$REPO_T1" gvfs-helper \
+			--cache-server=disable \
+			--remote=origin \
+			--no-progress \
+			post \
+			--block-size=2 \
+			--max-retries=0 \
+			<"$OIDS_BLOBS_FILE" >OUT.output 2>OUT.stderr &&
+
+	test_grep "error: post: index-pack failed" OUT.stderr
+}
+
+for value in unset 0 negative
+do
+	test_expect_success "postThreads=$value uses sequential mode" '
+		test_when_finished "per_test_cleanup" &&
+		start_gvfs_protocol_server &&
+		if test "'$value'" = unset
+		then
+			git -C "$REPO_T1" config --unset-all \
+				gvfs.postThreads || :
+		elif test "'$value'" = negative
+		then
+			git -C "$REPO_T1" config gvfs.postThreads -1
+		else
+			git -C "$REPO_T1" config gvfs.postThreads 0
+		fi &&
+
+		GIT_TRACE2_EVENT="$(pwd)/trace-$test_count.txt" &&
+		export GIT_TRACE2_EVENT &&
+
+		do_post_blobs_small_blocks &&
+
+		stop_gvfs_protocol_server &&
+		test_trace2_data gvfs-helper post/fetch_mode 1 \
+			<"trace-$test_count.txt"
+	'
+done
+
+test_expect_success 'malformed postThreads is rejected' '
+	test_when_finished "git -C \"$REPO_T1\" config --unset-all \
+		gvfs.postThreads" &&
+	git -C "$REPO_T1" config gvfs.postThreads invalid &&
+
+	test_must_fail git -C "$REPO_T1" gvfs-helper \
+		--cache-server=disable \
+		--remote=origin \
+		--no-progress \
+		post \
+		<"$OIDS_BLOBS_FILE" >OUT.output 2>OUT.stderr &&
+	test_grep "bad numeric config value" OUT.stderr
+'
+
+test_expect_success PTHREADS 'cookie configuration uses sequential POST' '
+	test_when_finished "per_test_cleanup" &&
+	test_when_finished "rm -f cookies" &&
+	>"cookies" &&
+	start_gvfs_protocol_server &&
+	git -C "$REPO_T1" config gvfs.postThreads 4 &&
+
+	GIT_TRACE2_EVENT="$(pwd)/trace-$test_count.txt" &&
+	export GIT_TRACE2_EVENT &&
+
+	git -C "$REPO_T1" \
+		-c http.cookieFile="$(pwd)/cookies" \
+		-c http.saveCookies=true \
+		gvfs-helper \
+		--cache-server=disable \
+		--remote=origin \
+		--no-progress \
+		post \
+		--block-size=2 \
+		<"$OIDS_BLOBS_FILE" >OUT.output 2>OUT.stderr &&
+
+	test_must_be_empty OUT.stderr &&
+	verify_objects_in_shared_cache "$OIDS_BLOBS_FILE" &&
+	stop_gvfs_protocol_server &&
+	test_trace2_data gvfs-helper post/fetch_mode 1 \
+		<"trace-$test_count.txt"
+'
 
 for threads in 1 4
 do
@@ -185,5 +272,171 @@ do
 			<"trace-$test_count.txt"
 	'
 done
+
+test_expect_success PTHREADS,TIMEOUT 'parallel POST does not deadlock' '
+	test_when_finished "per_test_cleanup" &&
+	start_gvfs_protocol_server &&
+	git -C "$REPO_T1" config gvfs.postThreads 4 &&
+
+	GIT_TRACE2_EVENT="$(pwd)/trace-$test_count.txt" &&
+	export GIT_TRACE2_EVENT &&
+
+	timeout 30 git -C "$REPO_T1" gvfs-helper \
+		--cache-server=disable \
+		--remote=origin \
+		--no-progress \
+		post \
+		--block-size=2 \
+		<"$OIDS_BLOBS_FILE" >OUT.output 2>OUT.stderr &&
+
+	test_must_be_empty OUT.stderr &&
+	verify_objects_in_shared_cache "$OIDS_BLOBS_FILE" &&
+	stop_gvfs_protocol_server &&
+	test_trace2_data gvfs-helper post/fetch_mode 4 \
+		<"trace-$test_count.txt"
+'
+
+test_expect_success PTHREADS 'parallel POST reports index-pack failure' '
+	test_when_finished "per_test_cleanup" &&
+	start_gvfs_protocol_server_with_mayhem bad_post_pack_sha &&
+	git -C "$REPO_T1" config gvfs.postThreads 4 &&
+
+	GIT_TRACE2_EVENT="$(pwd)/trace-$test_count.txt" &&
+	export GIT_TRACE2_EVENT &&
+
+	do_post_corrupt_pack &&
+
+	stop_gvfs_protocol_server &&
+	test_grep "bad_post_pack_sha" "$SERVER_LOG" &&
+	test_trace2_data gvfs-helper post/fetch_mode 4 \
+		<"trace-$test_count.txt"
+'
+
+test_expect_success PTHREADS 'parallel POST retries a corrupt pack' '
+	test_when_finished "per_test_cleanup" &&
+	start_gvfs_protocol_server_with_mayhem bad_post_pack_sha_1 &&
+	git -C "$REPO_T1" config gvfs.postThreads 4 &&
+
+	GIT_TRACE2_EVENT="$(pwd)/trace-$test_count.txt" &&
+	export GIT_TRACE2_EVENT &&
+
+	do_post_blobs_small_blocks &&
+
+	stop_gvfs_protocol_server &&
+	test_grep "bad_post_pack_sha_1" "$SERVER_LOG" &&
+	test_trace2_data gvfs-helper post/fetch_mode 4 \
+		<"trace-$test_count.txt"
+'
+
+test_expect_success PTHREADS 'parallel POST retries a transient HTTP error' '
+	test_when_finished "per_test_cleanup" &&
+	start_gvfs_protocol_server_with_mayhem http_429_1 &&
+	git -C "$REPO_T1" config gvfs.postThreads 4 &&
+
+	GIT_TRACE2_EVENT="$(pwd)/trace-$test_count.txt" &&
+	export GIT_TRACE2_EVENT &&
+
+	do_post_blobs_small_blocks &&
+
+	stop_gvfs_protocol_server &&
+	test_grep "http_429_1" "$SERVER_LOG" &&
+	test_trace2_data gvfs-helper post/fetch_mode 4 \
+		<"trace-$test_count.txt"
+'
+
+test_expect_success PTHREADS 'parallel POST retries authentication' '
+	test_when_finished "per_test_cleanup" &&
+	start_gvfs_protocol_server_with_mayhem http_401_1 &&
+	git -C "$REPO_T1" config gvfs.postThreads 4 &&
+
+	GIT_TRACE2_EVENT="$(pwd)/trace-$test_count.txt" &&
+	export GIT_TRACE2_EVENT &&
+
+	do_post_blobs_small_blocks &&
+
+	stop_gvfs_protocol_server &&
+	test_grep "http_401_1" "$SERVER_LOG" &&
+	test_trace2_data gvfs-helper post/fetch_mode 4 \
+		<"trace-$test_count.txt" &&
+	test_trace2_data gvfs-helper post/auth_retry 1 \
+		<"trace-$test_count.txt"
+'
+
+test_expect_success PTHREADS 'parallel POST falls back after cache 404' '
+	test_when_finished "per_test_cleanup" &&
+	start_gvfs_protocol_server_with_mayhem cache_http_404 &&
+	git -C "$REPO_T1" config gvfs.postThreads 4 &&
+
+	GIT_TRACE2_EVENT="$(pwd)/trace-$test_count.txt" &&
+	export GIT_TRACE2_EVENT &&
+
+	git -C "$REPO_T1" gvfs-helper \
+		--cache-server=trust \
+		--remote=origin \
+		--fallback \
+		--no-progress \
+		post \
+		--block-size=2 \
+		<"$OIDS_BLOBS_FILE" >OUT.output 2>OUT.stderr &&
+
+	test_must_be_empty OUT.stderr &&
+	verify_objects_in_shared_cache "$OIDS_BLOBS_FILE" &&
+	stop_gvfs_protocol_server &&
+	test_grep "cache_http_404" "$SERVER_LOG" &&
+	test_trace2_data gvfs-helper post/fetch_mode 4 \
+		<"trace-$test_count.txt"
+'
+
+test_expect_success PTHREADS 'parallel POST honors --no-fallback' '
+	test_when_finished "per_test_cleanup" &&
+	start_gvfs_protocol_server_with_mayhem cache_http_404 &&
+	git -C "$REPO_T1" config gvfs.postThreads 4 &&
+
+	GIT_TRACE2_EVENT="$(pwd)/trace-$test_count.txt" &&
+	export GIT_TRACE2_EVENT &&
+
+	test_must_fail \
+		git -C "$REPO_T1" gvfs-helper \
+			--cache-server=trust \
+			--remote=origin \
+			--no-fallback \
+			--no-progress \
+			post \
+			--block-size=2 \
+			<"$OIDS_BLOBS_FILE" >OUT.output 2>OUT.stderr &&
+
+	test_grep "error: post: (http:404)" OUT.stderr &&
+	stop_gvfs_protocol_server &&
+	test_grep "cache_http_404" "$SERVER_LOG" &&
+	test_trace2_data gvfs-helper post/fetch_mode 4 \
+		<"trace-$test_count.txt"
+'
+
+test_expect_success PTHREADS 'parallel POST preserves configured headers' '
+	test_when_finished "per_test_cleanup" &&
+	start_gvfs_protocol_server &&
+	git -C "$REPO_T1" config gvfs.postThreads 4 &&
+
+	GIT_TRACE2_EVENT="$(pwd)/trace-$test_count.txt" &&
+	export GIT_TRACE2_EVENT &&
+
+	git -C "$REPO_T1" \
+		-c http.extraHeader="X-Test-Header: parallel" \
+		-c gvfs.sessionkey=test.id \
+		-c test.id=parallel-session \
+		gvfs-helper \
+		--cache-server=disable \
+		--remote=origin \
+		--no-progress \
+		post \
+		--block-size=2 \
+		<"$OIDS_BLOBS_FILE" >OUT.output 2>OUT.stderr &&
+
+	test_must_be_empty OUT.stderr &&
+	stop_gvfs_protocol_server &&
+	test_grep "X-Test-Header: parallel" "$SERVER_LOG" &&
+	test_grep "X-Session-Id:.*parallel-session:.*-P" "$SERVER_LOG" &&
+	verify_parallel_post_workers "trace-$test_count.txt"
+'
 
 test_done
