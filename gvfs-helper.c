@@ -257,6 +257,8 @@
 #include "date.h"
 #include "versioncmp.h"
 #include "advice.h"
+#include "sigchain.h"
+#include "thread-utils.h"
 
 #define TR2_CAT "gvfs-helper"
 
@@ -1681,6 +1683,27 @@ static unsigned long build_json_payload__gvfs_objects(
 }
 
 /*
+ * Build a JSON payload for a subset of OIDs from a flat array.
+ * Used by the parallel POST workers which pre-partition OIDs.
+ */
+static void build_post_payload(struct json_writer *jw,
+			       const struct object_id *oids,
+			       unsigned long start, unsigned long count)
+{
+	unsigned long k;
+	char hex[GIT_MAX_HEXSZ + 1];
+
+	jw_init(jw);
+	jw_object_begin(jw, 0);
+	jw_object_intmax(jw, "commitDepth", gh__cmd_opts.depth);
+	jw_object_inline_begin_array(jw, "objectIds");
+	for (k = start; k < start + count; k++)
+		jw_array_string(jw, oid_to_hex_r(hex, &oids[k]));
+	jw_end(jw);
+	jw_end(jw);
+}
+
+/*
  * Lookup the creds for the main/origin Git server.
  */
 static void lookup_main_creds(void)
@@ -1950,6 +1973,25 @@ static void create_final_packfile_pathnames(
 
 	strbuf_release(&base);
 	strbuf_release(&path);
+}
+
+/*
+ * Thread-safe packfile finalization: move temp .pack and .idx to
+ * their final locations.  Tolerates races where another thread or
+ * process installed the same packfile concurrently.
+ */
+static int my_finalize_packfile_simple(const char *temp_pack,
+				       const char *temp_idx,
+				       const char *final_pack,
+				       const char *final_idx)
+{
+	if (finalize_object_file_flags(the_repository, temp_pack, final_pack,
+				       FOF_SKIP_COLLISION_CHECK) ||
+	    finalize_object_file_flags(the_repository, temp_idx, final_idx,
+				       FOF_SKIP_COLLISION_CHECK))
+		return -1;
+
+	return 0;
 }
 
 /*
@@ -3921,6 +3963,397 @@ cleanup:
 }
 
 /*
+ * Per-thread state for a parallel POST worker.  Each thread owns its
+ * own curl handle and index-pack child process.
+ */
+struct post_thread_data {
+	int thread_id;
+	CURL *curl;
+
+	/* Output */
+	enum gh__error_code ec;
+	struct strbuf error_message;
+	struct string_list result_list;
+	int had_404;
+};
+
+struct post_thread_ctx {
+	struct post_thread_data *workers;
+	int nr_workers;
+
+	/* Shared work queue: threads atomically claim blocks */
+	struct object_id *oid_array;
+	unsigned long nr_oids_total;
+	unsigned long block_size;
+	pthread_mutex_t work_mutex;
+
+	/*
+	 * Serializes start_command() across workers.  run-command.c creates
+	 * its pipes with plain pipe(), i.e. without O_CLOEXEC, so a fork()
+	 * racing with another thread's start_command() leaks that thread's
+	 * pipe fds into the wrong child.  The write end of a worker's
+	 * index-pack stdin then stays open in its sibling index-pack
+	 * processes, that child never sees EOF, and both it and the worker
+	 * waiting on it hang forever.  Holding this across the spawn *and*
+	 * the set_cloexec() calls closes the window.
+	 */
+	pthread_mutex_t spawn_mutex;
+	unsigned long next_block_start;
+
+	/* Shared read-only state (set before threads launch) */
+	const char *url;
+	const char *fallback_url; /* main server, used if cache fails */
+	const struct credential *creds;
+	struct curl_slist *common_headers;
+
+	pthread_mutex_t progress_mutex;
+	struct progress *progress;
+	int nr_finished;
+};
+
+/*
+ * Configure a curl handle for a gvfs/objects POST. The caller must set
+ * CURLOPT_WRITEFUNCTION and CURLOPT_WRITEDATA before performing the request.
+ */
+static void configure_post_curl_handle(CURL *curl,
+				       struct post_thread_ctx *ctx,
+				       const char *url,
+				       const char *payload,
+				       size_t payload_len)
+{
+	curl_easy_setopt(curl, CURLOPT_URL, url);
+	curl_easy_setopt(curl, CURLOPT_HTTPHEADER, ctx->common_headers);
+	curl_easy_setopt(curl, CURLOPT_POST, 1L);
+	curl_easy_setopt(curl, CURLOPT_ENCODING, NULL);
+	curl_easy_setopt(curl, CURLOPT_POSTFIELDS, payload);
+	curl_easy_setopt(curl, CURLOPT_POSTFIELDSIZE, (long)payload_len);
+	curl_easy_setopt(curl, CURLOPT_NOPROGRESS, 1L);
+	curl_easy_setopt(curl, CURLOPT_NOSIGNAL, 1L);
+	curl_easy_setopt(curl, CURLOPT_NOBODY, 0L);
+	curl_easy_setopt(curl, CURLOPT_FAILONERROR, 1L);
+
+	if (ctx->creds && ctx->creds->authtype && ctx->creds->credential) {
+		/*
+		 * Bearer token or other custom authtype from credential
+		 * manager. Already added to common_headers by caller.
+		 */
+	} else if (ctx->creds && ctx->creds->username) {
+		curl_easy_setopt(curl, CURLOPT_HTTPAUTH, CURLAUTH_BASIC);
+		curl_easy_setopt(curl, CURLOPT_USERNAME,
+				 ctx->creds->username);
+		curl_easy_setopt(curl, CURLOPT_PASSWORD,
+				 ctx->creds->password);
+	} else {
+		curl_easy_setopt(curl, CURLOPT_HTTPAUTH, CURLAUTH_ANY);
+		curl_easy_setopt(curl, CURLOPT_USERPWD, ":");
+	}
+
+	if (gh__global.connect_timeout_ms)
+		curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT_MS,
+				 gh__global.connect_timeout_ms);
+}
+
+struct post_thread_arg {
+	struct post_thread_data *td;
+	struct post_thread_ctx *ctx;
+};
+
+/*
+ * Curl write callback that streams data directly to a pipe fd.
+ */
+static size_t curl_write_to_fd(char *ptr, size_t size, size_t nmemb,
+			       void *userdata)
+{
+	int *fd = userdata;
+	size_t total = size * nmemb;
+
+	if (write_in_full(*fd, ptr, total) < 0)
+		return 0;
+	return total;
+}
+
+/*
+ * Spawn a child while holding ctx->spawn_mutex, then immediately mark the
+ * parent's pipe ends close-on-exec.
+ *
+ * run-command.c builds its pipes with plain pipe() (run-command.c:692,706,720)
+ * rather than pipe2(O_CLOEXEC), so every fd open in the process at fork() time
+ * is inherited by the new child.  With several workers spawning concurrently,
+ * worker A's index-pack inherits worker B's index-pack stdin write end.  B then
+ * closes its own copy, but A (and every other sibling) still holds one, so B's
+ * index-pack never sees EOF on stdin: it blocks in read() forever, and B blocks
+ * forever in finish_command() waiting for it to exit.
+ *
+ * Taking the mutex across both the spawn and the fcntl() calls means no other
+ * thread can fork between pipe creation and the fds being marked CLOEXEC.
+ */
+static int start_command_cloexec(struct post_thread_ctx *ctx,
+				 struct child_process *cp)
+{
+	int ret;
+
+	pthread_mutex_lock(&ctx->spawn_mutex);
+	ret = start_command(cp);
+	if (!ret) {
+		if (cp->in > 0)
+			fcntl(cp->in, F_SETFD,
+			      fcntl(cp->in, F_GETFD) | FD_CLOEXEC);
+		if (cp->out > 0)
+			fcntl(cp->out, F_SETFD,
+			      fcntl(cp->out, F_GETFD) | FD_CLOEXEC);
+	}
+	pthread_mutex_unlock(&ctx->spawn_mutex);
+
+	return ret;
+}
+
+/*
+ * Worker thread: streams HTTP POST response directly into an
+ * index-pack --stdin child process, then renames the resulting
+ * pack-<hash>.{pack,idx} to vfs-<hash>.{pack,idx}.
+ */
+static void *post_worker_thread_fn(void *arg)
+{
+	struct post_thread_arg *a = arg;
+	struct post_thread_data *td = a->td;
+	struct post_thread_ctx *ctx = a->ctx;
+
+	trace2_thread_start("post");
+
+	while (1) {
+		struct json_writer jw = JSON_WRITER_INIT;
+		struct child_process ip = CHILD_PROCESS_INIT;
+		struct strbuf ip_stdout = STRBUF_INIT;
+		struct strbuf final_pack = STRBUF_INIT;
+		struct strbuf final_idx = STRBUF_INIT;
+		struct strbuf final_name = STRBUF_INIT;
+		unsigned long block_start;
+		unsigned long count;
+		int retries = 0;
+		CURL *curl;
+		CURLcode res;
+		long http_code = 0;
+		int ip_stdin_fd;
+		const char *request_url;
+		int can_fallback;
+
+		/* Atomically claim the next block */
+		pthread_mutex_lock(&ctx->work_mutex);
+		block_start = ctx->next_block_start;
+		if (block_start >= ctx->nr_oids_total) {
+			pthread_mutex_unlock(&ctx->work_mutex);
+			break;
+		}
+		count = ctx->nr_oids_total - block_start;
+		if (count > ctx->block_size) {
+			if (count == ctx->block_size + 1)
+				count = ctx->block_size - 1;
+			else
+				count = ctx->block_size;
+		}
+		ctx->next_block_start = block_start + count;
+		pthread_mutex_unlock(&ctx->work_mutex);
+
+		request_url = ctx->url;
+		can_fallback = !!ctx->fallback_url;
+
+retry_block:
+		child_process_init(&ip);
+		build_post_payload(&jw, ctx->oid_array, block_start, count);
+
+		/*
+		 * Spawn index-pack --stdin.  Set GIT_OBJECT_DIRECTORY
+		 * so that it writes into the shared cache ODB.
+		 */
+		ip.git_cmd = 1;
+		strvec_push(&ip.args, "index-pack");
+		strvec_push(&ip.args, "--stdin");
+		strvec_push(&ip.args, "--no-rev-index");
+		strvec_pushf(&ip.env, "GIT_OBJECT_DIRECTORY=%s",
+			     gh__global.buf_odb_path.buf);
+		ip.in = -1;
+		ip.out = -1;
+		ip.no_stderr = 1;
+
+		if (start_command_cloexec(ctx, &ip)) {
+			strbuf_addf(&td->error_message,
+				    "cannot start index-pack (worker %d)",
+				    td->thread_id);
+			td->ec = GH__ERROR_CODE__INDEX_PACK_FAILED;
+			jw_release(&jw);
+			child_process_clear(&ip);
+			break;
+		}
+
+		ip_stdin_fd = ip.in;
+
+		curl = td->curl;
+		configure_post_curl_handle(curl, ctx, request_url,
+					   jw.json.buf, jw.json.len);
+		curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION,
+				 curl_write_to_fd);
+		curl_easy_setopt(curl, CURLOPT_WRITEDATA, &ip_stdin_fd);
+
+		res = curl_easy_perform(curl);
+		curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE,
+				  &http_code);
+
+		close(ip_stdin_fd);
+		jw_release(&jw);
+
+		/*
+		 * A failed response may already have written part of a pack.
+		 * Start a fresh index-pack before falling back to the main
+		 * server so the two response bodies cannot be concatenated.
+		 */
+		if (can_fallback &&
+		    (res != CURLE_OK ||
+		     (http_code != 200 && http_code != 404))) {
+			close(ip.out);
+			finish_command(&ip);
+			request_url = ctx->fallback_url;
+			can_fallback = 0;
+			strbuf_release(&ip_stdout);
+			strbuf_release(&final_pack);
+			strbuf_release(&final_idx);
+			strbuf_release(&final_name);
+			goto retry_block;
+		}
+
+		if (res != CURLE_OK || http_code != 200) {
+			close(ip.out);
+			finish_command(&ip);
+
+			if (http_code == 404) {
+				if (retries < gh__cmd_opts.max_retries) {
+					retries++;
+					sleep_millisec(1000 * retries);
+					strbuf_release(&ip_stdout);
+					strbuf_release(&final_pack);
+					strbuf_release(&final_idx);
+					strbuf_release(&final_name);
+					goto retry_block;
+				}
+				td->had_404 = 1;
+				pthread_mutex_lock(&ctx->progress_mutex);
+				ctx->nr_finished++;
+				display_progress(ctx->progress,
+						 ctx->nr_finished);
+				pthread_mutex_unlock(&ctx->progress_mutex);
+				strbuf_release(&ip_stdout);
+				continue;
+			}
+
+			if (res != CURLE_OK)
+				strbuf_addf(&td->error_message,
+					    "curl error: %s",
+					    curl_easy_strerror(res));
+			else
+				strbuf_addf(&td->error_message,
+					    "HTTP %ld from POST",
+					    http_code);
+			td->ec = GH__ERROR_CODE__INDEX_PACK_FAILED;
+			strbuf_release(&ip_stdout);
+			break;
+		}
+
+		/*
+		 * Read index-pack stdout and wait for exit.
+		 * With --stdin, format is: "pack\t<hash>\n"
+		 */
+		strbuf_read(&ip_stdout, ip.out, 128);
+		close(ip.out);
+
+		if (finish_command(&ip)) {
+			strbuf_addf(&td->error_message,
+				    "index-pack failed (worker %d)",
+				    td->thread_id);
+			td->ec = GH__ERROR_CODE__INDEX_PACK_FAILED;
+			strbuf_release(&ip_stdout);
+			child_process_clear(&ip);
+			break;
+		}
+		child_process_clear(&ip);
+
+		strbuf_trim_trailing_newline(&ip_stdout);
+
+		{
+			const char *hash_hex;
+			struct strbuf src_pack = STRBUF_INIT;
+			struct strbuf src_idx = STRBUF_INIT;
+
+			hash_hex = strchr(ip_stdout.buf, '\t');
+			if (hash_hex)
+				hash_hex++;
+			else
+				hash_hex = ip_stdout.buf;
+
+			/*
+			 * index-pack placed:
+			 *   <odb>/pack/pack-<hash>.pack
+			 *   <odb>/pack/pack-<hash>.idx
+			 * Rename to vfs-<hash>.{pack,idx}.
+			 */
+			strbuf_addf(&src_pack, "%s/pack/pack-%s.pack",
+				    gh__global.buf_odb_path.buf,
+				    hash_hex);
+			strbuf_addf(&src_idx, "%s/pack/pack-%s.idx",
+				    gh__global.buf_odb_path.buf,
+				    hash_hex);
+
+			create_final_packfile_pathnames(
+				"vfs", hash_hex, NULL,
+				&final_pack, &final_idx,
+				&final_name);
+
+			if (my_finalize_packfile_simple(
+				    src_pack.buf, src_idx.buf,
+				    final_pack.buf, final_idx.buf)) {
+				strbuf_addf(&td->error_message,
+					    "could not install packfile %s",
+					    final_name.buf);
+				td->ec =
+					GH__ERROR_CODE__INDEX_PACK_FAILED;
+			}
+			strbuf_release(&src_pack);
+			strbuf_release(&src_idx);
+		}
+
+		if (td->ec != GH__ERROR_CODE__OK) {
+			strbuf_release(&ip_stdout);
+			strbuf_release(&final_pack);
+			strbuf_release(&final_idx);
+			strbuf_release(&final_name);
+			break;
+		}
+
+		/* Record result */
+		{
+			struct strbuf msg = STRBUF_INIT;
+			strbuf_addf(&msg, "packfile %s", final_name.buf);
+			string_list_append(&td->result_list, msg.buf);
+			strbuf_release(&msg);
+		}
+
+		/* Update progress under mutex */
+		pthread_mutex_lock(&ctx->progress_mutex);
+		ctx->nr_finished++;
+		display_progress(ctx->progress, ctx->nr_finished);
+		pthread_mutex_unlock(&ctx->progress_mutex);
+
+		strbuf_release(&ip_stdout);
+		strbuf_release(&final_pack);
+		strbuf_release(&final_idx);
+		strbuf_release(&final_name);
+	}
+
+	curl_easy_cleanup(td->curl);
+	td->curl = NULL;
+	trace2_thread_exit();
+	return NULL;
+}
+
+/*
  * Drive one or more HTTP POST requests to bulk fetch the objects in
  * the given OIDSET.  Create one or more packfiles and/or loose objects.
  *
@@ -3944,6 +4377,200 @@ static void do__http_post__fetch_oidset(struct gh__response_status *status,
 	if (!nr_oid_total)
 		return;
 
+	if (HAVE_THREADS && gh__global.post_threads > 1 &&
+	    !http_cookies_configured() &&
+	    gh__cmd_opts.block_size > 1 && nr_oid_total > 1 &&
+	    (gh__cmd_opts.block_size > 2 || !(nr_oid_total & 1))) {
+		const struct object_id *oid;
+		struct object_id *oid_array;
+		int nr_workers;
+		struct post_thread_ctx ctx;
+		struct post_thread_arg *args;
+		pthread_t *threads;
+		struct strbuf url = STRBUF_INIT;
+		int nr_started = 0;
+		int i;
+
+		trace2_data_intmax(TR2_CAT, NULL,
+				   "post/threaded_mode",
+				   gh__global.post_threads);
+
+		/*
+		 * Pre-fill credentials before spawning threads so
+		 * all workers share the same (read-only) auth.
+		 */
+		lookup_main_creds();
+
+		/* Drain oidset into flat array */
+		ALLOC_ARRAY(oid_array, nr_oid_total);
+		oidset_iter_init(oids, &iter);
+		for (k = 0; (oid = oidset_iter_next(&iter)); k++)
+			oidcpy(&oid_array[k], oid);
+
+		nr_workers = MY_MIN((int)nr_oid_total,
+				    gh__global.post_threads);
+
+		/* Build URL (and fallback for cache-server mode) */
+		{
+			struct strbuf fallback = STRBUF_INIT;
+
+			if (gh__global.cache_server_url) {
+				end_url_with_slash(&url,
+					gh__global.cache_server_url);
+				end_url_with_slash(&fallback,
+					gh__global.main_url);
+				strbuf_addstr(&fallback, "gvfs/objects");
+			} else {
+				end_url_with_slash(&url,
+					gh__global.main_url);
+			}
+			strbuf_addstr(&url, "gvfs/objects");
+
+			memset(&ctx, 0, sizeof(ctx));
+			ctx.url = url.buf;
+			if (fallback.len)
+				ctx.fallback_url = strbuf_detach(
+					&fallback, NULL);
+			else
+				strbuf_release(&fallback);
+		}
+
+		ctx.creds = &gh__global.main_creds;
+		ctx.common_headers = http_copy_default_headers();
+		ctx.common_headers = curl_slist_append(
+			ctx.common_headers,
+			"X-TFS-FedAuthRedirect: Suppress");
+		ctx.common_headers = curl_slist_append(
+			ctx.common_headers, "Pragma: no-cache");
+		ctx.common_headers = curl_slist_append(
+			ctx.common_headers,
+			"Content-Type: application/json");
+		ctx.common_headers = curl_slist_append(
+			ctx.common_headers,
+			"Accept: application/x-git-packfile");
+		ctx.common_headers = curl_slist_append(
+			ctx.common_headers,
+			"Accept: application/x-git-loose-object");
+
+		/* Add bearer/custom auth to headers if needed */
+		if (gh__global.main_creds.authtype &&
+		    gh__global.main_creds.credential) {
+			struct strbuf auth = STRBUF_INIT;
+			strbuf_addf(&auth, "Authorization: %s %s",
+				    gh__global.main_creds.authtype,
+				    gh__global.main_creds.credential);
+			ctx.common_headers = curl_slist_append(
+				ctx.common_headers, auth.buf);
+			strbuf_release(&auth);
+		}
+
+		ctx.nr_workers = nr_workers;
+		ctx.nr_finished = 0;
+		pthread_mutex_init(&ctx.progress_mutex, NULL);
+
+		/* Shared work queue */
+		ctx.oid_array = oid_array;
+		ctx.nr_oids_total = nr_oid_total;
+		ctx.block_size = gh__cmd_opts.block_size;
+		ctx.next_block_start = 0;
+		pthread_mutex_init(&ctx.work_mutex, NULL);
+		pthread_mutex_init(&ctx.spawn_mutex, NULL);
+
+		if (gh__cmd_opts.show_progress) {
+			int total_blocks = (int)((nr_oid_total +
+				gh__cmd_opts.block_size - 1) /
+				gh__cmd_opts.block_size);
+			ctx.progress = start_progress(
+				the_repository,
+				"Fetching objects (parallel)",
+				total_blocks);
+		}
+
+		/* Allocate per-worker state */
+		CALLOC_ARRAY(ctx.workers, nr_workers);
+		ALLOC_ARRAY(args, nr_workers);
+		ALLOC_ARRAY(threads, nr_workers);
+
+		for (i = 0; i < nr_workers; i++) {
+			ctx.workers[i].thread_id = i;
+			ctx.workers[i].curl = http_get_curl_handle();
+			ctx.workers[i].ec = GH__ERROR_CODE__OK;
+			strbuf_init(&ctx.workers[i].error_message, 0);
+			ctx.workers[i].result_list.strdup_strings = 1;
+			ctx.workers[i].had_404 = 0;
+
+			args[i].td = &ctx.workers[i];
+			args[i].ctx = &ctx;
+		}
+
+		sigchain_push(SIGPIPE, SIG_IGN);
+
+		/* Spawn threads */
+		for (i = 0; i < nr_workers; i++) {
+			if (pthread_create(&threads[i], NULL,
+					   post_worker_thread_fn,
+					   &args[i])) {
+				strbuf_addf(&status->error_message,
+					    "pthread_create failed for "
+					    "worker %d", i);
+				status->ec =
+					GH__ERROR_CODE__INDEX_PACK_FAILED;
+				break;
+			}
+			nr_started++;
+		}
+
+		/* Wait for all threads */
+		for (i = 0; i < nr_started; i++)
+			pthread_join(threads[i], NULL);
+
+		sigchain_pop(SIGPIPE);
+
+		/* Collect results */
+		for (i = 0; i < nr_workers; i++) {
+			size_t j;
+			struct string_list *wrl;
+
+			wrl = &ctx.workers[i].result_list;
+			for (j = 0; j < wrl->nr; j++)
+				string_list_append(result_list,
+						   wrl->items[j].string);
+
+			if (ctx.workers[i].had_404)
+				had_404 = 1;
+
+			if (ctx.workers[i].ec != GH__ERROR_CODE__OK &&
+			    status->ec == GH__ERROR_CODE__OK) {
+				status->ec = ctx.workers[i].ec;
+				strbuf_addbuf(&status->error_message,
+					&ctx.workers[i].error_message);
+			}
+		}
+
+		if (had_404 && status->ec == GH__ERROR_CODE__OK)
+			status->ec = GH__ERROR_CODE__HTTP_404;
+
+		stop_progress(&ctx.progress);
+		pthread_mutex_destroy(&ctx.progress_mutex);
+		pthread_mutex_destroy(&ctx.work_mutex);
+		pthread_mutex_destroy(&ctx.spawn_mutex);
+		curl_slist_free_all(ctx.common_headers);
+		free((char *)ctx.fallback_url);
+		strbuf_release(&url);
+		for (i = 0; i < nr_workers; i++) {
+			if (ctx.workers[i].curl)
+				curl_easy_cleanup(ctx.workers[i].curl);
+			strbuf_release(&ctx.workers[i].error_message);
+			string_list_clear(
+				&ctx.workers[i].result_list, 0);
+		}
+		free(ctx.workers);
+		free(args);
+		free(threads);
+		free(oid_array);
+		return;
+	}
+
 	oidset_iter_init(oids, &iter);
 
 	j_pack_den = ((nr_oid_total + gh__cmd_opts.block_size - 1)
@@ -3958,33 +4585,16 @@ static void do__http_post__fetch_oidset(struct gh__response_status *status,
 					    result_list,
 					    &nr_oid_taken);
 
-		/*
-		 * Because the oidset iterator has random
-		 * order, it does no good to say the k-th or
-		 * n-th chunk was incomplete; the client
-		 * cannot use that index for anything.
-		 *
-		 * We get a 404 when at least one object in
-		 * the chunk was not found.
-		 *
-		 * For now, ignore the 404 and go on to the
-		 * next chunk and then fixup the 'ec' later.
-		 */
 		if (status->ec == GH__ERROR_CODE__HTTP_404) {
 			if (!err404.len)
 				strbuf_addf(&err404,
 					    "%s: from POST",
 					    status->error_message.buf);
-			/*
-			 * Mark the fetch as "incomplete", but don't
-			 * stop trying to get other chunks.
-			 */
 			had_404 = 1;
 			continue;
 		}
 
 		if (status->ec != GH__ERROR_CODE__OK) {
-			/* Stop at the first hard error. */
 			strbuf_addstr(&status->error_message,
 				      ": from POST");
 			goto cleanup;
