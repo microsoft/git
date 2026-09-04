@@ -1624,6 +1624,64 @@ void http_cleanup(void)
 	FREE_AND_NULL(cached_accept_language);
 }
 
+static void prepare_curl_handle(CURL *curl)
+{
+	if (curl_cookie_file && !strcmp(curl_cookie_file, "-")) {
+		warning(_("refusing to read cookies from http.cookiefile '-'"));
+		FREE_AND_NULL(curl_cookie_file);
+	}
+	curl_easy_setopt(curl, CURLOPT_COOKIEFILE, curl_cookie_file);
+	if (curl_save_cookies && (!curl_cookie_file || !curl_cookie_file[0])) {
+		curl_save_cookies = 0;
+		warning(_("ignoring http.savecookies for empty "
+			  "http.cookiefile"));
+	}
+	if (curl_save_cookies)
+		curl_easy_setopt(curl, CURLOPT_COOKIEJAR, curl_cookie_file);
+	curl_easy_setopt(curl, CURLOPT_HTTPHEADER, pragma_header);
+	curl_easy_setopt(curl, CURLOPT_RESOLVE, host_resolutions);
+	curl_easy_setopt(curl, CURLOPT_CUSTOMREQUEST, NULL);
+	curl_easy_setopt(curl, CURLOPT_READFUNCTION, NULL);
+	curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, NULL);
+	curl_easy_setopt(curl, CURLOPT_POSTFIELDS, NULL);
+	curl_easy_setopt(curl, CURLOPT_POSTFIELDSIZE, -1L);
+	curl_easy_setopt(curl, CURLOPT_UPLOAD, 0L);
+	curl_easy_setopt(curl, CURLOPT_HTTPGET, 1L);
+	curl_easy_setopt(curl, CURLOPT_FAILONERROR, 1L);
+	curl_easy_setopt(curl, CURLOPT_RANGE, NULL);
+
+	/*
+	 * Default following to off unless "ALWAYS" is configured; this gives
+	 * callers a sane starting point, and they can tweak for individual
+	 * HTTP_FOLLOW_* cases themselves.
+	 */
+	if (http_follow_config == HTTP_FOLLOW_ALWAYS)
+		curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1L);
+	else
+		curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 0L);
+
+	curl_easy_setopt(curl, CURLOPT_IPRESOLVE, git_curl_ipresolve);
+	curl_easy_setopt(curl, CURLOPT_HTTPAUTH, http_auth_methods);
+	if (http_auth.password || http_auth.credential ||
+	    curl_empty_auth_enabled())
+		init_curl_http_auth(curl);
+}
+
+CURL *http_get_curl_handle(void)
+{
+	CURL *curl = curl_easy_duphandle(curl_default);
+
+	if (!curl)
+		die("curl_easy_duphandle failed");
+	prepare_curl_handle(curl);
+	return curl;
+}
+
+int http_cookies_configured(void)
+{
+	return !!curl_cookie_file;
+}
+
 struct active_request_slot *get_active_slot(void)
 {
 	struct active_request_slot *slot = active_queue_head;
@@ -1670,44 +1728,8 @@ struct active_request_slot *get_active_slot(void)
 	slot->callback_data = NULL;
 	slot->callback_func = NULL;
 
-	if (curl_cookie_file && !strcmp(curl_cookie_file, "-")) {
-		warning(_("refusing to read cookies from http.cookiefile '-'"));
-		FREE_AND_NULL(curl_cookie_file);
-	}
-	curl_easy_setopt(slot->curl, CURLOPT_COOKIEFILE, curl_cookie_file);
-	if (curl_save_cookies && (!curl_cookie_file || !curl_cookie_file[0])) {
-		curl_save_cookies = 0;
-		warning(_("ignoring http.savecookies for empty http.cookiefile"));
-	}
-	if (curl_save_cookies)
-		curl_easy_setopt(slot->curl, CURLOPT_COOKIEJAR, curl_cookie_file);
-	curl_easy_setopt(slot->curl, CURLOPT_HTTPHEADER, pragma_header);
-	curl_easy_setopt(slot->curl, CURLOPT_RESOLVE, host_resolutions);
+	prepare_curl_handle(slot->curl);
 	curl_easy_setopt(slot->curl, CURLOPT_ERRORBUFFER, curl_errorstr);
-	curl_easy_setopt(slot->curl, CURLOPT_CUSTOMREQUEST, NULL);
-	curl_easy_setopt(slot->curl, CURLOPT_READFUNCTION, NULL);
-	curl_easy_setopt(slot->curl, CURLOPT_WRITEFUNCTION, NULL);
-	curl_easy_setopt(slot->curl, CURLOPT_POSTFIELDS, NULL);
-	curl_easy_setopt(slot->curl, CURLOPT_POSTFIELDSIZE, -1L);
-	curl_easy_setopt(slot->curl, CURLOPT_UPLOAD, 0L);
-	curl_easy_setopt(slot->curl, CURLOPT_HTTPGET, 1L);
-	curl_easy_setopt(slot->curl, CURLOPT_FAILONERROR, 1L);
-	curl_easy_setopt(slot->curl, CURLOPT_RANGE, NULL);
-
-	/*
-	 * Default following to off unless "ALWAYS" is configured; this gives
-	 * callers a sane starting point, and they can tweak for individual
-	 * HTTP_FOLLOW_* cases themselves.
-	 */
-	if (http_follow_config == HTTP_FOLLOW_ALWAYS)
-		curl_easy_setopt(slot->curl, CURLOPT_FOLLOWLOCATION, 1L);
-	else
-		curl_easy_setopt(slot->curl, CURLOPT_FOLLOWLOCATION, 0L);
-
-	curl_easy_setopt(slot->curl, CURLOPT_IPRESOLVE, git_curl_ipresolve);
-	curl_easy_setopt(slot->curl, CURLOPT_HTTPAUTH, http_auth_methods);
-	if (http_auth.password || http_auth.credential || curl_empty_auth_enabled())
-		init_curl_http_auth(slot->curl);
 
 	return slot;
 }
