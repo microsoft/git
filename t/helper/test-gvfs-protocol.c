@@ -309,6 +309,14 @@ static int mayhem_try_auth(struct req *req, enum worker_result *wr_out)
 {
 	*wr_out = WR_OK;
 
+	if (string_list_has_string(&mayhem_list, "http_401_1") &&
+	    mayhem_child == 0) {
+		logmayhem("http_401_1");
+		*wr_out = send_http_error(1, 401, "Unauthorized", -1,
+					  WR_MAYHEM);
+		return 1;
+	}
+
 	if (string_list_has_string(&mayhem_list, "http_401")) {
 		struct string_list_item *item;
 		int has_auth = 0;
@@ -906,7 +914,28 @@ static enum worker_result send_packfile_from_buffer(const struct strbuf *packfil
 		goto done;
 	}
 
-	if (write_in_full(1, packfile->buf, packfile->len) < 0) {
+	if ((string_list_has_string(&mayhem_list, "bad_post_pack_sha") ||
+	     (string_list_has_string(&mayhem_list, "bad_post_pack_sha_1") &&
+	      mayhem_child == 0)) &&
+	    packfile->len) {
+		char byte = packfile->buf[packfile->len - 1] ^ 0xff;
+
+		logmayhem("bad_post_pack_sha%s",
+			  string_list_has_string(&mayhem_list,
+						 "bad_post_pack_sha_1") ?
+			  "_1" : "");
+		if (write_in_full(1, packfile->buf, packfile->len - 1) < 0 ||
+		    write_in_full(1, &byte, 1) < 0) {
+			logerror("unable to write corrupt response body");
+			wr = WR_IO_ERROR;
+			goto done;
+		}
+		if (string_list_has_string(&mayhem_list,
+					   "bad_post_pack_sha_1")) {
+			wr = WR_MAYHEM | WR_HANGUP;
+			goto done;
+		}
+	} else if (write_in_full(1, packfile->buf, packfile->len) < 0) {
 		logerror("unable to write response content body");
 		wr = WR_IO_ERROR;
 		goto done;
@@ -1555,15 +1584,14 @@ static enum worker_result req__read(struct req *req, int fd)
 done:
 
 	/*
-	 * Log the X-Session-Id header if present (for testing purposes).
+	 * Log selected test headers if present.
 	 */
 	{
 		struct string_list_item *item;
 		for_each_string_list_item(item, &req->header_list) {
-			if (starts_with(item->string, "X-Session-Id:")) {
+			if (starts_with(item->string, "X-Session-Id:") ||
+			    starts_with(item->string, "X-Test-Header:"))
 				loginfo("Received header: %s", item->string);
-				break;
-			}
 		}
 	}
 
@@ -1600,6 +1628,11 @@ static enum worker_result dispatch(struct req *req)
 	enum worker_result wr;
 
 	if (strstr(req->uri_base.buf, MY_SERVER_TYPE__CACHE)) {
+		if (string_list_has_string(&mayhem_list, "cache_http_404")) {
+			logmayhem("cache_http_404");
+			return send_http_error(1, 404, "Not Found", -1,
+					       WR_MAYHEM);
+		}
 		if (string_list_has_string(&mayhem_list, "cache_http_503")) {
 			logmayhem("cache_http_503");
 			return send_http_error(1, 503, "Service Unavailable", 2,
