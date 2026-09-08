@@ -39,10 +39,10 @@ jobs:
       COVERITY_PLATFORM: overridden-below
       NO_RUST: Yup
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: install minimal Git for Windows SDK
         if: contains(matrix.os, 'windows')
-        uses: git-for-windows/setup-git-for-windows-sdk@v2
+        uses: git-for-windows/setup-git-for-windows-sdk@335917db02da4280d3d5e87915d7b86196677f9f # v2.1.0
       - run: ci/install-dependencies.sh
         if: contains(matrix.os, 'ubuntu') || contains(matrix.os, 'macos')
         env:
@@ -99,7 +99,7 @@ jobs:
       # A cache miss will add ~30s to create, but a cache hit will save minutes.
       - name: restore the Coverity Build Tool
         id: cache
-        uses: actions/cache/restore@v5
+        uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
         with:
           path: ${{ runner.temp }}/cov-analysis
           key: cov-build-${{ env.COVERITY_LANGUAGE }}-${{ env.COVERITY_PLATFORM }}-${{ steps.lookup.outputs.hash }}
@@ -142,7 +142,7 @@ jobs:
           esac
       - name: cache the Coverity Build Tool
         if: steps.cache.outputs.cache-hit != 'true'
-        uses: actions/cache/save@v5
+        uses: actions/cache/save@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
         with:
           path: ${{ runner.temp }}/cov-analysis
           key: cov-build-${{ env.COVERITY_LANGUAGE }}-${{ env.COVERITY_PLATFORM }}-${{ steps.lookup.outputs.hash }}

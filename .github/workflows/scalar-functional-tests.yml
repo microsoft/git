@@ -37,11 +37,11 @@ jobs:
 
     steps:
       - name: Check out Git's source code
-        uses: actions/checkout@v6
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
 
       - name: Setup build tools on Windows
         if: runner.os == 'Windows'
-        uses: git-for-windows/setup-git-for-windows-sdk@v2
+        uses: git-for-windows/setup-git-for-windows-sdk@335917db02da4280d3d5e87915d7b86196677f9f # v2.1.0
 
       - name: Provide a minimal `install` on Windows
         if: runner.os == 'Windows'
@@ -116,7 +116,7 @@ jobs:
           case "$(scalar version 2>&1)" in *.vfs.*) echo Good;; *) exit 1;; esac
 
       - name: Check out Scalar's source code
-        uses: actions/checkout@v6
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
         with:
           fetch-depth: 0 # Indicate full history so Nerdbank.GitVersioning works.
           path: scalar
@@ -137,7 +137,7 @@ jobs:
           mv $props.new $props
 
       - name: Setup .NET
-        uses: actions/setup-dotnet@v5
+        uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5.4.0
         with:
           dotnet-version: '9.0.306'
 
@@ -214,7 +214,7 @@ jobs:
 
       - name: Archive Trace2 Logs
         if: ( success() || failure() ) && ( steps.trace2_zip_unix.conclusion == 'success' || steps.trace2_zip_windows.conclusion == 'success' )
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: ${{ env.TRACE2_BASENAME }}.zip
           path: scalar/${{ env.TRACE2_BASENAME }}.zip
@@ -226,6 +226,6 @@ jobs:
       # Git for Windows, which runs a slightly incompatible MSYS2 runtime).
       - name: action-tmate
         if: env.DEBUG_WITH_TMATE == 'true' && failure()
-        uses: mxschmitt/action-tmate@v3
+        uses: mxschmitt/action-tmate@35b54afac29c97fb54faba5b513f8fbd1882f113 # v3.24
         with:
           limit-access-to-actor: true
