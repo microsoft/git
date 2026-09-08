@@ -41,7 +41,7 @@ jobs:
           echo "version=${GITHUB_REF#refs/tags/v}" >>$GITHUB_OUTPUT
         id: tag
       - name: Clone git
-        uses: actions/checkout@v6
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
       - name: Validate the tag identified with trigger
         run: |
           die () {
@@ -97,7 +97,7 @@ jobs:
           git config --global user.name "$USER_NAME" &&
           git config --global user.email "$USER_EMAIL" &&
           echo "PACKAGER=$USER_NAME <$USER_EMAIL>" >>$GITHUB_ENV
-      - uses: git-for-windows/setup-git-for-windows-sdk@v2
+      - uses: git-for-windows/setup-git-for-windows-sdk@335917db02da4280d3d5e87915d7b86196677f9f # v2.1.0
         with:
           flavor: build-installers
           architecture: ${{ matrix.arch.name }}
@@ -117,7 +117,7 @@ jobs:
           git fetch "https://github.com/${{github.repository}}" refs/tags/${tag_name}:refs/tags/${tag_name} &&
           git reset --hard ${tag_name}
       - name: Log in to Azure
-        uses: azure/login@v3
+        uses: azure/login@7ddb5af1ef8758cf1353cf3b42f940aee27ba21c # v3.0.2
         with:
           client-id: ${{ secrets.AZURE_CLIENT_ID }}
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
@@ -186,7 +186,7 @@ jobs:
           git commit -s -m "mingw-w64-git: new version ($version)" PKGBUILD &&
           git bundle create "$b"/MINGW-packages.bundle origin/main..main)
       - name: Publish mingw-w64-${{matrix.arch.toolchain}}-git
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: "${{ matrix.arch.artifact }}"
           path: artifacts
@@ -217,11 +217,11 @@ jobs:
     runs-on: ${{ matrix.arch.runner }}
     steps:
       - name: Download ${{ matrix.arch.artifact }}
-        uses: actions/download-artifact@v8
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: ${{ matrix.arch.artifact }}
           path: ${{ matrix.arch.artifact }}
-      - uses: git-for-windows/setup-git-for-windows-sdk@v2
+      - uses: git-for-windows/setup-git-for-windows-sdk@335917db02da4280d3d5e87915d7b86196677f9f # v2.1.0
         with:
           flavor: build-installers
           architecture: ${{ matrix.arch.name }}
@@ -230,7 +230,7 @@ jobs:
         run: |
           git clone --filter=blob:none --single-branch -b main https://github.com/git-for-windows/build-extra /usr/src/build-extra
       - name: Log in to Azure
-        uses: azure/login@v3
+        uses: azure/login@7ddb5af1ef8758cf1353cf3b42f940aee27ba21c # v3.0.2
         if: env.DO_WIN_CODESIGN == 'true'
         with:
           client-id: ${{ secrets.AZURE_CLIENT_ID }}
@@ -238,7 +238,7 @@ jobs:
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
       - name: Check out repository (for akv-secret Action)
         if: env.DO_WIN_CODESIGN == 'true'
-        uses: actions/checkout@v6
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
         with:
           path: git
       - name: Download code signing secrets
@@ -384,7 +384,7 @@ jobs:
           }
           exit $ret
       - name: Publish ${{matrix.type.name}}-${{matrix.arch.name}}
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: win-${{matrix.type.name}}-${{matrix.arch.name}}
           path: artifacts
@@ -399,7 +399,7 @@ jobs:
     environment: release
     steps:
       - name: Check out repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
         with:
           path: git
 
@@ -422,7 +422,7 @@ jobs:
           lipo -create -output libintl.a /usr/local/opt/gettext/lib/libintl.a /opt/homebrew/opt/gettext/lib/libintl.a
 
       - name: Log in to Azure
-        uses: azure/login@v3
+        uses: azure/login@7ddb5af1ef8758cf1353cf3b42f940aee27ba21c # v3.0.2
         with:
           client-id: ${{ secrets.AZURE_CLIENT_ID }}
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
@@ -574,7 +574,7 @@ jobs:
           mv git/.github/macos-installer/disk-image/*.pkg git/.github/macos-installer/
 
       - name: Upload artifacts
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: macos-artifacts
           path: |
@@ -627,7 +627,7 @@ jobs:
           tar -C /__e/node20 -x --strip-components=1 -f /tmp/node.tar.gz
 
       - name: Clone git
-        uses: actions/checkout@v6
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
         with:
           path: git
 
@@ -691,7 +691,7 @@ jobs:
           mv "$PKGNAME.deb" "$GITHUB_WORKSPACE"
 
       - name: Upload artifacts
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: linux-unsigned-${{ matrix.arch.name }}
           path: |
@@ -706,14 +706,14 @@ jobs:
     environment: release
     steps:
       - name: Log into Azure
-        uses: azure/login@v3
+        uses: azure/login@7ddb5af1ef8758cf1353cf3b42f940aee27ba21c # v3.0.2
         with:
           client-id: ${{ secrets.AZURE_CLIENT_ID }}
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
       - name: Check out repository (for akv-secret Action)
-        uses: actions/checkout@v6
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
         with:
           path: git
 
@@ -750,7 +750,7 @@ jobs:
           /usr/lib/gnupg2/gpg-preset-passphrase --preset '${{ steps.gpg-secrets.outputs.keygrip }}' <<<'${{ steps.gpg-secrets.outputs.passphrase }}'
 
       - name: Download artifacts
-        uses: actions/download-artifact@v8
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: linux-unsigned-${{ matrix.arch }}
 
@@ -761,7 +761,7 @@ jobs:
           debsigs --sign=origin --verify --check microsoft-git_"$version"_${{ matrix.arch }}.deb
 
       - name: Upload artifacts
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: linux-${{ matrix.arch }}
           path: |
@@ -796,7 +796,7 @@ jobs:
     needs: [prereqs, windows_artifacts, create-macos-artifacts, create-linux-artifacts]
     steps:
       - name: Download artifacts
-        uses: actions/download-artifact@v8
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: ${{ matrix.component.artifact }}
 
@@ -860,56 +860,56 @@ jobs:
         needs.windows_artifacts.result == 'success')
     steps:
       - name: Download Windows portable (x86_64)
-        uses: actions/download-artifact@v8
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: win-portable-x86_64
           path: win-portable-x86_64
 
       - name: Download Windows portable (aarch64)
-        uses: actions/download-artifact@v8
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: win-portable-aarch64
           path: win-portable-aarch64
 
       - name: Download Windows installer (x86_64)
-        uses: actions/download-artifact@v8
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: win-installer-x86_64
           path: win-installer-x86_64
 
       - name: Download Windows installer (aarch64)
-        uses: actions/download-artifact@v8
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: win-installer-aarch64
           path: win-installer-aarch64
 
       - name: Download macOS artifacts
-        uses: actions/download-artifact@v8
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: macos-artifacts
           path: macos-artifacts
 
       - name: Download Debian package (amd64)
-        uses: actions/download-artifact@v8
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: linux-amd64
           path: deb-package
 
       - name: Download Debian package (arm64)
-        uses: actions/download-artifact@v8
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: linux-arm64
           path: deb-package
 
       - name: Log into Azure
-        uses: azure/login@v3
+        uses: azure/login@7ddb5af1ef8758cf1353cf3b42f940aee27ba21c # v3.0.2
         with:
           client-id: ${{ secrets.AZURE_CLIENT_ID }}
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
       - name: Check out repository (for akv-secret Action)
-        uses: actions/checkout@v6
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
         with:
           path: git
 
@@ -920,7 +920,7 @@ jobs:
           secrets: |
             ${{ secrets.LINUX_GPG_PUBLIC_SECRET_NAME }} base64> deb-package/msft-git-public.asc
 
-      - uses: actions/github-script@v9
+      - uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
         with:
           script: |
             const fs = require('fs');
