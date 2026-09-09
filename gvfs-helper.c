@@ -257,6 +257,8 @@
 #include "date.h"
 #include "versioncmp.h"
 #include "advice.h"
+#include "sigchain.h"
+#include "thread-utils.h"
 
 #define TR2_CAT "gvfs-helper"
 
@@ -390,6 +392,7 @@ static struct gh__global {
 	unsigned long connect_timeout_ms;
 
 	int prefetch_threads;
+	int post_threads;
 } gh__global;
 
 enum gh__server_type {
@@ -1680,6 +1683,27 @@ static unsigned long build_json_payload__gvfs_objects(
 }
 
 /*
+ * Build a JSON payload for a subset of OIDs from a flat array.
+ * Used by the parallel POST workers which pre-partition OIDs.
+ */
+static void build_post_payload(struct json_writer *jw,
+			       const struct object_id *oids,
+			       size_t start, size_t count)
+{
+	size_t k;
+	char hex[GIT_MAX_HEXSZ + 1];
+
+	jw_init(jw);
+	jw_object_begin(jw, 0);
+	jw_object_intmax(jw, "commitDepth", gh__cmd_opts.depth);
+	jw_object_inline_begin_array(jw, "objectIds");
+	for (k = start; k < start + count; k++)
+		jw_array_string(jw, oid_to_hex_r(hex, &oids[k]));
+	jw_end(jw);
+	jw_end(jw);
+}
+
+/*
  * Lookup the creds for the main/origin Git server.
  */
 static void lookup_main_creds(void)
@@ -1949,6 +1973,35 @@ static void create_final_packfile_pathnames(
 
 	strbuf_release(&base);
 	strbuf_release(&path);
+}
+
+/*
+ * Thread-safe packfile finalization: move temp .pack and .idx to
+ * their final locations.  Tolerates races where another thread or
+ * process installed the same packfile concurrently.
+ */
+static int my_finalize_packfile_simple(const char *temp_pack,
+				       const char *temp_idx,
+				       const char *final_pack,
+				       const char *final_idx)
+{
+	if (finalize_object_file_flags(the_repository, temp_pack, final_pack,
+				       FOF_SKIP_COLLISION_CHECK) ||
+	    finalize_object_file_flags(the_repository, temp_idx, final_idx,
+				       FOF_SKIP_COLLISION_CHECK)) {
+		unlink(temp_pack);
+		unlink(temp_idx);
+
+		if (file_exists(final_pack) && file_exists(final_idx)) {
+			trace2_printf("%s: assuming ok for %s",
+				      TR2_CAT, final_pack);
+			return 0;
+		}
+
+		return -1;
+	}
+
+	return 0;
 }
 
 /*
@@ -2918,12 +2971,11 @@ static void parse_resp_hdr_1(const char *buffer, size_t size, size_t nitems,
 	strbuf_trim_trailing_newline(value);
 }
 
-static size_t parse_resp_hdr(char *buffer, size_t size, size_t nitems,
-			     void *void_params)
+static void parse_gvfs_response_header(
+	const char *buffer, size_t size, size_t nitems,
+	struct gh__azure_throttle *azure, struct strbuf *e2eid,
+	enum gh__server_type server_type)
 {
-	struct gh__request_params *params = void_params;
-	struct gh__azure_throttle *azure = &gh__global_throttle[params->server_type];
-
 	if (starts_with(buffer, "X-RateLimit-")) {
 		struct strbuf key = STRBUF_INIT;
 		struct strbuf val = STRBUF_INIT;
@@ -2944,7 +2996,8 @@ static size_t parse_resp_hdr(char *buffer, size_t size, size_t nitems,
 			 */
 			strbuf_setlen(&key, 0);
 			strbuf_addstr(&key, "ratelimit/resource");
-			strbuf_addstr(&key, gh__server_type_label[params->server_type]);
+			strbuf_addstr(&key,
+				      gh__server_type_label[server_type]);
 
 			trace2_data_string(TR2_CAT, NULL, key.buf, val.buf);
 		}
@@ -2958,7 +3011,8 @@ static size_t parse_resp_hdr(char *buffer, size_t size, size_t nitems,
 
 			strbuf_setlen(&key, 0);
 			strbuf_addstr(&key, "ratelimit/delay_ms");
-			strbuf_addstr(&key, gh__server_type_label[params->server_type]);
+			strbuf_addstr(&key,
+				      gh__server_type_label[server_type]);
 
 			git_parse_ulong(val.buf, &tarpit_delay_ms);
 
@@ -3031,10 +3085,21 @@ static size_t parse_resp_hdr(char *buffer, size_t size, size_t nitems,
 		 * Capture the E2EID as it goes by, but don't log it until we
 		 * know the request result.
 		 */
-		parse_resp_hdr_1(buffer, size, nitems, &key, &params->e2eid);
+		parse_resp_hdr_1(buffer, size, nitems, &key, e2eid);
 
 		strbuf_release(&key);
 	}
+}
+
+static size_t parse_resp_hdr(char *buffer, size_t size, size_t nitems,
+			     void *void_params)
+{
+	struct gh__request_params *params = void_params;
+	struct gh__azure_throttle *azure =
+		&gh__global_throttle[params->server_type];
+
+	parse_gvfs_response_header(buffer, size, nitems, azure,
+				   &params->e2eid, params->server_type);
 
 	return nitems * size;
 }
@@ -3920,6 +3985,806 @@ cleanup:
 }
 
 /*
+ * Per-thread state for a parallel POST worker.  Each thread owns its
+ * own curl handle and index-pack child process.
+ */
+struct post_thread_data {
+	int thread_id;
+	CURL *curl;
+	struct gh__azure_throttle throttle[GH__SERVER_TYPE__NR];
+
+	/* Output */
+	enum gh__error_code ec;
+	enum gh__retry_mode retry;
+	struct strbuf error_message;
+	struct string_list result_list;
+	int had_404;
+};
+
+struct post_thread_ctx {
+	struct post_thread_data *workers;
+	int nr_workers;
+
+	/* Shared work queue: threads atomically claim blocks */
+	struct object_id *oid_array;
+	size_t nr_oids_total;
+	size_t block_size;
+	pthread_mutex_t work_mutex;
+
+	/*
+	 * Serialize child setup and completion. Pipe descriptors must be
+	 * close-on-exec before another child starts, and finish_command()
+	 * invalidates process-global path state.
+	 */
+	pthread_mutex_t spawn_mutex;
+	size_t next_block_start;
+
+	/* Shared read-only state (set before threads launch) */
+	const char *url;
+	const char *fallback_url;
+	const char *second_fallback_url;
+	struct strbuf temp_dir;
+	struct curl_slist *main_headers;
+	struct curl_slist *cache_headers;
+	enum gh__server_type server_type;
+	enum gh__server_type fallback_server_type;
+	int stop_requested;
+
+	pthread_mutex_t throttle_mutex;
+	timestamp_t retry_after_until[GH__SERVER_TYPE__NR];
+	pthread_mutex_t progress_mutex;
+	struct progress *progress;
+	int nr_finished;
+};
+
+struct post_response_headers {
+	enum gh__server_type server_type;
+	struct gh__azure_throttle throttle;
+	struct strbuf e2eid;
+};
+
+struct post_attempt_data {
+	struct post_response_headers headers;
+	struct strbuf ip_stdout;
+	struct strbuf temp_pack;
+	struct strbuf temp_idx;
+	struct strbuf final_pack;
+	struct strbuf final_idx;
+	struct strbuf final_name;
+};
+
+#define POST_ATTEMPT_DATA_INIT { \
+	.headers = { \
+		.throttle = GH__AZURE_THROTTLE_INIT, \
+		.e2eid = STRBUF_INIT, \
+	}, \
+	.ip_stdout = STRBUF_INIT, \
+	.temp_pack = STRBUF_INIT, \
+	.temp_idx = STRBUF_INIT, \
+	.final_pack = STRBUF_INIT, \
+	.final_idx = STRBUF_INIT, \
+	.final_name = STRBUF_INIT, \
+}
+
+static void post_attempt_data_release(struct post_attempt_data *data)
+{
+	strbuf_release(&data->headers.e2eid);
+	strbuf_release(&data->ip_stdout);
+	strbuf_release(&data->temp_pack);
+	strbuf_release(&data->temp_idx);
+	strbuf_release(&data->final_pack);
+	strbuf_release(&data->final_idx);
+	strbuf_release(&data->final_name);
+	*data = (struct post_attempt_data)POST_ATTEMPT_DATA_INIT;
+}
+
+struct post_write_data {
+	int fd;
+	int write_error;
+};
+
+static size_t parse_post_response_header(char *buffer, size_t size,
+					 size_t nitems, void *userdata)
+{
+	struct post_response_headers *headers = userdata;
+
+	parse_gvfs_response_header(buffer, size, nitems,
+				   &headers->throttle, &headers->e2eid,
+				   headers->server_type);
+
+	return size * nitems;
+}
+
+static void log_post_e2eid(enum gh__server_type server_type,
+			   enum gh__retry_mode retry,
+			   const struct strbuf *e2eid)
+{
+	struct strbuf key = STRBUF_INIT;
+
+	if (!e2eid->len ||
+	    retry == GH__RETRY_MODE__SUCCESS ||
+	    retry == GH__RETRY_MODE__HTTP_401 ||
+	    retry == GH__RETRY_MODE__FAIL_404)
+		return;
+
+	strbuf_addstr(&key, "e2eid");
+	strbuf_addstr(&key, gh__server_type_label[server_type]);
+	trace2_data_string(TR2_CAT, NULL, key.buf, e2eid->buf);
+	strbuf_release(&key);
+}
+
+static struct curl_slist *build_post_headers(
+	const struct credential *creds)
+{
+	struct curl_slist *headers = http_copy_default_headers();
+
+	headers = curl_slist_append(headers,
+				   "X-TFS-FedAuthRedirect: Suppress");
+	headers = curl_slist_append(headers, "Pragma: no-cache");
+	headers = curl_slist_append(headers,
+				   "Content-Type: application/json");
+	headers = curl_slist_append(headers,
+				   "Accept: application/x-git-packfile");
+	headers = curl_slist_append(headers,
+				   "Accept: application/x-git-loose-object");
+	append_session_id_header(&headers);
+
+	if (creds->authtype && creds->credential) {
+		struct strbuf auth = STRBUF_INIT;
+
+		strbuf_addf(&auth, "Authorization: %s %s",
+			    creds->authtype, creds->credential);
+		headers = curl_slist_append(headers, auth.buf);
+		strbuf_release(&auth);
+	}
+
+	return headers;
+}
+
+/*
+ * Configure a curl handle for a gvfs/objects POST. The caller must set
+ * CURLOPT_WRITEFUNCTION and CURLOPT_WRITEDATA before performing the request.
+ */
+static void configure_post_curl_handle(CURL *curl,
+				       struct post_thread_ctx *ctx,
+				       enum gh__server_type server_type,
+				       const char *url,
+				       const char *payload,
+				       size_t payload_len,
+				       struct post_response_headers *headers)
+{
+	const struct credential *creds =
+		server_type == GH__SERVER_TYPE__CACHE ?
+		&gh__global.cache_creds : &gh__global.main_creds;
+	struct curl_slist *curl_headers =
+		server_type == GH__SERVER_TYPE__CACHE ?
+		ctx->cache_headers : ctx->main_headers;
+
+	curl_easy_setopt(curl, CURLOPT_URL, url);
+	curl_easy_setopt(curl, CURLOPT_HTTPHEADER, curl_headers);
+	curl_easy_setopt(curl, CURLOPT_POST, 1L);
+	curl_easy_setopt(curl, CURLOPT_ENCODING, NULL);
+	curl_easy_setopt(curl, CURLOPT_POSTFIELDS, payload);
+	curl_easy_setopt(curl, CURLOPT_POSTFIELDSIZE, (long)payload_len);
+	curl_easy_setopt(curl, CURLOPT_NOPROGRESS, 1L);
+	curl_easy_setopt(curl, CURLOPT_NOSIGNAL, 1L);
+	curl_easy_setopt(curl, CURLOPT_NOBODY, 0L);
+	/*
+	 * Older curl versions skip response headers when FAILONERROR is
+	 * enabled, which would hide Retry-After and authentication errors.
+	 */
+	curl_easy_setopt(curl, CURLOPT_FAILONERROR,
+			 curl_version_info(CURLVERSION_NOW)->version_num <
+			 0x074b00 ? 0L : 1L);
+	curl_easy_setopt(curl, CURLOPT_HEADERFUNCTION,
+			 parse_post_response_header);
+	curl_easy_setopt(curl, CURLOPT_HEADERDATA, headers);
+
+	if (creds->authtype && creds->credential) {
+		/*
+		 * Bearer token or other custom authtype from credential
+		 * manager. Already added to the request headers by caller.
+		 */
+	} else if (creds->username) {
+		curl_easy_setopt(curl, CURLOPT_HTTPAUTH, CURLAUTH_BASIC);
+		curl_easy_setopt(curl, CURLOPT_USERNAME,
+				 creds->username);
+		curl_easy_setopt(curl, CURLOPT_PASSWORD,
+				 creds->password);
+	} else {
+		curl_easy_setopt(curl, CURLOPT_HTTPAUTH, CURLAUTH_ANY);
+		curl_easy_setopt(curl, CURLOPT_USERPWD, ":");
+	}
+
+	if (gh__global.connect_timeout_ms)
+		curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT_MS,
+				 gh__global.connect_timeout_ms);
+}
+
+static void set_post_response_status(enum gh__server_type server_type,
+				     CURLcode curl_code,
+				     long http_response_code,
+				     struct gh__response_status *status)
+{
+	struct gh__request_params params = GH__REQUEST_PARAMS_INIT;
+
+	params.server_type = server_type;
+	http_response_code = gh__normalize_odd_codes(&params,
+						    http_response_code);
+	if (http_response_code >= 400 ||
+	    curl_code == CURLE_OK ||
+	    curl_code == CURLE_HTTP_RETURNED_ERROR)
+		compute_retry_mode_from_http_response(status,
+						      http_response_code);
+	else
+		compute_retry_mode_from_curl_error(status, curl_code);
+}
+
+static void stop_post_workers(struct post_thread_ctx *ctx)
+{
+	pthread_mutex_lock(&ctx->work_mutex);
+	ctx->stop_requested = 1;
+	pthread_mutex_unlock(&ctx->work_mutex);
+}
+
+static void wait_before_post_retry(enum gh__retry_mode retry,
+				   unsigned long retry_after_sec,
+				   int attempt)
+{
+	int delay_sec = 0;
+
+	if ((retry == GH__RETRY_MODE__HTTP_429 ||
+	     retry == GH__RETRY_MODE__HTTP_503) &&
+	    !retry_after_sec)
+		delay_sec = compute_transient_delay(attempt);
+	else if (retry == GH__RETRY_MODE__TRANSIENT)
+		delay_sec = compute_transient_delay(attempt);
+
+	if (delay_sec)
+		sleep_millisec(delay_sec * 1000);
+}
+
+static void record_post_retry_after(struct post_thread_ctx *ctx,
+				    enum gh__server_type server_type,
+				    unsigned long retry_after_sec)
+{
+	timestamp_t now = time(NULL);
+	timestamp_t retry_after_until;
+
+	if (!retry_after_sec)
+		return;
+
+	if (retry_after_sec > TIME_MAX - now)
+		retry_after_until = TIME_MAX;
+	else
+		retry_after_until = now + retry_after_sec;
+	pthread_mutex_lock(&ctx->throttle_mutex);
+	if (ctx->retry_after_until[server_type] < retry_after_until)
+		ctx->retry_after_until[server_type] = retry_after_until;
+	pthread_mutex_unlock(&ctx->throttle_mutex);
+}
+
+static void wait_for_post_retry_after(struct post_thread_ctx *ctx,
+				      enum gh__server_type server_type)
+{
+	while (1) {
+		timestamp_t retry_after_until;
+		timestamp_t now = time(NULL);
+
+		pthread_mutex_lock(&ctx->throttle_mutex);
+		retry_after_until = ctx->retry_after_until[server_type];
+		pthread_mutex_unlock(&ctx->throttle_mutex);
+
+		if (retry_after_until <= now)
+			return;
+
+		sleep_millisec(100);
+	}
+}
+
+static void wait_for_post_soft_throttle(
+	struct post_thread_data *td, enum gh__server_type server_type)
+{
+	struct gh__azure_throttle *throttle = &td->throttle[server_type];
+	unsigned long delay_sec = throttle->reset_sec;
+	timestamp_t now = time(NULL);
+	timestamp_t end;
+
+	/*
+	 * Soft throttling is kept per worker rather than synchronized. POST
+	 * parallelism is primarily used with cache servers, which are not
+	 * expected to send Azure DevOps rate-limit headers.
+	 */
+	gh__azure_throttle__zero(throttle);
+	if (!delay_sec)
+		return;
+
+	if (delay_sec > TIME_MAX - now)
+		end = TIME_MAX;
+	else
+		end = now + delay_sec;
+
+	while (now < end) {
+		sleep_millisec(100);
+		now = time(NULL);
+	}
+}
+
+struct post_thread_arg {
+	struct post_thread_data *td;
+	struct post_thread_ctx *ctx;
+};
+
+/*
+ * Curl write callback that streams data directly to a pipe fd.
+ */
+static size_t curl_write_to_fd(char *ptr, size_t size, size_t nmemb,
+			       void *userdata)
+{
+	struct post_write_data *data = userdata;
+	size_t total = size * nmemb;
+
+	if (write_in_full(data->fd, ptr, total) < 0) {
+		data->write_error = 1;
+		return 0;
+	}
+	return total;
+}
+
+static int mark_fd_cloexec(int fd)
+{
+	int flags = fcntl(fd, F_GETFD);
+
+	if (flags < 0 || fcntl(fd, F_SETFD, flags | FD_CLOEXEC) < 0)
+		return -1;
+	return 0;
+}
+
+/*
+ * Prepare the child's stdin and stdout pipes before start_command(). Holding
+ * the mutex through pipe creation, CLOEXEC setup, and spawn prevents another
+ * child from inheriting either worker's pipe ends.
+ */
+static int start_post_index_pack(struct post_thread_ctx *ctx,
+				 struct child_process *cp,
+				 int *stdin_fd, int *stdout_fd)
+{
+	int in_pipe[2] = { -1, -1 };
+	int out_pipe[2] = { -1, -1 };
+	int ret = -1;
+	int saved_errno;
+
+	pthread_mutex_lock(&ctx->spawn_mutex);
+	if (pipe(in_pipe) < 0 || pipe(out_pipe) < 0 ||
+	    mark_fd_cloexec(in_pipe[0]) ||
+	    mark_fd_cloexec(in_pipe[1]) ||
+	    mark_fd_cloexec(out_pipe[0]) ||
+	    mark_fd_cloexec(out_pipe[1]))
+		goto cleanup;
+
+	cp->in = in_pipe[0];
+	cp->out = out_pipe[1];
+	in_pipe[0] = -1;
+	out_pipe[1] = -1;
+
+	if (start_command(cp))
+		goto cleanup;
+
+	*stdin_fd = in_pipe[1];
+	*stdout_fd = out_pipe[0];
+	in_pipe[1] = -1;
+	out_pipe[0] = -1;
+	ret = 0;
+
+cleanup:
+	saved_errno = errno;
+	if (in_pipe[0] >= 0)
+		close(in_pipe[0]);
+	if (in_pipe[1] >= 0)
+		close(in_pipe[1]);
+	if (out_pipe[0] >= 0)
+		close(out_pipe[0]);
+	if (out_pipe[1] >= 0)
+		close(out_pipe[1]);
+	pthread_mutex_unlock(&ctx->spawn_mutex);
+	errno = saved_errno;
+
+	return ret;
+}
+
+static int finish_post_index_pack(struct post_thread_ctx *ctx,
+				  struct child_process *cp)
+{
+	int ret;
+
+	pthread_mutex_lock(&ctx->spawn_mutex);
+	ret = finish_command(cp);
+	pthread_mutex_unlock(&ctx->spawn_mutex);
+	return ret;
+}
+
+static int parse_index_pack_output(struct strbuf *output,
+				   struct object_id *pack_oid)
+{
+	const char *end;
+
+	if (!skip_prefix(output->buf, "pack\t", &end) ||
+	    parse_oid_hex(end, pack_oid, &end))
+		return -1;
+	if (*end == '\n')
+		end++;
+	return *end ? -1 : 0;
+}
+
+static void create_post_temp_paths(struct post_thread_ctx *ctx,
+				   int thread_id, size_t block_start,
+				   int attempt, struct strbuf *pack_path,
+				   struct strbuf *idx_path)
+{
+	strbuf_addf(pack_path, "%s/pack-%d-%"PRIuMAX"-%d.pack",
+		    ctx->temp_dir.buf, thread_id,
+		    (uintmax_t)block_start, attempt);
+	strbuf_addf(idx_path, "%s/pack-%d-%"PRIuMAX"-%d.idx",
+		    ctx->temp_dir.buf, thread_id,
+		    (uintmax_t)block_start, attempt);
+}
+
+/*
+ * Worker thread: streams HTTP POST response directly into an
+ * index-pack --stdin child process, then renames the resulting
+ * pack-<hash>.{pack,idx} to vfs-<hash>.{pack,idx}.
+ */
+static void *post_worker_thread_fn(void *arg)
+{
+	struct post_thread_arg *a = arg;
+	struct post_thread_data *td = a->td;
+	struct post_thread_ctx *ctx = a->ctx;
+
+	trace2_thread_start("post");
+
+	while (1) {
+		struct json_writer jw = JSON_WRITER_INIT;
+		struct child_process ip = CHILD_PROCESS_INIT;
+		struct post_attempt_data data = POST_ATTEMPT_DATA_INIT;
+		struct object_id pack_oid;
+		size_t block_start;
+		size_t count;
+		int attempt = 0;
+		int child_stdin = -1;
+		int child_stdout = -1;
+		CURL *curl;
+		CURLcode res;
+		long http_code = 0;
+		const char *request_url;
+		const char *fallback_url;
+		enum gh__server_type server_type;
+		enum gh__server_type fallback_server_type;
+
+		/* Atomically claim the next block */
+		pthread_mutex_lock(&ctx->work_mutex);
+		block_start = ctx->next_block_start;
+		if (ctx->stop_requested ||
+		    block_start >= ctx->nr_oids_total) {
+			pthread_mutex_unlock(&ctx->work_mutex);
+			break;
+		}
+		count = ctx->nr_oids_total - block_start;
+		if (count > ctx->block_size) {
+			if (count == ctx->block_size + 1)
+				count = ctx->block_size - 1;
+			else
+				count = ctx->block_size;
+		}
+		ctx->next_block_start = block_start + count;
+		pthread_mutex_unlock(&ctx->work_mutex);
+		trace2_data_intmax(TR2_CAT, NULL, "post/worker",
+				   td->thread_id);
+
+		request_url = ctx->url;
+		fallback_url = ctx->fallback_url;
+		server_type = ctx->server_type;
+		fallback_server_type = ctx->fallback_server_type;
+
+retry_block:
+		{
+			struct gh__response_status response =
+				GH__RESPONSE_STATUS_INIT;
+			struct post_write_data write_data = { 0 };
+
+		wait_for_post_retry_after(ctx, server_type);
+		wait_for_post_soft_throttle(td, server_type);
+
+		child_process_init(&ip);
+		build_post_payload(&jw, ctx->oid_array, block_start, count);
+		create_post_temp_paths(ctx, td->thread_id, block_start,
+				       attempt, &data.temp_pack,
+				       &data.temp_idx);
+
+		/*
+		 * Give each child unique output paths so concurrent requests
+		 * for the same pack cannot remove one another's source files.
+		 */
+		ip.git_cmd = 1;
+		strvec_push(&ip.args, "index-pack");
+		strvec_push(&ip.args, "--stdin");
+		strvec_push(&ip.args, "--no-rev-index");
+		strvec_pushl(&ip.args, "-o", data.temp_idx.buf, NULL);
+		strvec_push(&ip.args, data.temp_pack.buf);
+		strvec_pushf(&ip.env, "GIT_OBJECT_DIRECTORY=%s",
+			     gh__global.buf_odb_path.buf);
+		ip.no_stderr = 1;
+
+		if (start_post_index_pack(ctx, &ip, &child_stdin,
+					  &child_stdout)) {
+			strbuf_addf(&td->error_message,
+				    "cannot start index-pack (worker %d): %s",
+				    td->thread_id, strerror(errno));
+			td->ec = GH__ERROR_CODE__INDEX_PACK_FAILED;
+			td->retry = GH__RETRY_MODE__HARD_FAIL;
+			jw_release(&jw);
+			child_process_clear(&ip);
+			stop_post_workers(ctx);
+			gh__response_status__release(&response);
+			post_attempt_data_release(&data);
+			break;
+		}
+
+		write_data.fd = child_stdin;
+
+		curl = td->curl;
+		data.headers.server_type = server_type;
+		configure_post_curl_handle(curl, ctx, server_type,
+					   request_url,
+					   jw.json.buf, jw.json.len,
+					   &data.headers);
+		curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION,
+				 curl_write_to_fd);
+		curl_easy_setopt(curl, CURLOPT_WRITEDATA, &write_data);
+
+		http_code = 0;
+		trace2_region_enter_printf(TR2_CAT, "post/curl", NULL,
+					   "worker:%d attempt:%d",
+					   td->thread_id, attempt);
+		res = curl_easy_perform(curl);
+		trace2_region_leave(TR2_CAT, "post/curl", NULL);
+		curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE,
+				  &http_code);
+		td->throttle[server_type] = data.headers.throttle;
+
+		close(write_data.fd);
+		child_stdin = -1;
+		jw_release(&jw);
+
+		set_post_response_status(server_type, res, http_code,
+					 &response);
+		log_post_e2eid(server_type, response.retry,
+			       &data.headers.e2eid);
+		if (response.retry == GH__RETRY_MODE__HTTP_429 ||
+		    response.retry == GH__RETRY_MODE__HTTP_503)
+			record_post_retry_after(ctx, server_type,
+				data.headers.throttle.retry_after_sec);
+
+		if (response.retry != GH__RETRY_MODE__SUCCESS) {
+			close(child_stdout);
+			child_stdout = -1;
+			finish_post_index_pack(ctx, &ip);
+			child_process_clear(&ip);
+			unlink(data.temp_pack.buf);
+			unlink(data.temp_idx.buf);
+
+			if ((response.retry == GH__RETRY_MODE__TRANSIENT ||
+			     response.retry == GH__RETRY_MODE__HTTP_429 ||
+			     response.retry == GH__RETRY_MODE__HTTP_503) &&
+			    attempt < gh__cmd_opts.max_retries) {
+				wait_before_post_retry(
+					response.retry,
+					data.headers.throttle.retry_after_sec,
+					attempt);
+				attempt++;
+				gh__response_status__release(&response);
+				post_attempt_data_release(&data);
+				goto retry_block;
+			}
+
+			if (fallback_url &&
+			    (response.retry != GH__RETRY_MODE__HTTP_401 ||
+			     fallback_server_type ==
+			     GH__SERVER_TYPE__CACHE)) {
+				request_url = fallback_url;
+				server_type = fallback_server_type;
+				if (fallback_url == ctx->fallback_url &&
+				    ctx->second_fallback_url) {
+					fallback_url =
+						ctx->second_fallback_url;
+					fallback_server_type =
+						GH__SERVER_TYPE__MAIN;
+				} else {
+					fallback_url = NULL;
+				}
+				attempt = 0;
+				gh__response_status__release(&response);
+				post_attempt_data_release(&data);
+				goto retry_block;
+			}
+
+			if (response.retry == GH__RETRY_MODE__FAIL_404) {
+				td->had_404 = 1;
+				if (!td->error_message.len)
+					strbuf_addbuf(&td->error_message,
+						      &response.error_message);
+				pthread_mutex_lock(&ctx->progress_mutex);
+				ctx->nr_finished++;
+				display_progress(ctx->progress,
+						 ctx->nr_finished);
+				pthread_mutex_unlock(&ctx->progress_mutex);
+				gh__response_status__release(&response);
+				post_attempt_data_release(&data);
+				continue;
+			}
+
+			td->ec = response.ec;
+			td->retry = response.retry;
+			if (td->error_message.len)
+				strbuf_addstr(&td->error_message, "; ");
+			strbuf_addbuf(&td->error_message,
+				      &response.error_message);
+			strbuf_addstr(&td->error_message, ": from POST");
+			stop_post_workers(ctx);
+			gh__response_status__release(&response);
+			post_attempt_data_release(&data);
+			break;
+		}
+
+		/*
+		 * Read index-pack stdout and wait for exit.
+		 * With --stdin, format is: "pack\t<hash>\n"
+		 */
+		strbuf_read(&data.ip_stdout, child_stdout, 128);
+		close(child_stdout);
+		child_stdout = -1;
+
+		if (finish_post_index_pack(ctx, &ip) ||
+		    parse_index_pack_output(&data.ip_stdout, &pack_oid)) {
+			unlink(data.temp_pack.buf);
+			unlink(data.temp_idx.buf);
+			log_post_e2eid(server_type,
+				       GH__RETRY_MODE__TRANSIENT,
+				       &data.headers.e2eid);
+			child_process_clear(&ip);
+			gh__response_status__release(&response);
+
+			if (attempt < gh__cmd_opts.max_retries) {
+				wait_before_post_retry(
+					GH__RETRY_MODE__TRANSIENT, 0,
+					attempt);
+				attempt++;
+				post_attempt_data_release(&data);
+				goto retry_block;
+			}
+
+			if (fallback_url) {
+				request_url = fallback_url;
+				server_type = fallback_server_type;
+				if (fallback_url == ctx->fallback_url &&
+				    ctx->second_fallback_url) {
+					fallback_url =
+						ctx->second_fallback_url;
+					fallback_server_type =
+						GH__SERVER_TYPE__MAIN;
+				} else {
+					fallback_url = NULL;
+				}
+				attempt = 0;
+				post_attempt_data_release(&data);
+				goto retry_block;
+			}
+
+			strbuf_addf(&td->error_message,
+				    "index-pack failed (worker %d)",
+				    td->thread_id);
+			td->ec = GH__ERROR_CODE__INDEX_PACK_FAILED;
+			td->retry = GH__RETRY_MODE__HARD_FAIL;
+			stop_post_workers(ctx);
+			post_attempt_data_release(&data);
+			break;
+		}
+		child_process_clear(&ip);
+		gh__response_status__release(&response);
+
+		{
+			char hash_hex[GIT_MAX_HEXSZ + 1];
+
+			oid_to_hex_r(hash_hex, &pack_oid);
+
+			create_final_packfile_pathnames(
+				"vfs", hash_hex, NULL,
+				&data.final_pack, &data.final_idx,
+				&data.final_name);
+
+			if (my_finalize_packfile_simple(
+				    data.temp_pack.buf, data.temp_idx.buf,
+				    data.final_pack.buf,
+				    data.final_idx.buf)) {
+				strbuf_addf(&td->error_message,
+					    "could not install packfile %s",
+					    data.final_name.buf);
+				td->ec =
+					GH__ERROR_CODE__INDEX_PACK_FAILED;
+				td->retry = GH__RETRY_MODE__HARD_FAIL;
+			}
+		}
+
+		if (td->ec != GH__ERROR_CODE__OK) {
+			stop_post_workers(ctx);
+			post_attempt_data_release(&data);
+			break;
+		}
+
+		/* Record result */
+		{
+			struct strbuf msg = STRBUF_INIT;
+			strbuf_addf(&msg, "packfile %s",
+				    data.final_name.buf);
+			string_list_append(&td->result_list, msg.buf);
+			strbuf_release(&msg);
+		}
+
+		/* Update progress under mutex */
+		pthread_mutex_lock(&ctx->progress_mutex);
+		ctx->nr_finished++;
+		display_progress(ctx->progress, ctx->nr_finished);
+		pthread_mutex_unlock(&ctx->progress_mutex);
+
+		post_attempt_data_release(&data);
+		}
+	}
+
+	trace2_thread_exit();
+	return NULL;
+}
+
+static int create_post_temp_dir(struct post_thread_ctx *ctx,
+				struct gh__response_status *status)
+{
+	enum scld_error scld;
+
+	strbuf_addbuf(&ctx->temp_dir, &gh__global.buf_odb_path);
+	strbuf_complete(&ctx->temp_dir, '/');
+	strbuf_addstr(&ctx->temp_dir, "pack/tempPacks/post-XXXXXX");
+
+	scld = safe_create_leading_directories(the_repository,
+					       ctx->temp_dir.buf);
+	if (scld != SCLD_OK && scld != SCLD_EXISTS)
+		goto error;
+	if (!mkdtemp(ctx->temp_dir.buf))
+		goto error;
+	return 0;
+
+error:
+	strbuf_addf(&status->error_message,
+		    "could not create directory for POST packfiles: '%s'",
+		    ctx->temp_dir.buf);
+	status->ec = GH__ERROR_CODE__COULD_NOT_CREATE_TEMPFILE;
+	status->retry = GH__RETRY_MODE__HARD_FAIL;
+	return -1;
+}
+
+static int should_use_parallel_post(size_t nr_oids)
+{
+	if (!HAVE_THREADS || gh__global.post_threads <= 1 ||
+	    gh__cmd_opts.block_size <= 1 || nr_oids <= 1 ||
+	    http_cookies_configured())
+		return 0;
+
+	/*
+	 * With two-object blocks, an odd object count would leave one OID.
+	 * The server may return that request as a loose object, which cannot
+	 * be consumed by index-pack.
+	 */
+	return gh__cmd_opts.block_size > 2 || !(nr_oids & 1);
+}
+
+/*
  * Drive one or more HTTP POST requests to bulk fetch the objects in
  * the given OIDSET.  Create one or more packfiles and/or loose objects.
  *
@@ -3938,10 +4803,279 @@ static void do__http_post__fetch_oidset(struct gh__response_status *status,
 	int j_pack_den = 0;
 	int j_pack_num = 0;
 	int had_404 = 0;
+	int use_threaded;
 
 	gh__response_status__zero(status);
 	if (!nr_oid_total)
 		return;
+
+	use_threaded = should_use_parallel_post(nr_oid_total);
+	trace2_data_intmax(TR2_CAT, NULL, "post/fetch_mode",
+			   use_threaded ? gh__global.post_threads : 1);
+
+	if (use_threaded) {
+		const struct object_id *oid;
+		struct object_id *oid_array;
+		int nr_workers;
+		struct post_thread_ctx ctx;
+		struct post_thread_arg *args;
+		pthread_t *threads;
+		struct strbuf url = STRBUF_INIT;
+		size_t nr_batches;
+		int nr_started = 0;
+		int auth_retries = 0;
+		int i;
+		enum gh__server_type initial_server_type;
+
+		update_cache_server_for_verb(POST);
+		initial_server_type = gh__global.cache_server_url ?
+			GH__SERVER_TYPE__CACHE : GH__SERVER_TYPE__MAIN;
+
+		/*
+		 * Cache servers require pre-filled Basic credentials.
+		 * Main servers start with CURLAUTH_ANY so libcurl can
+		 * negotiate authentication before we fill credentials.
+		 */
+		if (initial_server_type == GH__SERVER_TYPE__CACHE)
+			synthesize_cache_server_creds();
+
+retry_threaded:
+		gh__response_status__zero(status);
+		had_404 = 0;
+		nr_started = 0;
+
+		/* Drain oidset into flat array */
+		ALLOC_ARRAY(oid_array, nr_oid_total);
+		oidset_iter_init(oids, &iter);
+		for (k = 0; (oid = oidset_iter_next(&iter)); k++)
+			oidcpy(&oid_array[k], oid);
+
+		nr_batches = nr_oid_total / gh__cmd_opts.block_size +
+			!!(nr_oid_total % gh__cmd_opts.block_size);
+		nr_workers = nr_batches <
+			(size_t)gh__global.post_threads ?
+			(int)nr_batches : gh__global.post_threads;
+
+		/* Build URL (and fallback for cache-server mode) */
+		{
+			struct strbuf fallback = STRBUF_INIT;
+			struct strbuf second_fallback = STRBUF_INIT;
+
+			if (gh__global.cache_server_url) {
+				end_url_with_slash(&url,
+					gh__global.cache_server_url);
+				if (gh__cmd_opts.try_fallback) {
+					const char *backup =
+						gh__global
+						.cache_server_url_backup;
+
+					if (backup) {
+						end_url_with_slash(&fallback,
+								   backup);
+						strbuf_addstr(&fallback,
+							      "gvfs/objects");
+						end_url_with_slash(
+							&second_fallback,
+							gh__global.main_url);
+						strbuf_addstr(&second_fallback,
+							      "gvfs/objects");
+					} else {
+						end_url_with_slash(&fallback,
+							gh__global.main_url);
+						strbuf_addstr(&fallback,
+							      "gvfs/objects");
+					}
+				}
+			} else {
+				end_url_with_slash(&url,
+					gh__global.main_url);
+			}
+			strbuf_addstr(&url, "gvfs/objects");
+
+			memset(&ctx, 0, sizeof(ctx));
+			strbuf_init(&ctx.temp_dir, 0);
+			ctx.url = url.buf;
+			if (fallback.len)
+				ctx.fallback_url = strbuf_detach(
+					&fallback, NULL);
+			else
+				strbuf_release(&fallback);
+			if (second_fallback.len)
+				ctx.second_fallback_url = strbuf_detach(
+					&second_fallback, NULL);
+			else
+				strbuf_release(&second_fallback);
+		}
+
+		ctx.server_type = initial_server_type;
+		ctx.fallback_server_type =
+			ctx.second_fallback_url ?
+			GH__SERVER_TYPE__CACHE : GH__SERVER_TYPE__MAIN;
+		if (create_post_temp_dir(&ctx, status)) {
+			free((char *)ctx.fallback_url);
+			free((char *)ctx.second_fallback_url);
+			strbuf_release(&ctx.temp_dir);
+			strbuf_release(&url);
+			free(oid_array);
+			reset_cache_server();
+			return;
+		}
+		ctx.main_headers = build_post_headers(
+			&gh__global.main_creds);
+		ctx.cache_headers = build_post_headers(
+			&gh__global.cache_creds);
+
+		ctx.nr_workers = nr_workers;
+		ctx.nr_finished = 0;
+		pthread_mutex_init(&ctx.progress_mutex, NULL);
+
+		/* Shared work queue */
+		ctx.oid_array = oid_array;
+		ctx.nr_oids_total = nr_oid_total;
+		ctx.block_size = gh__cmd_opts.block_size;
+		ctx.next_block_start = 0;
+		pthread_mutex_init(&ctx.work_mutex, NULL);
+		pthread_mutex_init(&ctx.spawn_mutex, NULL);
+		pthread_mutex_init(&ctx.throttle_mutex, NULL);
+
+		if (gh__cmd_opts.show_progress) {
+			int total_blocks = (int)((nr_oid_total +
+				gh__cmd_opts.block_size - 1) /
+				gh__cmd_opts.block_size);
+			ctx.progress = start_progress(
+				the_repository,
+				"Fetching objects (parallel)",
+				total_blocks);
+		}
+
+		/* Allocate per-worker state */
+		CALLOC_ARRAY(ctx.workers, nr_workers);
+		ALLOC_ARRAY(args, nr_workers);
+		ALLOC_ARRAY(threads, nr_workers);
+
+		for (i = 0; i < nr_workers; i++) {
+			ctx.workers[i].thread_id = i;
+			ctx.workers[i].curl = http_get_curl_handle();
+			ctx.workers[i].ec = GH__ERROR_CODE__OK;
+			ctx.workers[i].retry =
+				GH__RETRY_MODE__SUCCESS;
+			strbuf_init(&ctx.workers[i].error_message, 0);
+			ctx.workers[i].result_list.strdup_strings = 1;
+			ctx.workers[i].had_404 = 0;
+
+			args[i].td = &ctx.workers[i];
+			args[i].ctx = &ctx;
+		}
+
+		sigchain_push(SIGPIPE, SIG_IGN);
+
+		/* Spawn threads */
+		for (i = 0; i < nr_workers; i++) {
+			if (pthread_create(&threads[i], NULL,
+					   post_worker_thread_fn,
+					   &args[i])) {
+				strbuf_addf(&status->error_message,
+					    "pthread_create failed for "
+					    "worker %d", i);
+				status->ec =
+					GH__ERROR_CODE__INDEX_PACK_FAILED;
+				status->retry =
+					GH__RETRY_MODE__HARD_FAIL;
+				break;
+			}
+			nr_started++;
+		}
+
+		/* Wait for all threads */
+		for (i = 0; i < nr_started; i++)
+			pthread_join(threads[i], NULL);
+
+		/* Collect results */
+		for (i = 0; i < nr_workers; i++) {
+			if (ctx.workers[i].had_404)
+				had_404 = 1;
+
+			if (ctx.workers[i].ec != GH__ERROR_CODE__OK &&
+			    status->ec == GH__ERROR_CODE__OK) {
+				status->ec = ctx.workers[i].ec;
+				status->retry = ctx.workers[i].retry;
+				strbuf_addbuf(&status->error_message,
+					&ctx.workers[i].error_message);
+			}
+		}
+
+		for (i = 0;
+		     status->retry != GH__RETRY_MODE__HTTP_401 &&
+		     i < nr_workers;
+		     i++) {
+			size_t j;
+			struct string_list *wrl =
+				&ctx.workers[i].result_list;
+
+			for (j = 0; j < wrl->nr; j++)
+				string_list_append(result_list,
+						   wrl->items[j].string);
+		}
+
+		if (had_404 && status->ec == GH__ERROR_CODE__OK) {
+			for (i = 0; i < nr_workers; i++) {
+				if (ctx.workers[i].had_404) {
+					strbuf_addbuf(&status->error_message,
+						&ctx.workers[i].error_message);
+					break;
+				}
+			}
+			status->ec = GH__ERROR_CODE__HTTP_404;
+			status->retry = GH__RETRY_MODE__FAIL_404;
+		}
+
+		stop_progress(&ctx.progress);
+		pthread_mutex_destroy(&ctx.progress_mutex);
+		pthread_mutex_destroy(&ctx.work_mutex);
+		pthread_mutex_destroy(&ctx.spawn_mutex);
+		pthread_mutex_destroy(&ctx.throttle_mutex);
+		curl_slist_free_all(ctx.main_headers);
+		curl_slist_free_all(ctx.cache_headers);
+		free((char *)ctx.fallback_url);
+		free((char *)ctx.second_fallback_url);
+		remove_dir_recursively(&ctx.temp_dir, 0);
+		strbuf_release(&ctx.temp_dir);
+		strbuf_release(&url);
+		for (i = 0; i < nr_workers; i++) {
+			if (ctx.workers[i].curl)
+				curl_easy_cleanup(ctx.workers[i].curl);
+			strbuf_release(&ctx.workers[i].error_message);
+			string_list_clear(
+				&ctx.workers[i].result_list, 0);
+		}
+		free(ctx.workers);
+		free(args);
+		free(threads);
+		free(oid_array);
+		sigchain_pop(SIGPIPE);
+
+		if (status->retry == GH__RETRY_MODE__HTTP_401 &&
+		    !auth_retries) {
+			auth_retries++;
+			trace2_data_intmax(TR2_CAT, NULL,
+					   "post/auth_retry",
+					   auth_retries);
+			if (initial_server_type == GH__SERVER_TYPE__CACHE)
+				refresh_cache_server_creds();
+			else
+				refresh_main_creds();
+			goto retry_threaded;
+		}
+
+		if (status->ec == GH__ERROR_CODE__OK) {
+			if (initial_server_type == GH__SERVER_TYPE__CACHE)
+				approve_cache_server_creds();
+			else
+				approve_main_creds();
+		}
+		reset_cache_server();
+		return;
+	}
 
 	oidset_iter_init(oids, &iter);
 
@@ -3958,16 +5092,13 @@ static void do__http_post__fetch_oidset(struct gh__response_status *status,
 					    &nr_oid_taken);
 
 		/*
-		 * Because the oidset iterator has random
-		 * order, it does no good to say the k-th or
-		 * n-th chunk was incomplete; the client
-		 * cannot use that index for anything.
+		 * Because the oidset iterator has random order, it does no
+		 * good to say the k-th or n-th chunk was incomplete; the
+		 * client cannot use that index for anything.
 		 *
-		 * We get a 404 when at least one object in
-		 * the chunk was not found.
-		 *
-		 * For now, ignore the 404 and go on to the
-		 * next chunk and then fixup the 'ec' later.
+		 * We get a 404 when at least one object in the chunk was not
+		 * found. For now, ignore the 404, continue with the next
+		 * chunk, and fix up the error code later.
 		 */
 		if (status->ec == GH__ERROR_CODE__HTTP_404) {
 			if (!err404.len)
@@ -3975,8 +5106,8 @@ static void do__http_post__fetch_oidset(struct gh__response_status *status,
 					    "%s: from POST",
 					    status->error_message.buf);
 			/*
-			 * Mark the fetch as "incomplete", but don't
-			 * stop trying to get other chunks.
+			 * Mark the fetch as "incomplete", but don't stop trying
+			 * to get other chunks.
 			 */
 			had_404 = 1;
 			continue;
@@ -4690,6 +5821,18 @@ int cmd_main(int argc, const char **argv)
 			    &gh__global.prefetch_threads);
 	if (gh__global.prefetch_threads < 1)
 		gh__global.prefetch_threads = 1;
+
+	/*
+	 * Read gvfs.postThreads to control parallel POST requests.
+	 * Default to 1 (sequential) for backward compatibility.
+	 */
+	gh__global.post_threads = 1;
+	repo_config_get_int(the_repository, "gvfs.postthreads",
+			    &gh__global.post_threads);
+	if (gh__global.post_threads < 1)
+		gh__global.post_threads = 1;
+	else if (!HAVE_THREADS && gh__global.post_threads > 1)
+		warning(_("no threads support, ignoring gvfs.postThreads"));
 
 	argc = parse_options(argc, argv, NULL, main_options, main_usage,
 			     PARSE_OPT_STOP_AT_NON_OPTION);

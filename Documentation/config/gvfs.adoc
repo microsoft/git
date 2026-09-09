@@ -55,3 +55,13 @@ gvfs.prefetchThreads::
 	index-pack execution, which can significantly speed up the
 	installation of multiple prefetch packs. Values less than `1` are
 	treated as `1`.
+
+gvfs.postThreads::
+	Set the number of parallel workers used when fetching objects
+	via HTTP POST requests. Each worker creates its own HTTP
+	connection and streams the response directly into an
+	`index-pack --stdin` child process. The default value is `1`,
+	which processes POST requests sequentially using the existing
+	code path. Setting this to a higher value (for example `4`)
+	downloads multiple batches of objects concurrently. Values less
+	than `1` are treated as `1`.
