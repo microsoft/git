@@ -1146,6 +1146,7 @@ test_expect_success '--schedule inheritance weekly -> daily -> hourly' '
 		git maintenance run --schedule=weekly 2>/dev/null &&
 	test_maintenance_tasks weekly.txt <<-\EOF
 	pack-refs foreground
+	cache-local-objects foreground
 	prefetch
 	loose-objects
 	incremental-repack
@@ -1183,6 +1184,7 @@ test_expect_success 'maintenance.strategy inheritance' '
 
 	test_maintenance_tasks incremental-weekly.txt <<-\EOF &&
 	pack-refs foreground
+	cache-local-objects foreground
 	prefetch
 	loose-objects
 	incremental-repack
@@ -1238,6 +1240,7 @@ test_expect_success 'maintenance.strategy is respected' '
 
 		test_strategy incremental --schedule=weekly <<-\EOF &&
 		pack-refs foreground
+		cache-local-objects foreground
 		prefetch
 		loose-objects
 		incremental-repack
