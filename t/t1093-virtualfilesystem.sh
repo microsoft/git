@@ -463,7 +463,7 @@ test_expect_success 'checkout <tree> -- <path> preserves skip-worktree in VFS mo
 
 	# Index should have the old (HEAD~1) OID
 	git ls-files -s dir1/file1.txt >actual_index &&
-	grep "$(cat expect_old_oid)" actual_index &&
+	test_grep "$(cat expect_old_oid)" actual_index &&
 
 	# The file should NOT have been written to disk — the fix
 	# preserves skip-worktree so checkout_entry() is skipped.
