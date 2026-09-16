@@ -529,7 +529,7 @@ test_expect_success 'reset --mixed reports hydrated files as modified in VFS mod
 	# the reset output because skip-worktree is cleared during the
 	# reset so refresh_index detects the mismatch.
 	git reset HEAD~1 >actual_stdout &&
-	grep "dir1/file1.txt" actual_stdout
+	test_grep "dir1/file1.txt" actual_stdout
 '
 
 test_expect_success 'reset --mixed reports non-hydrated files as modified in VFS mode' '
@@ -553,7 +553,7 @@ test_expect_success 'reset --mixed reports non-hydrated files as modified in VFS
 	# reset --mixed to parent: git should write pre-reset content to
 	# disk and clear skip-worktree, reporting the file as modified.
 	git reset HEAD~1 >actual_stdout &&
-	grep "dir1/file1.txt" actual_stdout &&
+	test_grep "dir1/file1.txt" actual_stdout &&
 
 	# The pre-reset content should have been written to disk
 	test_path_is_file dir1/file1.txt
@@ -576,8 +576,8 @@ test_expect_success 'reset --mixed with hydrated file leaves other skip-worktree
 	# Reset: only dir1/file1.txt changed between HEAD and HEAD~1.
 	# dir2/file1.txt should not appear in the output at all.
 	git reset HEAD~1 >actual_stdout &&
-	grep "dir1/file1.txt" actual_stdout &&
-	! grep "dir2/file1.txt" actual_stdout
+	test_grep "dir1/file1.txt" actual_stdout &&
+	test_grep ! "dir2/file1.txt" actual_stdout
 '
 
 test_done
