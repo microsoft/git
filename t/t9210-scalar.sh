@@ -605,21 +605,21 @@ test_expect_success '`scalar register` parallel to worktree is unsupported' '
 	test_must_fail git config --get --global --fixed-value \
 		maintenance.repo "$(pwd)/test-repo/src" &&
 	scalar list >scalar.repos &&
-	! grep -F "$(pwd)/test-repo/src" scalar.repos &&
+	test_grep ! -F "$(pwd)/test-repo/src" scalar.repos &&
 
 	: at enlistment root, i.e. parent of repository, is supported &&
 	GIT_CEILING_DIRECTORIES="$(pwd)" scalar register test-repo &&
 	git config --get --global --fixed-value \
 		maintenance.repo "$(pwd)/test-repo/src" &&
 	scalar list >scalar.repos &&
-	grep -F "$(pwd)/test-repo/src" scalar.repos &&
+	test_grep -F "$(pwd)/test-repo/src" scalar.repos &&
 
 	: scalar delete properly unregisters enlistment &&
 	scalar delete test-repo &&
 	test_must_fail git config --get --global --fixed-value \
 		maintenance.repo "$(pwd)/test-repo/src" &&
 	scalar list >scalar.repos &&
-	! grep -F "$(pwd)/test-repo/src" scalar.repos
+	test_grep ! -F "$(pwd)/test-repo/src" scalar.repos
 '
 
 test_expect_success '`scalar register` & `unregister` with existing repo' '
@@ -628,12 +628,12 @@ test_expect_success '`scalar register` & `unregister` with existing repo' '
 	git config --get --global --fixed-value \
 		maintenance.repo "$(pwd)/existing" &&
 	scalar list >scalar.repos &&
-	grep -F "$(pwd)/existing" scalar.repos &&
+	test_grep -F "$(pwd)/existing" scalar.repos &&
 	scalar unregister existing &&
 	test_must_fail git config --get --global --fixed-value \
 		maintenance.repo "$(pwd)/existing" &&
 	scalar list >scalar.repos &&
-	! grep -F "$(pwd)/existing" scalar.repos
+	test_grep ! -F "$(pwd)/existing" scalar.repos
 '
 
 test_expect_success '`scalar unregister` with existing repo, deleted .git' '
@@ -643,7 +643,7 @@ test_expect_success '`scalar unregister` with existing repo, deleted .git' '
 	test_must_fail git config --get --global --fixed-value \
 		maintenance.repo "$(pwd)/existing" &&
 	scalar list >scalar.repos &&
-	! grep -F "$(pwd)/existing" scalar.repos
+	test_grep ! -F "$(pwd)/existing" scalar.repos
 '
 
 test_expect_success '`scalar register` existing repo with `src` folder' '
@@ -651,10 +651,10 @@ test_expect_success '`scalar register` existing repo with `src` folder' '
 	mkdir -p existing/src &&
 	scalar register existing/src &&
 	scalar list >scalar.repos &&
-	grep -F "$(pwd)/existing" scalar.repos &&
+	test_grep -F "$(pwd)/existing" scalar.repos &&
 	scalar unregister existing &&
 	scalar list >scalar.repos &&
-	! grep -F "$(pwd)/existing" scalar.repos
+	test_grep ! -F "$(pwd)/existing" scalar.repos
 '
 
 test_expect_success '`scalar delete` with existing repo' '
