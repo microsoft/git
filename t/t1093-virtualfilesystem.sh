@@ -411,7 +411,7 @@ test_expect_success 'checkout skips lstat for deleted skip-worktree entries in V
 
 	# Verify all entries are skip-worktree before checkout
 	git ls-files -v >actual &&
-	! grep "^H " actual &&
+	test_grep ! "^H " actual &&
 
 	# Checkout to side branch. Without the fix this fails because
 	# verify_absent_1 finds untracked content in the directory at
