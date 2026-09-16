@@ -1120,7 +1120,6 @@ test_expect_success 'invalid --schedule value' '
 '
 
 test_expect_success '--schedule inheritance weekly -> daily -> hourly' '
-	git config --unset maintenance.strategy &&
 	git config maintenance.loose-objects.enabled true &&
 	git config maintenance.loose-objects.schedule hourly &&
 	git config maintenance.commit-graph.enabled true &&
