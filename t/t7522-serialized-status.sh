@@ -432,14 +432,14 @@ test_expect_success 'ensure deserialize -v does not crash' '
 
 	# Verify that normal deserialize was actually used and produces the same result.
 	test_cmp output.ser.long output.des.long &&
-	grep -q "deserialize/result:ok" verbose_test.log &&
+	test_grep -q "deserialize/result:ok" verbose_test.log &&
 
 	GIT_TRACE2_PERF="$(pwd)"/verbose_test.log_v \
 	git -C verbose_test status --deserialize=../verbose_test.dat_v -v >output.des.long_v &&
 
 	# Verify that vebose mode produces the same result because verbose was rejected.
 	test_cmp output.ser.long_v output.des.long_v &&
-	grep -q "deserialize/reject:args/verbose" verbose_test.log_v
+	test_grep -q "deserialize/reject:args/verbose" verbose_test.log_v
 '
 
 test_expect_success 'fallback when implicit' '
