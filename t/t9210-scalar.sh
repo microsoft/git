@@ -692,7 +692,7 @@ test_expect_success 'scalar cache-server list URL' '
 	test_cmp expect out &&
 
 	test_must_fail scalar -C $repo cache-server --list 2>err &&
-	grep "requires a value" err &&
+	test_grep "requires a value" err &&
 
 	scalar delete $repo &&
 	test_path_is_missing $repo
