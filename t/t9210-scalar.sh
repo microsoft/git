@@ -471,7 +471,7 @@ test_expect_success '`scalar clone --no-prefetch` skips the initial prefetch' '
 		-c credential.interactive=true \
 		clone --gvfs-protocol --single-branch \
 		-- http://$ORIGIN_HOST_PORT/ with-prefetch &&
-	grep "prefetch/since" with-prefetch-trace &&
+	test_grep "prefetch/since" with-prefetch-trace &&
 
 	# ... but "--no-prefetch" skips that request during the clone while
 	# fetching the tip commit and its trees through the objects POST
@@ -481,8 +481,8 @@ test_expect_success '`scalar clone --no-prefetch` skips the initial prefetch' '
 		-c credential.interactive=true \
 		clone --no-prefetch --gvfs-protocol --single-branch \
 		-- http://$ORIGIN_HOST_PORT/ no-prefetch &&
-	! grep "prefetch/since" no-prefetch-trace &&
-	grep "gh_client__queue_oid: $tip" no-prefetch-perf &&
+	test_grep ! "prefetch/since" no-prefetch-trace &&
+	test_grep "gh_client__queue_oid: $tip" no-prefetch-perf &&
 	test_trace2_data gh-client objects/post/nr_objects 1 \
 		<no-prefetch-trace &&
 
@@ -494,7 +494,7 @@ test_expect_success '`scalar clone --no-prefetch` skips the initial prefetch' '
 	: and a subsequent git fetch performs the deferred prefetch &&
 	GIT_TRACE2_EVENT="$(pwd)/fetch-trace" \
 		git -C no-prefetch/src fetch origin &&
-	grep "prefetch/since" fetch-trace
+	test_grep "prefetch/since" fetch-trace
 '
 
 test_expect_success '`scalar clone` with GVFS-enabled server; local cache path' '
