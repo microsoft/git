@@ -123,7 +123,7 @@ test_expect_success 'catch corrupted loose object' '
 	# Verify corruption detected.
 	# Verify valid blob not included in response to client.
 
-	grep "hash failed for received loose object" OUT.stderr &&
+	test_grep "hash failed for received loose object" OUT.stderr &&
 
 	# Verify that we did not write the corrupted blob to the ODB.
 
