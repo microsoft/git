@@ -22,30 +22,30 @@ test_expect_success 'setup' '
 
 test_expect_success 'blame follows renames by default' '
 	git blame --porcelain v3.txt >output &&
-	grep "^filename v1-before-inexact.txt" output
+	test_grep "^filename v1-before-inexact.txt" output
 '
 
 test_expect_success 'blame.renames=false disables rename following' '
 	git -c blame.renames=false blame --porcelain v3.txt >output &&
-	! grep "^filename v1-before-inexact.txt" output &&
-	! grep "^filename v2-before-exact.txt" output
+	test_grep ! "^filename v1-before-inexact.txt" output &&
+	test_grep ! "^filename v2-before-exact.txt" output
 '
 
 test_expect_success 'blame.renameThreshold=100% allows exact but skips inexact renames' '
 	git -c blame.renameThreshold=100% blame --porcelain v3.txt >output &&
-	grep "^filename v2-before-exact.txt" output &&
-	! grep "^filename v1-before-inexact.txt" output
+	test_grep "^filename v2-before-exact.txt" output &&
+	test_grep ! "^filename v1-before-inexact.txt" output
 '
 
 test_expect_success 'blame.renameLimit=1 skips when sources*destinations exceeds limit' '
 	git -c blame.renameLimit=1 blame --porcelain v3.txt >output &&
-	grep "^filename v2-before-exact.txt" output &&
-	! grep "^filename v1-before-inexact.txt" output
+	test_grep "^filename v2-before-exact.txt" output &&
+	test_grep ! "^filename v1-before-inexact.txt" output
 '
 
 test_expect_success 'blame.renameLimit=2 detects with two sources' '
 	git -c blame.renameLimit=2 blame --porcelain v3.txt >output &&
-	grep "^filename v1-before-inexact.txt" output
+	test_grep "^filename v1-before-inexact.txt" output
 '
 
 test_done
