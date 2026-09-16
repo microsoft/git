@@ -616,10 +616,10 @@ static enum worker_result send_loose_object(const struct object_id *oid,
 
 	/* [2] */
 	memset(&oid_check, 0, sizeof(oid_check));
-	the_hash_algo->init_fn(&c);
-	the_hash_algo->update_fn(&c, object_header, object_header_len);
-	the_hash_algo->update_fn(&c, *oi.contentp, *oi.sizep);
-	the_hash_algo->final_fn(oid_check.hash, &c);
+	git_hash_init(&c, the_hash_algo);
+	git_hash_update(&c, object_header, object_header_len);
+	git_hash_update(&c, *oi.contentp, *oi.sizep);
+	git_hash_final(oid_check.hash, &c);
 	if (!oideq(oid, &oid_check))
 		BUG("send_loose_object[2]: invalid construction '%s' '%s'",
 		    oid_to_hex(oid), oid_to_hex(&oid_check));
@@ -629,14 +629,14 @@ static enum worker_result send_loose_object(const struct object_id *oid,
 	git_deflate_init(&stream, cfg->zlib_compression_level);
 	stream.next_out = compressed;
 	stream.avail_out = sizeof(compressed);
-	the_hash_algo->init_fn(&c);
+	git_hash_init(&c, the_hash_algo);
 
 	/* [3, 1a, 6] */
 	stream.next_in = (unsigned char *)object_header;
 	stream.avail_in = object_header_len;
 	while (git_deflate(&stream, 0) == Z_OK)
 		; /* nothing */
-	the_hash_algo->update_fn(&c, object_header, object_header_len);
+	git_hash_update(&c, object_header, object_header_len);
 
 	/* [3, 1b, 5, 6] */
 	stream.next_in = *oi.contentp;
@@ -660,7 +660,7 @@ static enum worker_result send_loose_object(const struct object_id *oid,
 		if (mayhem__corrupt_loose)
 			*in0 = *in0 ^ 0xff;
 
-		the_hash_algo->update_fn(&c, in0, stream.next_in - in0);
+		git_hash_update(&c, in0, stream.next_in - in0);
 
 		/* [5] */
 		wr = send_chunk(fd, compressed, stream.next_out - compressed);
@@ -682,7 +682,7 @@ static enum worker_result send_loose_object(const struct object_id *oid,
 		BUG("deflateEnd on object '%s' failed (%d)", oid_to_hex(oid), ret);
 
 	/* [6] */
-	the_hash_algo->final_fn(oid_check.hash, &c);
+	git_hash_final(oid_check.hash, &c);
 	if (!oideq(oid, &oid_check))
 		BUG("send_loose_object[6]: invalid construction '%s' '%s'",
 		    oid_to_hex(oid), oid_to_hex(&oid_check));
