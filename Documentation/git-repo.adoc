@@ -162,7 +162,7 @@ supported:
 `-z` is an alias for `--format=nul`.
 
 STRUCTURE HISTOGRAMS
--------------------
+--------------------
 Size histograms group commits, trees, and blobs by inflated size in bytes:
 `0..15`, `16..255`, `256..4095`, and so on. Tree entry histograms use the
 ranges `0..3`, `4..15`, `16..63`, and so on. Each bucket reports the number
