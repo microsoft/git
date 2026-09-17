@@ -801,8 +801,9 @@ test_expect_success 'revision-name lookup can be disabled by option or config' '
 			esac &&
 			>trace &&
 			test_env GIT_TRACE2_EVENT="$PWD/trace" \
-				name_rev_report "$@" --format=lines \
-				>actual 2>err &&
+				git "$@" --format=lines --commit-parents=2 \
+				--commit-sizes=2 --tree-entries=2 \
+				--tree-sizes=2 --blob-sizes=2 >actual 2>err &&
 			test_cmp "$expected" actual &&
 			test_must_be_empty err &&
 			case "$expected" in
