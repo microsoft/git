@@ -99,6 +99,13 @@ jobs:
 
           make -j5 DESTDIR="$GITHUB_WORKSPACE/MicrosoftGit/payload/${{ matrix.architecture }}" install
 
+          # The test runners still ship the MINGW64 runtime.
+          if test "$MSYSTEM" = UCRT64
+          then
+            cp /ucrt64/bin/*.dll \
+              "$GITHUB_WORKSPACE/MicrosoftGit/payload/x86_64/ucrt64/bin/"
+          fi
+
       - name: Upload Git artifact
         uses: actions/upload-artifact@v7
         with:
