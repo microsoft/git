@@ -160,9 +160,9 @@ static bool odb_is_source_usable(struct object_database *o, const char *path)
 
 	/* Detect cases where alternate disappeared */
 	if (!is_directory(path)) {
-		error(_("object directory %s does not exist; "
-			"check .git/objects/info/alternates"),
-		      path);
+		warning(_("object directory %s does not exist; "
+			  "check .git/objects/info/alternates"),
+			path);
 		goto out;
 	}
 
@@ -239,8 +239,8 @@ void parse_alternates(const char *string,
 
 		strbuf_reset(&buf);
 		if (!strbuf_realpath(&buf, pathbuf.buf, 0)) {
-			error(_("unable to normalize alternate object path: %s"),
-			      pathbuf.buf);
+			warning(_("unable to normalize alternate object "
+				  "path: %s"), pathbuf.buf);
 			continue;
 		}
 
