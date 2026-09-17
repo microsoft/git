@@ -137,4 +137,16 @@ test_expect_success CASE_INSENSITIVE_FS 'dup finding can be case-insensitive' '
 	test_cmp expect actual.alternates
 '
 
+test_expect_success 'unusable alternates only warn on config lookup' '
+	git init unusable &&
+	printf "%s\n" ../missing ../missing-parent/objects \
+		>unusable/.git/objects/info/alternates &&
+	test_expect_code 1 git -C unusable config --get test.missing \
+		>actual 2>err &&
+	test_must_be_empty actual &&
+	test_line_count = 2 err &&
+	test_grep "^warning: object directory" err &&
+	test_grep "^warning: unable to normalize alternate object path" err
+'
+
 test_done
