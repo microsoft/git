@@ -1631,7 +1631,7 @@ static enum worker_result dispatch(struct req *req)
 		if (string_list_has_string(&mayhem_list, "cache_http_404")) {
 			logmayhem("cache_http_404");
 			return send_http_error(1, 404, "Not Found", -1,
-					       WR_MAYHEM);
+					       WR_MAYHEM | WR_HANGUP);
 		}
 		if (string_list_has_string(&mayhem_list, "cache_http_503")) {
 			logmayhem("cache_http_503");
