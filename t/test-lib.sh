@@ -1382,7 +1382,7 @@ then
 		# need to be in the exec-path.
 		test -x "$1" ||
 		test "# " = "$(test_copy_bytes 2 <"$1")" ||
-		return;
+		return 0;
 
 		base=$(basename "$1")
 		case "$base" in
