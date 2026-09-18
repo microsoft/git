@@ -43,10 +43,10 @@ parameters:
         poolArch: amd64
         image: win-x86_64-ado1es
         os: windows
-        toolchain: x86_64
+        toolchain: ucrt-x86_64
         cpu_arch: x86_64
-        mingwprefix: mingw64
-        msystem: MINGW64
+        mingwprefix: ucrt64
+        msystem: UCRT64
         sdk_repo: git-for-windows/git-sdk-64
 
       - id: windows_arm64
