@@ -12,10 +12,6 @@ and to exercise both code paths in do__http_post__fetch_oidset().
 
 . "$TEST_DIRECTORY"/lib-gvfs-helper.sh
 
-test_lazy_prereq TIMEOUT '
-	type timeout >/dev/null 2>&1
-'
-
 parallel_block_size=100
 
 test_expect_success 'create enough blobs for parallel POST' '
@@ -303,7 +299,7 @@ do
 	'
 done
 
-test_expect_success PTHREADS,TIMEOUT 'parallel POST does not deadlock' '
+test_expect_success PTHREADS,PERL_TEST_HELPERS 'parallel POST does not deadlock' '
 	test_when_finished "per_test_cleanup" &&
 	start_gvfs_protocol_server &&
 	git -C "$REPO_T1" config gvfs.postThreads 4 &&
@@ -311,7 +307,8 @@ test_expect_success PTHREADS,TIMEOUT 'parallel POST does not deadlock' '
 	GIT_TRACE2_EVENT="$(pwd)/trace-$test_count.txt" &&
 	export GIT_TRACE2_EVENT &&
 
-	timeout 30 git -C "$REPO_T1" gvfs-helper \
+	"$PERL_PATH" -e "alarm shift; exec @ARGV or die \$!" -- 30 \
+		git -C "$REPO_T1" gvfs-helper \
 		--cache-server=disable \
 		--remote=origin \
 		--no-progress \
