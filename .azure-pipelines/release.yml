@@ -724,8 +724,11 @@ extends:
                       # /opt/homebrew. Install a separate x86_64 Homebrew
                       # under /usr/local so we can fetch the x86_64 build
                       # of gettext/libintl alongside the arm64 one.
+                      # Homebrew/install#1140 dropped Intel bootstrap support.
+                      url=https://raw.githubusercontent.com/Homebrew/install
+                      rev=7a133dcc74051ee4efc79467ed215dfedf45aea2
                       arch -x86_64 /bin/bash -c \
-                        "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+                        "$(curl -fsSL "$url/$rev/install.sh")"
                       arch -x86_64 /usr/local/bin/brew install gettext
 
                       # Ensure native Homebrew (arm64) is up-to-date beforehand.
