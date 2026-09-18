@@ -14,7 +14,7 @@
 #
 # Arguments:
 #   $1  sdk_repo        e.g. git-for-windows/git-sdk-64
-#   $2  mingwprefix     e.g. mingw64 or clangarm64
+#   $2  mingwprefix     e.g. ucrt64 or clangarm64
 #   $3  sdk_output_dir  Windows or MSYS path where the SDK will be installed
 #
 # See:
