@@ -166,7 +166,7 @@ jobs:
   vs-build:
     name: win+VS build
     needs: ci-config
-    if: github.event.repository.owner.login == 'git-for-windows' && needs.ci-config.outputs.enabled == 'yes'
+    if: github.event.repository.owner.login == 'microsoft' && needs.ci-config.outputs.enabled == 'yes'
     env:
       NO_PERL: 1
       GIT_CONFIG_PARAMETERS: "'user.name=CI' 'user.email=ci@git'"
@@ -201,6 +201,9 @@ jobs:
         cmake `pwd`/contrib/buildsystems/ -DCMAKE_PREFIX_PATH=`pwd`/compat/vcbuild/vcpkg/installed/${{ matrix.arch }}-windows \
         -DNO_GETTEXT=YesPlease -DPERL_TESTS=OFF -DPYTHON_TESTS=OFF -DCURL_NO_CURL_CMAKE=ON -DCMAKE_GENERATOR_PLATFORM=${{ matrix.arch }} -DVCPKG_ARCH=${{ matrix.arch }}-windows -DHOST_CPU=${{ matrix.arch }}
     - name: MSBuild
+      env:
+        # Avoid vcpkg locking its executable while preparing telemetry.
+        VCPKG_DISABLE_METRICS: 1
       run: |
         $sln = if (Test-Path git.slnx) { 'git.slnx' } else { 'git.sln' }
         msbuild $sln -property:Configuration=Release -property:Platform=${{ matrix.arch }} -maxCpuCount:4
@@ -455,7 +458,9 @@ jobs:
     - run: chmod a+w $GITHUB_ENV && sudo --preserve-env --set-home --user=builder ci/run-build-and-tests.sh
     - name: print test failures
       if: failure() && env.FAILED_TEST_ARTIFACTS != ''
-      run: sudo --preserve-env --set-home --user=builder ci/print-test-failures.sh
+      run: |
+        chmod a+w "$GITHUB_ENV" &&
+        sudo --preserve-env --set-home --user=builder ci/print-test-failures.sh
     - name: Upload failed tests' directories
       if: failure() && env.FAILED_TEST_ARTIFACTS != ''
       uses: actions/upload-artifact@v7

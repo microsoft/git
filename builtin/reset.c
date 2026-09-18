@@ -40,6 +40,8 @@
 #include "add-interactive.h"
 #include "strbuf.h"
 #include "quote.h"
+#include "dir.h"
+#include "entry.h"
 
 #define REFRESH_INDEX_DELAY_WARNING_IN_MS (2 * 1000)
 
@@ -160,9 +162,54 @@ static void update_index_from_diff(struct diff_queue_struct *q,
 
 	for (i = 0; i < q->nr; i++) {
 		int pos;
+		int respect_skip_worktree = 1;
 		struct diff_filespec *one = q->queue[i]->one;
+		struct diff_filespec *two = q->queue[i]->two;
 		int is_in_reset_tree = one->mode && !is_null_oid(&one->oid);
+		int is_missing = !(one->mode && !is_null_oid(&one->oid));
+		int was_missing = !two->mode && is_null_oid(&two->oid);
 		struct cache_entry *ce;
+		struct cache_entry *ceBefore;
+		struct checkout state = CHECKOUT_INIT;
+
+		/*
+		 * When using the virtual filesystem feature, all entries
+		 * being reset should have skip-worktree cleared so that
+		 * refresh_index will compare them against the working tree
+		 * and report them as modified.
+		 *
+		 * For files that don't exist on disk (virtual/placeholder),
+		 * we also need to write the pre-reset content to disk so
+		 * that they show as modified rather than deleted.
+		 *
+		 * For files that already exist on disk (hydrated), the
+		 * on-disk content is the pre-reset version, so no write
+		 * is needed — just clearing skip-worktree is sufficient.
+		 */
+		if (!core_virtualfilesystem)
+			; /* not in virtual filesystem mode; nothing to special-case */
+		else if (file_exists(two->path))
+			respect_skip_worktree = 0; /* hydrated: on-disk content is already the pre-reset version */
+		else {
+			respect_skip_worktree = 0;
+			pos = index_name_pos(the_repository->index, two->path, strlen(two->path));
+
+			if ((pos >= 0 && ce_skip_worktree(the_repository->index->cache[pos])) &&
+			    (is_missing || !was_missing))
+			{
+				state.force = 1;
+				state.refresh_cache = 1;
+				state.istate = the_repository->index;
+				ceBefore = make_cache_entry(the_repository->index, two->mode,
+							    &two->oid, two->path,
+							    0, 0);
+				if (!ceBefore)
+					die(_("make_cache_entry failed for path '%s'"),
+						two->path);
+
+				checkout_entry(ceBefore, &state, NULL, NULL);
+			}
+		}
 
 		if (!is_in_reset_tree && !intent_to_add) {
 			remove_file_from_index(the_repository->index, one->path);
@@ -181,8 +228,14 @@ static void update_index_from_diff(struct diff_queue_struct *q,
 		 * to properly construct the reset sparse directory.
 		 */
 		pos = index_name_pos(the_repository->index, one->path, strlen(one->path));
-		if ((pos >= 0 && ce_skip_worktree(the_repository->index->cache[pos])) ||
-		    (pos < 0 && !path_in_sparse_checkout(one->path, the_repository->index)))
+
+		/*
+		 * Do not add the SKIP_WORKTREE bit back if we populated the
+		 * file on purpose in a virtual filesystem scenario.
+		 */
+		if (respect_skip_worktree &&
+		    ((pos >= 0 && ce_skip_worktree(the_repository->index->cache[pos])) ||
+		     (pos < 0 && !path_in_sparse_checkout(one->path, the_repository->index))))
 			ce->ce_flags |= CE_SKIP_WORKTREE;
 
 		if (!ce)
@@ -215,7 +268,8 @@ static int read_from_tree(const struct pathspec *pathspec,
 	opt.add_remove = diff_addremove;
 
 	if (pathspec->nr && pathspec_needs_expanded_index(the_repository->index, pathspec))
-		ensure_full_index(the_repository->index);
+		ensure_full_index_with_reason(the_repository->index,
+					      "reset pathspec");
 
 	if (do_diff_cache(tree_oid, &opt))
 		return 1;

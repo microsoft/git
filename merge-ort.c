@@ -4667,7 +4667,8 @@ static int record_conflicted_index_entries(struct merge_options *opt)
 	 */
 	strmap_for_each_entry(&opt->priv->conflicted, &iter, e) {
 		if (!path_in_sparse_checkout(e->key, index)) {
-			ensure_full_index(index);
+			const char *fmt = "merge-ort: path outside sparse checkout (%s)";
+			ensure_full_index_with_reason(index, fmt, e->key);
 			break;
 		}
 	}
@@ -5457,6 +5458,22 @@ static void merge_recursive_config(struct merge_options *opt, int ui)
 	repo_config_get_int(opt->repo, "merge.verbosity", &opt->verbosity);
 	repo_config_get_int(opt->repo, "diff.renamelimit", &opt->rename_limit);
 	repo_config_get_int(opt->repo, "merge.renamelimit", &opt->rename_limit);
+	if (!repo_config_get_string(opt->repo, "diff.renamethreshold", &value)) {
+		const char *arg = value;
+		opt->rename_score = parse_rename_score(&arg);
+		if (*arg)
+			die(_("invalid value for '%s': '%s'"),
+			    "diff.renameThreshold", value);
+		free(value);
+	}
+	if (!repo_config_get_string(opt->repo, "merge.renamethreshold", &value)) {
+		const char *arg = value;
+		opt->rename_score = parse_rename_score(&arg);
+		if (*arg)
+			die(_("invalid value for '%s': '%s'"),
+			    "merge.renameThreshold", value);
+		free(value);
+	}
 	repo_config_get_bool(opt->repo, "merge.renormalize", &renormalize);
 	opt->renormalize = renormalize;
 	if (!repo_config_get_string(opt->repo, "diff.renames", &value)) {

@@ -1,0 +1,57 @@
+gvfs.cache-server::
+	When set, redirect all GVFS Protocol requests to this base URL instead
+	of the origin server. Individual verbs can be overridden with the
+	`gvfs.<verb>.cache-server` config keys.
+
+gvfs.<verb>.cache-server::
+	Override the base value of `gvfs.cache-server` when using this specific
+	`<verb>`. The verbs available are:
++
+--
+	prefetch::
+		Use this cache server when prefetching commits and tree packfiles.
+	get::
+		Use this cache server when downloading objects immediately via the
+		GET endpoint.
+	post::
+		Use this cache server when downloading objects in batches using the
+		POST endpoint.
+--
+
+gvfs.sharedcache::
+	When set, place all object data downloaded via the GVFS Protocol into
+	this Git alternate.
+
+gvfs.fallback::
+	If set to `false`, then never fallback to the origin server when the cache
+	server fails to connect. This will alert users to failures with the cache
+	server, but avoid causing throttling on the origin server.
+
+gvfs.negativeRefCheck::
+	When using the GVFS Protocol, the `core.gvfs` `GVFS_MISSING_OK` bit
+	allows objects behind local refs to be missing, so `git push`
+	normally feeds every advertised ref to `git pack-objects` as an
+	exclusion, even ones that are absent locally. `pack-objects` then
+	lazily downloads each missing exclusion while searching for delta
+	bases, issuing one object request per advertised ref. If set to
+	`true`, `git push` instead performs a non-fetching existence check
+	and omits any advertised object it does not have locally, matching
+	the behavior of Git without the `GVFS_MISSING_OK` bit. Defaults to
+	`false`.
+
+gvfs.sessionKey::
+	If set to a string, then the value is a config key name that will be used
+	to set a prefix in the `X-Session-Id` header sent to the server for all
+	GVFS Protocol calls. This allows engineering systems to improve support
+	across client and server behavior, including any End User Pseodynomous
+	Identifiers (EUPI) that may be configured. The `X-Session-Id` will
+	include the SID of the current process in either case.
+
+gvfs.prefetchThreads::
+	Set the number of parallel `index-pack` processes that run when
+	installing prefetch packfiles. The default value is `1`, which
+	processes packfiles sequentially without any thread infrastructure.
+	Setting this to a higher value (for example `4`) enables parallel
+	index-pack execution, which can significantly speed up the
+	installation of multiple prefetch packs. Values less than `1` are
+	treated as `1`.

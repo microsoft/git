@@ -83,17 +83,23 @@ static enum odb_read_status odb_source_files_read_object_info(struct odb_source 
 							      struct strbuf *errmsg)
 {
 	struct odb_source_files *files = odb_source_files_downcast(source);
-	enum odb_read_status ret_packed, ret_loose;
+	enum odb_read_status ret_packed = ODB_READ_NOT_FOUND;
+	enum odb_read_status ret_loose = ODB_READ_NOT_FOUND;
 
-	ret_packed = odb_source_read_object_info(&files->packed->base, oid, oi,
-						 flags, errmsg);
-	if (!ret_packed)
-		return 0;
+	if (!(flags & OBJECT_INFO_SKIP_PACKED)) {
+		ret_packed = odb_source_read_object_info(&files->packed->base,
+			oid, oi, flags, errmsg);
+		if (!ret_packed)
+			return 0;
+	}
 
-	ret_loose = odb_source_read_object_info(&files->loose->base, oid, oi, flags,
-						ret_packed == ODB_READ_NOT_FOUND ? errmsg : NULL);
-	if (!ret_loose)
-		return 0;
+	if (!(flags & OBJECT_INFO_SKIP_LOOSE)) {
+		ret_loose = odb_source_read_object_info(&files->loose->base,
+			oid, oi, flags,
+			ret_packed == ODB_READ_NOT_FOUND ? errmsg : NULL);
+		if (!ret_loose)
+			return 0;
+	}
 
 	/*
 	 * Reading the packed object may have failed even though the object
@@ -195,11 +201,14 @@ out:
 
 static int odb_source_files_freshen_object(struct odb_source *source,
 					   const struct object_id *oid,
-					   const time_t *mtime)
+					   const time_t *mtime,
+					   int skip_virtualized_objects)
 {
 	struct odb_source_files *files = odb_source_files_downcast(source);
-	if (odb_source_freshen_object(&files->packed->base, oid, mtime) ||
-	    odb_source_freshen_object(&files->loose->base, oid, mtime))
+	if (odb_source_freshen_object(&files->packed->base, oid, mtime,
+				      skip_virtualized_objects) ||
+	    odb_source_freshen_object(&files->loose->base, oid, mtime,
+				      skip_virtualized_objects))
 		return 1;
 	return 0;
 }
@@ -843,6 +852,8 @@ static int odb_source_files_generate_pack(struct odb_source *source UNUSED,
 		strvec_push(&cp->args, "--missing=allow-promisor");
 	if (opts->disable_bitmaps)
 		strvec_push(&cp->args, "--no-use-bitmap-index");
+	if (opts->no_reuse_delta)
+		strvec_push(&cp->args, "--no-reuse-delta");
 	switch (opts->progress) {
 	case ODB_GENERATE_PACK_PROGRESS_NONE:
 		strvec_push(&cp->args, "--quiet");

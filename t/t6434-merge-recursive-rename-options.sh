@@ -332,4 +332,36 @@ test_expect_success 'merge.renames overrides diff.renames' '
 	$check_50
 '
 
+test_expect_success 'diff.renameThreshold sets merge threshold' '
+	git read-tree --reset -u HEAD &&
+	test_must_fail git -c diff.renameThreshold=$th0 merge-recursive $tail &&
+	check_threshold_0
+'
+
+test_expect_success 'diff.renameThreshold=100% limits to exact renames in merge' '
+	git read-tree --reset -u HEAD &&
+	test_must_fail git -c diff.renameThreshold=100% merge-recursive $tail &&
+	check_exact_renames
+'
+
+test_expect_success 'merge.renameThreshold overrides diff.renameThreshold' '
+	git read-tree --reset -u HEAD &&
+	test_must_fail git -c diff.renameThreshold=100% \
+		-c merge.renameThreshold=$th0 merge-recursive $tail &&
+	check_threshold_0
+'
+
+test_expect_success 'merge.renameThreshold defaults to diff.renameThreshold' '
+	git read-tree --reset -u HEAD &&
+	test_must_fail git -c diff.renameThreshold=$th2 merge-recursive $tail &&
+	check_threshold_2
+'
+
+test_expect_success '--find-renames overrides merge.renameThreshold' '
+	git read-tree --reset -u HEAD &&
+	test_must_fail git -c merge.renameThreshold=100% \
+		merge-recursive --find-renames=$th0 $tail &&
+	check_threshold_0
+'
+
 test_done

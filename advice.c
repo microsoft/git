@@ -91,9 +91,13 @@ static struct {
 	[ADVICE_SUBMODULE_MERGE_CONFLICT]               = { "submoduleMergeConflict" },
 	[ADVICE_SUGGEST_DETACHING_HEAD]			= { "suggestDetachingHead" },
 	[ADVICE_UPDATE_SPARSE_PATH]			= { "updateSparsePath" },
+	[ADVICE_USE_CORE_CONFIG_WRITE_LOCK_TIMEOUT_MS_CONFIG] = { "useCoreConfigWriteLockTimeoutMSConfig" },
 	[ADVICE_USE_CORE_FSMONITOR_CONFIG]		= { "useCoreFSMonitorConfig" },
 	[ADVICE_WAITING_FOR_EDITOR]			= { "waitingForEditor" },
 	[ADVICE_WORKTREE_ADD_ORPHAN]			= { "worktreeAddOrphan" },
+
+	/* microsoft/git custom advice below: */
+	[ADVICE_GVFS_HELPER_TRANSIENT_RETRY]		= { "gvfs.transientRetry"},
 };
 
 static const char turn_off_instructions[] =

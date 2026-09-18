@@ -258,7 +258,7 @@ add_compile_definitions(PAGER_ENV="LESS=FRX LV=-c"
 			BINDIR="bin")
 
 if(WIN32)
-	set(FALLBACK_RUNTIME_PREFIX /mingw64)
+	set(FALLBACK_RUNTIME_PREFIX /ucrt64)
 	# Move system config into top-level /etc/
 	add_compile_definitions(FALLBACK_RUNTIME_PREFIX="${FALLBACK_RUNTIME_PREFIX}"
 		ETC_GITATTRIBUTES="../etc/gitattributes"
@@ -646,7 +646,7 @@ if(NOT CURL_FOUND)
 	add_compile_definitions(NO_CURL)
 	message(WARNING "git-http-push and git-http-fetch will not be built")
 else()
-	list(APPEND PROGRAMS_BUILT git-http-fetch git-http-push git-imap-send git-remote-http)
+	list(APPEND PROGRAMS_BUILT git-http-fetch git-http-push git-imap-send git-remote-http git-gvfs-helper)
 	if(CURL_VERSION_STRING VERSION_GREATER_EQUAL 7.34.0)
 		add_compile_definitions(USE_CURL_FOR_IMAP_SEND)
 	endif()
@@ -803,7 +803,7 @@ target_link_libraries(git-sh-i18n--envsubst common-main)
 add_executable(git-shell ${CMAKE_SOURCE_DIR}/shell.c)
 target_link_libraries(git-shell common-main)
 
-add_executable(scalar ${CMAKE_SOURCE_DIR}/scalar.c)
+add_executable(scalar ${CMAKE_SOURCE_DIR}/scalar.c ${CMAKE_SOURCE_DIR}/json-parser.c)
 target_link_libraries(scalar common-main)
 
 if(CURL_FOUND)
@@ -822,6 +822,9 @@ if(CURL_FOUND)
 		add_executable(git-http-push ${CMAKE_SOURCE_DIR}/http-push.c)
 		target_link_libraries(git-http-push http_obj common-main ${CURL_LIBRARIES} ${EXPAT_LIBRARIES})
 	endif()
+
+	add_executable(git-gvfs-helper ${CMAKE_SOURCE_DIR}/gvfs-helper.c)
+	target_link_libraries(git-gvfs-helper http_obj common-main ${CURL_LIBRARIES} )
 endif()
 
 parse_makefile_for_executables(git_builtin_extra "BUILT_INS")
@@ -1120,6 +1123,20 @@ set(wrapper_scripts
 
 set(wrapper_test_scripts
 	test-fake-ssh test-tool)
+
+if(CURL_FOUND)
+	list(APPEND wrapper_test_scripts test-gvfs-protocol)
+
+	add_executable(test-gvfs-protocol ${CMAKE_SOURCE_DIR}/t/helper/test-gvfs-protocol.c)
+	target_link_libraries(test-gvfs-protocol common-main)
+
+	if(MSVC)
+		set_target_properties(test-gvfs-protocol
+					PROPERTIES RUNTIME_OUTPUT_DIRECTORY_DEBUG ${CMAKE_BINARY_DIR}/t/helper)
+		set_target_properties(test-gvfs-protocol
+					PROPERTIES RUNTIME_OUTPUT_DIRECTORY_RELEASE ${CMAKE_BINARY_DIR}/t/helper)
+	endif()
+endif()
 
 
 foreach(script ${wrapper_scripts})

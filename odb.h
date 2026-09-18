@@ -435,6 +435,18 @@ enum object_info_flags {
 	OBJECT_INFO_SECOND_READ = (1 << 4),
 
 	/*
+	 * Only consult the packed object store of a source, skipping its loose
+	 * object store (OBJECT_INFO_SKIP_LOOSE), or vice versa
+	 * (OBJECT_INFO_SKIP_PACKED). These are used by
+	 * odb_read_object_info_extended() to scan the packfiles of all sources
+	 * before consulting any source's loose object store, so that an object
+	 * that resides in an alternate's packfile is not preceded by a spurious
+	 * loose-object lookup on an earlier source.
+	 */
+	OBJECT_INFO_SKIP_LOOSE = (1 << 5),
+	OBJECT_INFO_SKIP_PACKED = (1 << 6),
+
+	/*
 	 * This is meant for bulk prefetching of missing blobs in a partial
 	 * clone. Implies OBJECT_INFO_SKIP_FETCH_OBJECT and OBJECT_INFO_QUICK.
 	 */
@@ -485,7 +497,8 @@ int odb_has_object(struct object_database *odb,
 		   enum odb_has_object_flags flags);
 
 int odb_freshen_object(struct object_database *odb,
-		       const struct object_id *oid);
+		       const struct object_id *oid,
+		       int skip_virtualized_objects);
 
 void odb_assert_oid_type(struct object_database *odb,
 			 const struct object_id *oid, enum object_type expect);
@@ -785,6 +798,9 @@ struct odb_generate_pack_options {
 
 	/* Do not use bitmap indices when computing reachability. */
 	unsigned disable_bitmaps:1;
+
+	/* Do not reuse deltas. */
+	unsigned no_reuse_delta:1;
 };
 
 #define ODB_GENERATE_PACK_OPTIONS_INIT { \
@@ -847,5 +863,7 @@ void parse_alternates(const char *string,
 		      int sep,
 		      const char *relative_base,
 		      struct strvec *out);
+
+int read_object_process(struct repository *r, const struct object_id *oid);
 
 #endif /* ODB_H */

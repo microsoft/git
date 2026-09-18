@@ -386,6 +386,8 @@ libgit_sources = [
   'gpg-interface.c',
   'graph.c',
   'grep.c',
+  'gvfs.c',
+  'gvfs-helper-client.c',
   'hash-lookup.c',
   'hash.c',
   'hashmap.c',
@@ -573,6 +575,7 @@ libgit_sources = [
   'utf8.c',
   'version.c',
   'versioncmp.c',
+  'virtualfilesystem.c',
   'walker.c',
   'wildmatch.c',
   'worktree.c',
@@ -580,6 +583,8 @@ libgit_sources = [
   'write-or-die.c',
   'ws.c',
   'wt-status.c',
+  'wt-status-deserialize.c',
+  'wt-status-serialize.c',
   'xdiff-interface.c',
   'xdiff/xdiffi.c',
   'xdiff/xemit.c',
@@ -718,6 +723,7 @@ builtin_sources = [
   'builtin/unpack-file.c',
   'builtin/unpack-objects.c',
   'builtin/update-index.c',
+  'builtin/update-microsoft-git.c',
   'builtin/update-ref.c',
   'builtin/update-server-info.c',
   'builtin/upload-archive.c',
@@ -1918,7 +1924,7 @@ test_dependencies += executable('git-http-backend',
 )
 
 bin_wrappers += executable('scalar',
-  sources: 'scalar.c',
+  sources: ['scalar.c', 'json-parser.c'],
   dependencies: [libgit_commonmain],
   install: true,
   install_dir: git_exec_path,
@@ -1956,6 +1962,13 @@ if curl.found()
     )
   endif
 
+  test_dependencies += executable('git-gvfs-helper',
+    sources: 'gvfs-helper.c',
+    dependencies: [libgit_curl],
+    install: true,
+    install_dir: get_option('libexecdir') / 'git-core',
+  )
+
   foreach alias : [ 'git-remote-https', 'git-remote-ftp', 'git-remote-ftps' ]
     test_dependencies += executable(alias,
       sources: 'remote-curl.c',
@@ -1990,6 +2003,7 @@ endforeach
 
 foreach symlink : [
   'git',
+  'git-gvfs-helper',
   'git-receive-pack',
   'git-shell',
   'git-upload-archive',

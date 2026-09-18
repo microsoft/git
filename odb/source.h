@@ -136,6 +136,10 @@ struct odb_source {
 	 *     second read in case they know that the first read would have
 	 *     already surfaced the object without reloading any on-disk state.
 	 *
+	 *   - `OBJECT_INFO_SKIP_LOOSE` and `OBJECT_INFO_SKIP_PACKED` tell the
+	 *     files backend not to consult its loose or packed source,
+	 *     respectively.
+	 *
 	 * The callback is expected to return an `enum odb_read_status`. Please
 	 * refer to the individual values that can be returned. In case reading
 	 * the object has failed with a generic error and `errmsg` is non-NULL,
@@ -221,7 +225,8 @@ struct odb_source {
 	 */
 	int (*freshen_object)(struct odb_source *source,
 			      const struct object_id *oid,
-			      const time_t *mtime);
+			      const time_t *mtime,
+			      int skip_virtualized_objects);
 
 	/*
 	 * This callback is expected to persist the given object into the
@@ -484,9 +489,11 @@ static inline int odb_source_find_abbrev_len(struct odb_source *source,
  */
 static inline int odb_source_freshen_object(struct odb_source *source,
 					    const struct object_id *oid,
-					    const time_t *mtime)
+					    const time_t *mtime,
+					    int skip_virtualized_objects)
 {
-	return source->freshen_object(source, oid, mtime);
+	return source->freshen_object(source, oid, mtime,
+				      skip_virtualized_objects);
 }
 
 /*

@@ -7,6 +7,13 @@ test_description='test the `scalar` command'
 GIT_TEST_MAINT_SCHEDULER="crontab:test-tool crontab cron.txt,launchctl:true,schtasks:true"
 export GIT_TEST_MAINT_SCHEDULER
 
+# Do not write any files outside the trash directory
+Scalar_UNATTENDED=1
+export Scalar_UNATTENDED
+
+GIT_ASKPASS=true
+export GIT_ASKPASS
+
 test_expect_success 'scalar shows a usage' '
 	test_expect_code 129 scalar -h
 '
@@ -274,6 +281,29 @@ test_expect_success 'scalar reconfigure --all with detached HEADs' '
 	done
 '
 
+test_expect_success 'verify http.<url>.version=HTTP/1.1 for ADO URLs' '
+	test_when_finished rm -rf test-http-url-config &&
+
+	# Create a test repository
+	git init test-http-url-config &&
+
+	# Test both URL types
+	for url in "https://test@dev.azure.com/test/project/_git/repo" \
+		   "https://contoso.visualstudio.com/project/_git/repo"
+	do
+		# Set URL as remote
+		git -C test-http-url-config config set remote.origin.url "$url" &&
+
+		# Run scalar reconfigure
+		scalar reconfigure test-http-url-config &&
+
+		# Verify URL-specific HTTP version setting
+		git -C test-http-url-config config "http.$url.version" >actual &&
+		echo "HTTP/1.1" >expect &&
+		test_cmp expect actual || return 1
+	done
+'
+
 test_expect_success '`reconfigure -a` removes stale config entries' '
 	git init stale/src &&
 	scalar register stale &&
@@ -331,6 +361,341 @@ test_expect_success UNZIP 'scalar diagnose' '
 	test_grep "$(pwd)/.git/objects" out &&
 	"$GIT_UNZIP" -p "$zip_path" objects-local.txt >out &&
 	test_grep "^Total: [1-9]" out
+'
+
+GIT_TEST_ALLOW_GVFS_VIA_HTTP=1
+export GIT_TEST_ALLOW_GVFS_VIA_HTTP
+
+test_set_port GIT_TEST_GVFS_PROTOCOL_ORIGIN_PORT
+ORIGIN_HOST_PORT=127.0.0.1:$GIT_TEST_GVFS_PROTOCOL_ORIGIN_PORT
+ORIGIN_PID_FILE="$(pwd)"/pid-file.$GIT_TEST_GVFS_PROTOCOL_ORIGIN_PORT.pid
+ORIGIN_SERVER_LOG="$(pwd)"/server-origin.$GIT_TEST_GVFS_PROTOCOL_ORIGIN_PORT.log
+
+test_atexit '
+	test -f "$ORIGIN_PID_FILE" || return 0
+
+	# The server will shutdown automatically when we delete the pid-file.
+	rm -f "$ORIGIN_PID_FILE"
+
+	test -z "$verbose$verbose_log" || {
+		echo "server log:"
+		cat "$ORIGIN_SERVER_LOG"
+	}
+
+	# Give it a few seconds to shutdown (mainly to completely release the
+	# port before the next test start another instance and it attempts to
+	# bind to it).
+	for k in $(test_seq 5)
+	do
+		grep -q "Starting graceful shutdown" "$ORIGIN_SERVER_LOG" &&
+		return 0 ||
+		sleep 1
+	done
+
+	echo "stop_gvfs_protocol_server: timeout waiting for server shutdown"
+	return 1
+'
+
+start_gvfs_enabled_http_server () {
+	GIT_HTTP_EXPORT_ALL=1 \
+	test-gvfs-protocol --verbose \
+		--listen=127.0.0.1 \
+		--port=$GIT_TEST_GVFS_PROTOCOL_ORIGIN_PORT \
+		--reuseaddr \
+		--pid-file="$ORIGIN_PID_FILE" \
+		2>"$ORIGIN_SERVER_LOG" &
+
+	for k in $(test_seq 5)
+	do
+		if test -f "$ORIGIN_PID_FILE"
+		then
+			return 0
+		fi
+		sleep 1
+	done
+	return 1
+}
+
+test_expect_success 'start GVFS-enabled server' '
+	git config uploadPack.allowFilter false &&
+	git config uploadPack.allowAnySHA1InWant false &&
+	start_gvfs_enabled_http_server
+'
+
+test_expect_success '`scalar clone` with GVFS-enabled server' '
+	: the fake cache server requires fake authentication &&
+	git config --global core.askPass true &&
+
+	# We must set credential.interactive=true to bypass a setting
+	# in "scalar clone" that disables interactive credentials during
+	# an unattended command.
+	GIT_TRACE2_EVENT="$(pwd)/clone-trace-with-gvfs" scalar \
+		-c credential.interactive=true \
+		clone --gvfs-protocol \
+		--single-branch -- http://$ORIGIN_HOST_PORT/ using-gvfs &&
+
+	grep "GET/config(main)" <clone-trace-with-gvfs &&
+
+	: verify that the shared cache has been configured &&
+	cache_key="url_$(printf "%s" http://$ORIGIN_HOST_PORT/ |
+		tr A-Z a-z |
+		test-tool sha1)" &&
+	echo "$(pwd)/.scalarCache/$cache_key" >expect &&
+	git -C using-gvfs/src config gvfs.sharedCache >actual &&
+	test_cmp expect actual &&
+
+	: verify that URL-specific HTTP version setting is configured for GVFS URLs in clone &&
+	git -C using-gvfs/src config "http.http://$ORIGIN_HOST_PORT/.version" >actual &&
+	echo "HTTP/1.1" >expect &&
+	test_cmp expect actual &&
+
+	second=$(git rev-parse --verify second:second.t) &&
+	(
+		cd using-gvfs/src &&
+		test_path_is_missing 1/2 &&
+		GIT_TRACE=$PWD/trace.txt git cat-file blob $second >actual &&
+		: verify that the gvfs-helper was invoked to fetch it &&
+		test_grep gvfs-helper trace.txt &&
+		echo "second" >expect &&
+		test_cmp expect actual
+	)
+'
+
+test_expect_success '`scalar clone --no-prefetch` skips the initial prefetch' '
+	git config --global core.askPass true &&
+	tip=$(git rev-parse HEAD) &&
+
+	# A normal GVFS-enabled clone issues a "/gvfs/prefetch" request,
+	# which shows up in the trace as a "prefetch/since" data event.
+	GIT_TRACE2_EVENT="$(pwd)/with-prefetch-trace" scalar \
+		-c credential.interactive=true \
+		clone --gvfs-protocol --single-branch \
+		-- http://$ORIGIN_HOST_PORT/ with-prefetch &&
+	test_grep "prefetch/since" with-prefetch-trace &&
+
+	# ... but "--no-prefetch" skips that request during the clone while
+	# fetching the tip commit and its trees through the objects POST
+	# endpoint before checkout.
+	GIT_TRACE2_EVENT="$(pwd)/no-prefetch-trace" \
+		GIT_TRACE2_PERF="$(pwd)/no-prefetch-perf" scalar \
+		-c credential.interactive=true \
+		clone --no-prefetch --gvfs-protocol --single-branch \
+		-- http://$ORIGIN_HOST_PORT/ no-prefetch &&
+	test_grep ! "prefetch/since" no-prefetch-trace &&
+	test_grep "gh_client__queue_oid: $tip" no-prefetch-perf &&
+	test_trace2_data gh-client objects/post/nr_objects 1 \
+		<no-prefetch-trace &&
+
+	: the persisted core.gvfs still enables prefetch during fetch &&
+	echo 150 >expect &&
+	git -C no-prefetch/src config core.gvfs >actual &&
+	test_cmp expect actual &&
+
+	: and a subsequent git fetch performs the deferred prefetch &&
+	GIT_TRACE2_EVENT="$(pwd)/fetch-trace" \
+		git -C no-prefetch/src fetch origin &&
+	test_grep "prefetch/since" fetch-trace
+'
+
+test_expect_success '`scalar clone` with GVFS-enabled server; local cache path' '
+	: the fake cache server requires fake authentication &&
+	git config --global core.askPass true &&
+
+	LOCAL_CACHE_BASE="$(pwd)/local" &&
+
+	# We must set credential.interactive=true to bypass a setting
+	# in "scalar clone" that disables interactive credentials during
+	# an unattended command.
+	scalar \
+		-c credential.interactive=true \
+		clone --gvfs-protocol \
+		--local-cache-path="$LOCAL_CACHE_BASE" \
+		--single-branch -- http://$ORIGIN_HOST_PORT/ with-local &&
+
+	: verify that the shared cache has been configured &&
+	cache_key="url_$(printf "%s" http://$ORIGIN_HOST_PORT/ |
+		tr A-Z a-z |
+		test-tool sha1)" &&
+	LOCAL_CACHE_DIR="$LOCAL_CACHE_BASE/$cache_key" &&
+	echo "$LOCAL_CACHE_DIR" >expect &&
+	git -C with-local/src config gvfs.sharedCache >actual &&
+	test_cmp expect actual &&
+
+	: check the local cache is recreated on fetch &&
+	rm -rf $LOCAL_CACHE_BASE &&
+	git -C with-local fetch &&
+	test_path_is_dir "$LOCAL_CACHE_DIR" &&
+	test_path_is_dir "$LOCAL_CACHE_DIR/pack"
+'
+
+. "$TEST_DIRECTORY"/lib-gvfs-helper.sh
+
+test_expect_success 'scalar clone: all verbs with different servers' '
+	git config --global core.askPass true &&
+
+	test_when_finished "per_test_cleanup" &&
+	test_when_finished "scalar delete scalar-clone" &&
+
+	start_gvfs_protocol_server 1 &&
+	start_gvfs_protocol_server 2 &&
+	start_gvfs_protocol_server 3 &&
+	start_gvfs_protocol_server 4 &&
+
+	# Configure each verb to use a different server:
+	# - server 1: default (unused in this test; not running.)
+	# - server 2: prefetch
+	# - server 3: get
+	# - server 4: post
+	scalar -c credential.interactive=true \
+			clone --full-clone \
+			 --cache-server-url="$(cache_server_url 1)" \
+		     --prefetch-cache-server-url="$(cache_server_url 2)" \
+		     --get-cache-server-url="$(cache_server_url 3)" \
+		     --post-cache-server-url="$(cache_server_url 4)" \
+			 --gvfs-protocol \
+		     -- "http://$ORIGIN_HOST_PORT/" scalar-clone 2>err >out &&
+
+	test_grep "Cache server URL: $(cache_server_url 1)" err &&
+	test_grep "Prefetch cache server URL: $(cache_server_url 2)" err &&
+	test_grep "Objects GET cache server URL: $(cache_server_url 3)" err &&
+	test_grep "Objects POST cache server URL: $(cache_server_url 4)" err &&
+
+	test_cmp_config -C scalar-clone/src "$(cache_server_url 1)" gvfs.cache-server &&
+	test_cmp_config -C scalar-clone/src "$(cache_server_url 2)" gvfs.prefetch.cache-server &&
+	test_cmp_config -C scalar-clone/src "$(cache_server_url 3)" gvfs.get.cache-server &&
+	test_cmp_config -C scalar-clone/src "$(cache_server_url 4)" gvfs.post.cache-server &&
+
+	verify_server_was_contacted 1 &&
+	verify_server_was_contacted 2 &&
+	verify_server_was_contacted 3
+'
+
+test_expect_success EXPENSIVE 'fetch <non-existent> does not hang in gvfs-helper' '
+	# Marked as EXPENSIVE as this will go through multiple rounds of
+	# exponential backoff, including delays of 8, 16, 32, 64, 128,
+	# and 256 seconds in two separate instances.
+	test_must_fail git -C using-gvfs/src fetch origin does-not-exist
+'
+
+test_expect_success '`scalar clone --no-gvfs-protocol` skips gvfs/config' '
+	# the fake cache server requires fake authentication &&
+	git config --global core.askPass true &&
+
+	# We must set credential.interactive=true to bypass a setting
+	# in "scalar clone" that disables interactive credentials during
+	# an unattended command.
+	GIT_TRACE2_EVENT="$(pwd)/clone-trace-no-gvfs" scalar \
+		-c credential.interactive=true \
+		clone --no-gvfs-protocol \
+		--single-branch -- http://$ORIGIN_HOST_PORT/ skipping-gvfs &&
+
+	! grep "GET/config(main)" <clone-trace-no-gvfs &&
+	! git -C skipping-gvfs/src config core.gvfs &&
+
+	test_config -C skipping-gvfs/src remote.origin.partialclonefilter blob:none
+'
+
+test_expect_success '`scalar register` parallel to worktree is unsupported' '
+	git init test-repo/src &&
+	mkdir -p test-repo/out &&
+
+	: parallel to worktree is unsupported &&
+	test_must_fail env GIT_CEILING_DIRECTORIES="$(pwd)" \
+		scalar register test-repo/out &&
+	test_must_fail git config --get --global --fixed-value \
+		maintenance.repo "$(pwd)/test-repo/src" &&
+	scalar list >scalar.repos &&
+	test_grep ! -F "$(pwd)/test-repo/src" scalar.repos &&
+
+	: at enlistment root, i.e. parent of repository, is supported &&
+	GIT_CEILING_DIRECTORIES="$(pwd)" scalar register test-repo &&
+	git config --get --global --fixed-value \
+		maintenance.repo "$(pwd)/test-repo/src" &&
+	scalar list >scalar.repos &&
+	test_grep -F "$(pwd)/test-repo/src" scalar.repos &&
+
+	: scalar delete properly unregisters enlistment &&
+	scalar delete test-repo &&
+	test_must_fail git config --get --global --fixed-value \
+		maintenance.repo "$(pwd)/test-repo/src" &&
+	scalar list >scalar.repos &&
+	test_grep ! -F "$(pwd)/test-repo/src" scalar.repos
+'
+
+test_expect_success '`scalar register` & `unregister` with existing repo' '
+	git init existing &&
+	scalar register existing &&
+	git config --get --global --fixed-value \
+		maintenance.repo "$(pwd)/existing" &&
+	scalar list >scalar.repos &&
+	test_grep -F "$(pwd)/existing" scalar.repos &&
+	scalar unregister existing &&
+	test_must_fail git config --get --global --fixed-value \
+		maintenance.repo "$(pwd)/existing" &&
+	scalar list >scalar.repos &&
+	test_grep ! -F "$(pwd)/existing" scalar.repos
+'
+
+test_expect_success '`scalar unregister` with existing repo, deleted .git' '
+	scalar register existing &&
+	rm -rf existing/.git &&
+	scalar unregister existing &&
+	test_must_fail git config --get --global --fixed-value \
+		maintenance.repo "$(pwd)/existing" &&
+	scalar list >scalar.repos &&
+	test_grep ! -F "$(pwd)/existing" scalar.repos
+'
+
+test_expect_success '`scalar register` existing repo with `src` folder' '
+	git init existing &&
+	mkdir -p existing/src &&
+	scalar register existing/src &&
+	scalar list >scalar.repos &&
+	test_grep -F "$(pwd)/existing" scalar.repos &&
+	scalar unregister existing &&
+	scalar list >scalar.repos &&
+	test_grep ! -F "$(pwd)/existing" scalar.repos
+'
+
+test_expect_success '`scalar delete` with existing repo' '
+	git init existing &&
+	scalar register existing &&
+	scalar delete existing &&
+	test_path_is_missing existing
+'
+
+test_expect_success 'scalar cache-server basics' '
+	repo=with-cache-server &&
+	git init $repo &&
+	scalar cache-server --get $repo >out &&
+	cat >expect <<-EOF &&
+	Using cache server: (undefined)
+	EOF
+	test_cmp expect out &&
+
+	scalar cache-server --set http://fake-server/url $repo &&
+	test_cmp_config -C $repo http://fake-server/url gvfs.cache-server &&
+	scalar delete $repo &&
+	test_path_is_missing $repo
+'
+
+test_expect_success 'scalar cache-server list URL' '
+	repo=with-real-gvfs &&
+	git init $repo &&
+	git -C $repo remote add origin http://$ORIGIN_HOST_PORT/ &&
+	scalar cache-server --list origin $repo >out &&
+
+	cat >expect <<-EOF &&
+	#0: http://$ORIGIN_HOST_PORT/servertype/cache
+	EOF
+
+	test_cmp expect out &&
+
+	test_must_fail scalar -C $repo cache-server --list 2>err &&
+	test_grep "requires a value" err &&
+
+	scalar delete $repo &&
+	test_path_is_missing $repo
 '
 
 test_done
