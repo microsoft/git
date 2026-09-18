@@ -74,8 +74,8 @@ jobs:
         arch:
           - name: x86_64
             artifact: pkg-x86_64
-            toolchain: x86_64
-            mingwprefix: mingw64
+            toolchain: ucrt-x86_64
+            mingwprefix: ucrt64
             runner: windows-2022
           - name: aarch64
             artifact: pkg-aarch64
@@ -201,8 +201,8 @@ jobs:
         arch:
           - name: x86_64
             artifact: pkg-x86_64
-            toolchain: x86_64
-            mingwprefix: mingw64
+            toolchain: ucrt-x86_64
+            mingwprefix: ucrt64
             runner: windows-2022
           - name: aarch64
             artifact: pkg-aarch64
