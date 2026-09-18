@@ -22,7 +22,11 @@ done
 case "$(cargo -vV | sed -n 's/^host: \(.*\)$/\1/p')" in
 	*-windows-msvc)
 		LIBNAME=gitcore.lib
-		PATH="$(echo "$PATH" | tr ':' '\n' | grep -Ev "^(/mingw64/bin|/usr/bin)$" | paste -sd: -):/mingw64/bin:/usr/bin"
+		mingw_prefix=${MINGW_PREFIX:-/$(printf '%s' \
+			"${MSYSTEM:-UCRT64}" | tr A-Z a-z)}
+		PATH="$(echo "$PATH" | tr ':' '\n' |
+			grep -Fxv -e "$mingw_prefix/bin" -e /usr/bin |
+			paste -sd: -):$mingw_prefix/bin:/usr/bin"
 		export PATH
 		;;
 	*-windows-*)
