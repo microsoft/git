@@ -43,6 +43,24 @@ jobs:
         if: runner.os == 'Windows'
         uses: git-for-windows/setup-git-for-windows-sdk@v2
 
+      - name: Update the Git wrapper for UCRT64
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          # Only needed for the MINGW64 to UCRT64 transition, until
+          # Actions runners ship Git for Windows v2.56.0 final.
+          if ($env:MSYSTEM -eq 'UCRT64' -and
+              !(Test-Path 'C:\Program Files\Git\ucrt64')) {
+            $url = 'https://github.com/git-for-windows/git/releases'
+            $url += '/download/v2.56.0-rc0.windows.1'
+            $zip = Join-Path $env:RUNNER_TEMP 'MinGit.zip'
+            Invoke-WebRequest -Uri "$url/MinGit-2.56.0-rc0-64-bit.zip" `
+              -OutFile $zip
+            & "$env:SystemRoot\System32\tar.exe" -xf $zip `
+              -C 'C:\Program Files\Git' cmd/git.exe cmd/scalar.exe
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          }
+
       - name: Provide a minimal `install` on Windows
         if: runner.os == 'Windows'
         shell: bash

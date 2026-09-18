@@ -99,6 +99,13 @@ jobs:
 
           make -j5 DESTDIR="$GITHUB_WORKSPACE/MicrosoftGit/payload/${{ matrix.architecture }}" install
 
+          # The test runners still ship the MINGW64 runtime.
+          if test "$MSYSTEM" = UCRT64
+          then
+            cp /ucrt64/bin/*.dll \
+              "$GITHUB_WORKSPACE/MicrosoftGit/payload/x86_64/ucrt64/bin/"
+          fi
+
       - name: Upload Git artifact
         uses: actions/upload-artifact@v7
         with:
@@ -136,6 +143,18 @@ jobs:
           ) else (
             set GIT_PAYLOAD=%~dp0payload\x86_64
           )
+          rem Only needed for the MINGW64 to UCRT64 transition, until
+          rem Actions runners ship Git for Windows v2.56.0 final.
+          if not exist "%GIT_PAYLOAD%\ucrt64\bin\git.exe" goto install_git
+          if exist "C:\Program Files\Git\ucrt64" goto install_git
+          set "MINGIT_URL=https://github.com/git-for-windows/git/releases"
+          set "MINGIT_URL=%MINGIT_URL%/download/v2.56.0-rc0.windows.1"
+          "%SYSTEMROOT%\System32\curl.exe" -fL ^
+            "%MINGIT_URL%/MinGit-2.56.0-rc0-64-bit.zip" ^
+            -o "%RUNNER_TEMP%\MinGit.zip" || exit /b 1
+          "%SYSTEMROOT%\System32\tar.exe" -xf "%RUNNER_TEMP%\MinGit.zip" ^
+            -C "C:\Program Files\Git" cmd/git.exe || exit /b 1
+          :install_git
           echo Installing Git from %GIT_PAYLOAD% to "C:\Program Files\Git"...
           robocopy "%GIT_PAYLOAD%" "C:\Program Files\Git" /E /NFL /NDL /NJH /NJS /NS /NC
           if %ERRORLEVEL% GEQ 8 exit /b %ERRORLEVEL%
