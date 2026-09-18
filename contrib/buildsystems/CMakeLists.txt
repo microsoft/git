@@ -258,7 +258,7 @@ add_compile_definitions(PAGER_ENV="LESS=FRX LV=-c"
 			BINDIR="bin")
 
 if(WIN32)
-	set(FALLBACK_RUNTIME_PREFIX /mingw64)
+	set(FALLBACK_RUNTIME_PREFIX /ucrt64)
 	# Move system config into top-level /etc/
 	add_compile_definitions(FALLBACK_RUNTIME_PREFIX="${FALLBACK_RUNTIME_PREFIX}"
 		ETC_GITATTRIBUTES="../etc/gitattributes"
