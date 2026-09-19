@@ -432,32 +432,35 @@ test_expect_success 'maintenance.loose-objects.batchSize' '
 test_expect_success 'loose-objects and gvfs.sharedCache' '
 	git init gvfs-worktree &&
 	git init --bare gvfs-shared &&
-	git -C gvfs-worktree config gvfs.sharedCache "$PWD/gvfs-shared/objects" &&
+	(
+		cd gvfs-worktree &&
+		git config gvfs.sharedCache "$PWD/../gvfs-shared/objects" &&
 
-	# Hack to stop maintenance from running during "git commit"
-	echo in use >gvfs-worktree/.git/objects/maintenance.lock &&
-	git -C gvfs-worktree config maintenance.loose-objects.auto 1 &&
-	test_commit -C gvfs-worktree create-loose-object &&
-	rm gvfs-worktree/.git/objects/maintenance.lock &&
-	! ls -l gvfs-shared/objects/??/* &&
-	ls -l gvfs-worktree/.git/objects/??/* >loose-objects &&
-	test_file_not_empty loose-objects &&
-	! ls -l gvfs-shared/objects/pack/*.pack &&
+		# Hack to stop maintenance from running during "git commit"
+		echo in use >.git/objects/maintenance.lock &&
+		git config maintenance.loose-objects.auto 1 &&
+		test_commit create-loose-object &&
+		rm .git/objects/maintenance.lock &&
+		! ls -l ../gvfs-shared/objects/??/* &&
+		ls -l .git/objects/??/* >loose-objects &&
+		test_file_not_empty loose-objects &&
+		! ls -l ../gvfs-shared/objects/pack/*.pack &&
 
-	# move the loose objects into the shared objects as if they had been
-	# fetched via the `gvfs-helper`
-	mv gvfs-worktree/.git/objects/?? gvfs-shared/objects/ &&
+		# move the loose objects into the shared objects as if they had been
+		# fetched via the `gvfs-helper`
+		mv .git/objects/?? ../gvfs-shared/objects/ &&
 
-	# Run `loose-objects` twice: The first run creates a pack-file
-	# but does not delete loose objects, the second run deletes
-	# loose objects but does not create a pack-file.
-	git -C gvfs-worktree maintenance run --task=loose-objects &&
-	git -C gvfs-worktree maintenance run --task=loose-objects &&
+		# Run `loose-objects` twice: The first run creates a pack-file
+		# but does not delete loose objects, the second run deletes
+		# loose objects but does not create a pack-file.
+		git maintenance run --task=loose-objects &&
+		git maintenance run --task=loose-objects &&
 
-	! ls -l gvfs-worktree/.git/objects/??/* &&
-	! ls -l gvfs-shared/.git/objects/??/* &&
-	ls -l gvfs-shared/objects/pack/*.pack >shared-packs &&
-	test_file_not_empty shared-packs
+		! ls -l .git/objects/??/* &&
+		! ls -l ../gvfs-shared/.git/objects/??/* &&
+		ls -l ../gvfs-shared/objects/pack/*.pack >shared-packs &&
+		test_file_not_empty shared-packs
+	)
 '
 
 test_expect_success 'incremental-repack task' '
@@ -951,7 +954,6 @@ test_expect_success 'invalid --schedule value' '
 '
 
 test_expect_success '--schedule inheritance weekly -> daily -> hourly' '
-	git config --unset maintenance.strategy &&
 	git config maintenance.loose-objects.enabled true &&
 	git config maintenance.loose-objects.schedule hourly &&
 	git config maintenance.commit-graph.enabled true &&

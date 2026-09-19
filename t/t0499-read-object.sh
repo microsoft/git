@@ -31,7 +31,7 @@ test_expect_success 'read-object-hook is bypassed when writing objects' '
 	 echo hello >hello.txt &&
 	 git add hello.txt &&
 	 hash="$(git rev-parse --verify :hello.txt)" &&
-	 ! grep "$hash" .git/read-object-hook.log)
+	 test_grep ! "$hash" .git/read-object-hook.log)
 '
 
 test_done

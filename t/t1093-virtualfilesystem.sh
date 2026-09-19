@@ -411,7 +411,7 @@ test_expect_success 'checkout skips lstat for deleted skip-worktree entries in V
 
 	# Verify all entries are skip-worktree before checkout
 	git ls-files -v >actual &&
-	! grep "^H " actual &&
+	test_grep ! "^H " actual &&
 
 	# Checkout to side branch. Without the fix this fails because
 	# verify_absent_1 finds untracked content in the directory at
@@ -463,7 +463,7 @@ test_expect_success 'checkout <tree> -- <path> preserves skip-worktree in VFS mo
 
 	# Index should have the old (HEAD~1) OID
 	git ls-files -s dir1/file1.txt >actual_index &&
-	grep "$(cat expect_old_oid)" actual_index &&
+	test_grep "$(cat expect_old_oid)" actual_index &&
 
 	# The file should NOT have been written to disk — the fix
 	# preserves skip-worktree so checkout_entry() is skipped.
@@ -529,7 +529,7 @@ test_expect_success 'reset --mixed reports hydrated files as modified in VFS mod
 	# the reset output because skip-worktree is cleared during the
 	# reset so refresh_index detects the mismatch.
 	git reset HEAD~1 >actual_stdout &&
-	grep "dir1/file1.txt" actual_stdout
+	test_grep "dir1/file1.txt" actual_stdout
 '
 
 test_expect_success 'reset --mixed reports non-hydrated files as modified in VFS mode' '
@@ -553,7 +553,7 @@ test_expect_success 'reset --mixed reports non-hydrated files as modified in VFS
 	# reset --mixed to parent: git should write pre-reset content to
 	# disk and clear skip-worktree, reporting the file as modified.
 	git reset HEAD~1 >actual_stdout &&
-	grep "dir1/file1.txt" actual_stdout &&
+	test_grep "dir1/file1.txt" actual_stdout &&
 
 	# The pre-reset content should have been written to disk
 	test_path_is_file dir1/file1.txt
@@ -576,8 +576,8 @@ test_expect_success 'reset --mixed with hydrated file leaves other skip-worktree
 	# Reset: only dir1/file1.txt changed between HEAD and HEAD~1.
 	# dir2/file1.txt should not appear in the output at all.
 	git reset HEAD~1 >actual_stdout &&
-	grep "dir1/file1.txt" actual_stdout &&
-	! grep "dir2/file1.txt" actual_stdout
+	test_grep "dir1/file1.txt" actual_stdout &&
+	test_grep ! "dir2/file1.txt" actual_stdout
 '
 
 test_done

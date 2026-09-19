@@ -471,7 +471,7 @@ test_expect_success '`scalar clone --no-prefetch` skips the initial prefetch' '
 		-c credential.interactive=true \
 		clone --gvfs-protocol --single-branch \
 		-- http://$ORIGIN_HOST_PORT/ with-prefetch &&
-	grep "prefetch/since" with-prefetch-trace &&
+	test_grep "prefetch/since" with-prefetch-trace &&
 
 	# ... but "--no-prefetch" skips that request during the clone while
 	# fetching the tip commit and its trees through the objects POST
@@ -481,8 +481,8 @@ test_expect_success '`scalar clone --no-prefetch` skips the initial prefetch' '
 		-c credential.interactive=true \
 		clone --no-prefetch --gvfs-protocol --single-branch \
 		-- http://$ORIGIN_HOST_PORT/ no-prefetch &&
-	! grep "prefetch/since" no-prefetch-trace &&
-	grep "gh_client__queue_oid: $tip" no-prefetch-perf &&
+	test_grep ! "prefetch/since" no-prefetch-trace &&
+	test_grep "gh_client__queue_oid: $tip" no-prefetch-perf &&
 	test_trace2_data gh-client objects/post/nr_objects 1 \
 		<no-prefetch-trace &&
 
@@ -494,7 +494,7 @@ test_expect_success '`scalar clone --no-prefetch` skips the initial prefetch' '
 	: and a subsequent git fetch performs the deferred prefetch &&
 	GIT_TRACE2_EVENT="$(pwd)/fetch-trace" \
 		git -C no-prefetch/src fetch origin &&
-	grep "prefetch/since" fetch-trace
+	test_grep "prefetch/since" fetch-trace
 '
 
 test_expect_success '`scalar clone` with GVFS-enabled server; local cache path' '
@@ -605,21 +605,21 @@ test_expect_success '`scalar register` parallel to worktree is unsupported' '
 	test_must_fail git config --get --global --fixed-value \
 		maintenance.repo "$(pwd)/test-repo/src" &&
 	scalar list >scalar.repos &&
-	! grep -F "$(pwd)/test-repo/src" scalar.repos &&
+	test_grep ! -F "$(pwd)/test-repo/src" scalar.repos &&
 
 	: at enlistment root, i.e. parent of repository, is supported &&
 	GIT_CEILING_DIRECTORIES="$(pwd)" scalar register test-repo &&
 	git config --get --global --fixed-value \
 		maintenance.repo "$(pwd)/test-repo/src" &&
 	scalar list >scalar.repos &&
-	grep -F "$(pwd)/test-repo/src" scalar.repos &&
+	test_grep -F "$(pwd)/test-repo/src" scalar.repos &&
 
 	: scalar delete properly unregisters enlistment &&
 	scalar delete test-repo &&
 	test_must_fail git config --get --global --fixed-value \
 		maintenance.repo "$(pwd)/test-repo/src" &&
 	scalar list >scalar.repos &&
-	! grep -F "$(pwd)/test-repo/src" scalar.repos
+	test_grep ! -F "$(pwd)/test-repo/src" scalar.repos
 '
 
 test_expect_success '`scalar register` & `unregister` with existing repo' '
@@ -628,12 +628,12 @@ test_expect_success '`scalar register` & `unregister` with existing repo' '
 	git config --get --global --fixed-value \
 		maintenance.repo "$(pwd)/existing" &&
 	scalar list >scalar.repos &&
-	grep -F "$(pwd)/existing" scalar.repos &&
+	test_grep -F "$(pwd)/existing" scalar.repos &&
 	scalar unregister existing &&
 	test_must_fail git config --get --global --fixed-value \
 		maintenance.repo "$(pwd)/existing" &&
 	scalar list >scalar.repos &&
-	! grep -F "$(pwd)/existing" scalar.repos
+	test_grep ! -F "$(pwd)/existing" scalar.repos
 '
 
 test_expect_success '`scalar unregister` with existing repo, deleted .git' '
@@ -643,7 +643,7 @@ test_expect_success '`scalar unregister` with existing repo, deleted .git' '
 	test_must_fail git config --get --global --fixed-value \
 		maintenance.repo "$(pwd)/existing" &&
 	scalar list >scalar.repos &&
-	! grep -F "$(pwd)/existing" scalar.repos
+	test_grep ! -F "$(pwd)/existing" scalar.repos
 '
 
 test_expect_success '`scalar register` existing repo with `src` folder' '
@@ -651,10 +651,10 @@ test_expect_success '`scalar register` existing repo with `src` folder' '
 	mkdir -p existing/src &&
 	scalar register existing/src &&
 	scalar list >scalar.repos &&
-	grep -F "$(pwd)/existing" scalar.repos &&
+	test_grep -F "$(pwd)/existing" scalar.repos &&
 	scalar unregister existing &&
 	scalar list >scalar.repos &&
-	! grep -F "$(pwd)/existing" scalar.repos
+	test_grep ! -F "$(pwd)/existing" scalar.repos
 '
 
 test_expect_success '`scalar delete` with existing repo' '
@@ -692,7 +692,7 @@ test_expect_success 'scalar cache-server list URL' '
 	test_cmp expect out &&
 
 	test_must_fail scalar -C $repo cache-server --list 2>err &&
-	grep "requires a value" err &&
+	test_grep "requires a value" err &&
 
 	scalar delete $repo &&
 	test_path_is_missing $repo
