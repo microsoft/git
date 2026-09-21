@@ -244,11 +244,12 @@ static int set_recommended_config(int reconfigure)
 		if (repo_config_get_string(the_repository, "core.configlocktimeout",
 					   &dummy) &&
 		    repo_config_set_gently(the_repository, "core.configlocktimeout",
-					   value) < 0)
+					   value))
 			return error(_("could not configure %s=%s"),
 				     "core.configLockTimeout", value);
 		if (repo_config_set_gently(the_repository,
-					   "core.configwritelocktimeoutms", NULL) < 0)
+					   "core.configwritelocktimeoutms",
+					   NULL))
 			return error(_("could not configure %s=%s"),
 				     "core.configWriteLockTimeoutMS", "NULL");
 		free(value);
