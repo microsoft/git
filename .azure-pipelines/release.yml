@@ -64,13 +64,9 @@ parameters:
   - name: macos_matrix
     type: object
     default:
-      - id: macos_universal
-        jobName: 'macOS (x64 + ARM64)'
+      - id: macos_arm64
+        jobName: 'macOS (ARM64)'
         pool: 'Azure Pipelines'
-        # macOS-latest is an Intel x86_64 Mac Pro, which can't host the
-        # arm64 Homebrew the universal-binary build needs. We need to
-        # explictly target the newer Apple Silicon machines that can run
-        # both x86_64 and arm64 builds.
         image: macOS-15-arm64
         os: macos
 
@@ -689,11 +685,11 @@ extends:
                     artifactName: '${{ dim.id }}'
               # macOS build flow:
               #
-              #   1. Configure for a universal build and produce
+              #   1. Configure for an ARM64 build and produce
               #      Git's own dist tarballs (`make dist dist-doc`).
               #   2. Extract the source tarball into payload/, copy
               #      config.mak in, run `make payload` to compile and
-              #      install into stage/git-universal-<ver>/.
+              #      install into stage/git-arm64-<ver>/.
               #   3. Mirror stage/ into build-artifacts/ (which is
               #      what the macos-installer Makefile's `pkg` target
               #      consumes - see note in the build step).
@@ -720,38 +716,19 @@ extends:
                     script: |
                       set -euo pipefail
 
-                      # The agent's native arm64 Homebrew lives at
-                      # /opt/homebrew. Install a separate x86_64 Homebrew
-                      # under /usr/local so we can fetch the x86_64 build
-                      # of gettext/libintl alongside the arm64 one.
-                      # Homebrew/install#1140 dropped Intel bootstrap support.
-                      url=https://raw.githubusercontent.com/Homebrew/install
-                      rev=7a133dcc74051ee4efc79467ed215dfedf45aea2
-                      arch -x86_64 /bin/bash -c \
-                        "$(curl -fsSL "$url/$rev/install.sh")"
-                      arch -x86_64 /usr/local/bin/brew install gettext
-
                       # Ensure native Homebrew (arm64) is up-to-date beforehand.
                       HOMEBREW_NO_AUTO_UPDATE='' brew update
 
                       # Native (arm64) build dependencies.
-                      brew install automake asciidoc xmlto docbook
+                      brew install automake asciidoc xmlto docbook gettext
                       brew link --force gettext
 
-                      # Make a universal libintl.a out of the two
-                      # arch-specific copies, dropped at the workspace
-                      # root so the build's LDFLAGS = -L"$(pwd)" can find
-                      # it. libintl depends on iconv, but we deliberately
-                      # use the system's universal /usr/lib/libiconv.dylib
-                      # rather than Homebrew's libiconv (which exports
-                      # _libiconv* symbols, while Homebrew's gettext was
-                      # built against system iconv with _iconv* symbols).
-                      lipo -create \
-                        -output libintl.a \
-                        /usr/local/opt/gettext/lib/libintl.a \
-                        /opt/homebrew/opt/gettext/lib/libintl.a
+                      # Use the native static libintl.a. It depends on
+                      # the system's /usr/lib/libiconv.dylib rather than
+                      # Homebrew's incompatible _libiconv* symbols.
+                      cp "$(brew --prefix gettext)/lib/libintl.a" libintl.a
                 - task: Bash@3
-                  displayName: 'Configure universal build'
+                  displayName: 'Configure ARM64 build'
                   inputs:
                     targetType: inline
                     script: |
@@ -762,13 +739,9 @@ extends:
                       BUILD_VERSION="$VERSION"
                       echo "$BUILD_VERSION" >version
 
-                      # HOST_CPU is a bit of a lie and is only used in
-                      # 'git version --build-options'; we'll fix that in
-                      # code. The two -arch flags are what actually drive
-                      # the universal build.
                       cat >config.mak <<EOF
-                      HOST_CPU = universal
-                      BASIC_CFLAGS += -arch arm64 -arch x86_64
+                      HOST_CPU = arm64
+                      BASIC_CFLAGS += -arch arm64
 
                       # macOS uses Apple Common Crypto instead of OpenSSL.
                       # The main Makefile sets NO_OPENSSL and adds
@@ -782,18 +755,17 @@ extends:
                       # _libiconv/_libiconv_open (prefixed) symbols while
                       # Homebrew's gettext/libintl was built against the
                       # system iconv that exports _iconv/_iconv_open
-                      # (unprefixed). We pin the build to the system's
-                      # universal /usr/lib/libiconv.dylib instead.
+                      # (unprefixed). Pin the build to the system's
+                      # /usr/lib/libiconv.dylib instead.
                       USE_HOMEBREW_LIBICONV =
                       ICONVDIR =
                       EOF
 
-                      # Find the universal libintl.a we lipo'd in the
-                      # previous step ($(pwd) is the workspace root) and
-                      # the gettext headers from either Homebrew prefix.
+                      # Find the native libintl.a staged in the previous
+                      # step and headers from the native Homebrew prefix.
                       homebrew_prefix="$(brew --prefix)"
                       cat >>config.mak <<EOF
-                      CFLAGS = -I$homebrew_prefix/include -I/usr/local/opt/gettext/include
+                      CFLAGS = -I$homebrew_prefix/include
                       LDFLAGS = -L"$(pwd)"
                       EOF
 
@@ -836,16 +808,8 @@ extends:
                       # this build.
                       export GIT_CONFIG_PARAMETERS="'maintenance.auto=false'"
 
-                      # Build a universal (arm64 + x86_64) Rust static
-                      # library. The C code is compiled with
-                      # `-arch arm64 -arch x86_64` via config.mak, but
-                      # `cargo build` only targets the host architecture
-                      # by default. RUST_TARGETS lets the Makefile build
-                      # both slices and combine them with lipo before
-                      # linking, including in the installer's sub-makes.
-                      rustup target add x86_64-apple-darwin
-                      RUST_TARGETS="aarch64-apple-darwin x86_64-apple-darwin"
-                      export RUST_TARGETS
+                      rustup target add aarch64-apple-darwin
+                      export RUST_TARGETS=aarch64-apple-darwin
 
                       make -j"$(sysctl -n hw.physicalcpu)" GIT-VERSION-FILE dist dist-doc
 
@@ -874,13 +838,13 @@ extends:
                       # at the worktree root in the previous step.
                       cp config.mak "payload/git-$BUILD_VERSION/config.mak"
 
-                      make -C .github/macos-installer V=1 payload
+                      make -C .github/macos-installer V=1 \
+                        ARCH_UNIV=arm64 ARCH_FLAGS="-arch arm64" payload
 
                       # NOTE: the macos-installer Makefile produces
-                      # the install tree at stage/git-universal-<ver>/
+                      # the install tree at stage/git-arm64-<ver>/
                       # but its `pkg` target packages from
-                      # build-artifacts/. Mirror the GitHub workflow
-                      # by copying the tree across so the rest of the
+                      # build-artifacts/. Copy the tree across so the
                       # pipeline (signing, pkg) finds it where the
                       # Makefile expects.
                       #
@@ -894,9 +858,9 @@ extends:
                       # installer Makefiles out of .github/ (they are
                       # build infrastructure, not GitHub-specific).
                       mkdir -p .github/macos-installer/build-artifacts
-                      cp -R "stage/git-universal-$BUILD_VERSION/." \
+                      cp -R "stage/git-arm64-$BUILD_VERSION/." \
                         .github/macos-installer/build-artifacts/
-                # ESRP-sign the universal Mach-O binaries inside the
+                # ESRP-sign the ARM64 Mach-O binaries inside the
                 # payload tree. The existing esrp/sign.yml template's
                 # CopyFiles@2 step uses minimatch globs and the only
                 # reliable way to detect Mach-O is by file content
@@ -982,7 +946,7 @@ extends:
                       # (the `ifdef APPLE_INSTALLER_IDENTITY` branch in
                       # pkg_cmd is skipped). ESRP signs it in the next
                       # step.
-                      make -C .github/macos-installer V=1 pkg
+                      make -C .github/macos-installer V=1 ARCH_UNIV=arm64 pkg
                 - ${{ if eq(parameters.esrp, true) }}:
                   - template: .azure-pipelines/esrp/sign.yml@self
                     parameters:
@@ -1032,10 +996,9 @@ extends:
                       VERSION="$(git_version)"
                       export VERSION
 
-                      # Builds .github/macos-installer/git-<version>-universal.dmg
-                      # from the contents of disk-image/, which now contains
-                      # the signed and notarized .pkg.
-                      make -C .github/macos-installer V=1 image
+                      # Builds git-<version>-arm64.dmg from disk-image/,
+                      # which contains the signed and notarized .pkg.
+                      make -C .github/macos-installer V=1 ARCH_UNIV=arm64 image
                 - task: Bash@3
                   displayName: 'Stage installer artifacts for upload'
                   inputs:
@@ -1050,26 +1013,25 @@ extends:
                       # or, after ESRP MacAppNotarize re-packs it, inside
                       # disk-image/<uuid>.zip.unzipped/. Find it.
                       pkg=$(find .github/macos-installer/disk-image \
-                              -name 'git-*-universal.pkg' -type f \
+                              -name 'git-*-arm64.pkg' -type f \
                               | head -1)
-                      mv .github/macos-installer/git-*-universal.dmg \
+                      mv .github/macos-installer/git-*-arm64.dmg \
                          "$pkg" \
                          "$(Build.ArtifactStagingDirectory)/_final/"
                 # Validate the freshly built pkg in-place: install it,
-                # assert `git --version`, and confirm the universal binary
-                # actually runs natively as the host architecture. Folded
-                # into the build job so it runs on the same agent without
-                # the 1ES job-startup overhead a separate validate job
-                # carries.
+                # assert `git --version`, and confirm the binary contains
+                # only the ARM64 architecture. Folded into the build job
+                # so it runs on the same agent without the 1ES job-startup
+                # overhead a separate validate job carries.
                 - bash: |
                     set -e
                     if [ "$(uname -m)" = arm64 ] && command -v brew >/dev/null; then
                       brew uninstall git || true
                     fi
                     pkg=$(find "$(Build.ArtifactStagingDirectory)/_final" \
-                      -name 'git-*-universal.pkg' -type f | head -1)
+                      -name 'git-*-arm64.pkg' -type f | head -1)
                     if [ -z "$pkg" ]; then
-                      echo "No git-*-universal.pkg found in _final" >&2
+                      echo "No git-*-arm64.pkg found in _final" >&2
                       exit 1
                     fi
                     echo "Installing $pkg"
@@ -1087,8 +1049,10 @@ extends:
                     set -ex
                     git version --build-options >actual
                     cat actual
-                    grep "cpu: $(uname -m)" actual
-                  displayName: 'Validate universal binary CPU architecture'
+                    grep '^cpu: arm64$' actual
+                    git_path="$(command -v git)"
+                    test "$(lipo -archs "$git_path")" = arm64
+                  displayName: 'Validate ARM64 binary CPU architecture'
 
           #
           # Linux build jobs
@@ -1299,9 +1263,9 @@ extends:
                     $(Pipeline.Workspace)/assets/windows_x64/*.zip
                     $(Pipeline.Workspace)/assets/windows_arm64/*.exe
                     $(Pipeline.Workspace)/assets/windows_arm64/*.zip
-                    $(Pipeline.Workspace)/assets/macos_universal/*.pkg
-                    $(Pipeline.Workspace)/assets/macos_universal/*.dmg
-                    $(Pipeline.Workspace)/assets/macos_universal/*.tar.gz
+                    $(Pipeline.Workspace)/assets/macos_arm64/*.pkg
+                    $(Pipeline.Workspace)/assets/macos_arm64/*.dmg
+                    $(Pipeline.Workspace)/assets/macos_arm64/*.tar.gz
                     $(Pipeline.Workspace)/assets/linux_x64/*.deb
                     $(Pipeline.Workspace)/assets/linux_x64/*.tar.gz
                     $(Pipeline.Workspace)/assets/linux_arm64/*.deb
