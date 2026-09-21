@@ -843,7 +843,7 @@ retry:
 			enum gh_client__created ghc;
 
 			if (flags & OBJECT_INFO_SKIP_FETCH_OBJECT)
-				return -1;
+				goto not_found;
 
 			gh_client__get_immediate(real, &ghc);
 			tried_gvfs_helper = 1;
@@ -917,6 +917,7 @@ retry:
 			}
 		}
 
+not_found:
 		ret = corrupt ? ODB_READ_ERROR : ODB_READ_NOT_FOUND;
 		goto out;
 	}
