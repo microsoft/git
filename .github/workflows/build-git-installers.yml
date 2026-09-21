@@ -74,8 +74,8 @@ jobs:
         arch:
           - name: x86_64
             artifact: pkg-x86_64
-            toolchain: x86_64
-            mingwprefix: mingw64
+            toolchain: ucrt-x86_64
+            mingwprefix: ucrt64
             runner: windows-2022
           - name: aarch64
             artifact: pkg-aarch64
@@ -201,8 +201,8 @@ jobs:
         arch:
           - name: x86_64
             artifact: pkg-x86_64
-            toolchain: x86_64
-            mingwprefix: mingw64
+            toolchain: ucrt-x86_64
+            mingwprefix: ucrt64
             runner: windows-2022
           - name: aarch64
             artifact: pkg-aarch64
@@ -408,7 +408,11 @@ jobs:
           set -ex
 
           # Install x86_64 packages
-          arch -x86_64 /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+          # Homebrew/install#1140 dropped Intel bootstrap support.
+          url=https://raw.githubusercontent.com/Homebrew/install
+          rev=7a133dcc74051ee4efc79467ed215dfedf45aea2
+          arch -x86_64 /bin/bash -c \
+            "$(curl -fsSL "$url/$rev/install.sh")"
           arch -x86_64 /usr/local/bin/brew install gettext
 
           # Install arm64 packages

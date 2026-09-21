@@ -43,10 +43,10 @@ parameters:
         poolArch: amd64
         image: win-x86_64-ado1es
         os: windows
-        toolchain: x86_64
+        toolchain: ucrt-x86_64
         cpu_arch: x86_64
-        mingwprefix: mingw64
-        msystem: MINGW64
+        mingwprefix: ucrt64
+        msystem: UCRT64
         sdk_repo: git-for-windows/git-sdk-64
 
       - id: windows_arm64
@@ -724,8 +724,11 @@ extends:
                       # /opt/homebrew. Install a separate x86_64 Homebrew
                       # under /usr/local so we can fetch the x86_64 build
                       # of gettext/libintl alongside the arm64 one.
+                      # Homebrew/install#1140 dropped Intel bootstrap support.
+                      url=https://raw.githubusercontent.com/Homebrew/install
+                      rev=7a133dcc74051ee4efc79467ed215dfedf45aea2
                       arch -x86_64 /bin/bash -c \
-                        "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+                        "$(curl -fsSL "$url/$rev/install.sh")"
                       arch -x86_64 /usr/local/bin/brew install gettext
 
                       # Ensure native Homebrew (arm64) is up-to-date beforehand.

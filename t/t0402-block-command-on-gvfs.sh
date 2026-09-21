@@ -49,7 +49,7 @@ test_expect_success 'worktree operations work when SUPPORTS_WORKTREES is set' '
 
 	# list: shows the worktree
 	git worktree list >out &&
-	grep "vfs-wt" out &&
+	test_grep "vfs-wt" out &&
 
 	# remove: cleans up
 	git worktree remove --force ../vfs-wt &&

@@ -640,9 +640,9 @@ static char *get_cache_key(const char *url)
 		strbuf_addstr(&downcased, url);
 		strbuf_tolower(&downcased);
 
-		hash_algo->init_fn(&ctx);
-		hash_algo->update_fn(&ctx, downcased.buf, downcased.len);
-		hash_algo->final_fn(hash, &ctx);
+		git_hash_init(&ctx, hash_algo);
+		git_hash_update(&ctx, downcased.buf, downcased.len);
+		git_hash_final(hash, &ctx);
 
 		strbuf_release(&downcased);
 
