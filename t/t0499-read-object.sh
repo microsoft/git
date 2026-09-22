@@ -69,8 +69,9 @@ test_expect_success 'no-fetch commit lookups still report corruption' '
 	: >"$parent_path" &&
 	for helper in false true
 	do
-		GIT_TRACE2_EVENT="$PWD/corrupt-$helper.trace" \
-		test_must_fail git -C no-fetch \
+		test_must_fail \
+			env GIT_TRACE2_EVENT="$PWD/corrupt-$helper.trace" \
+			git -C no-fetch \
 			-c core.gvfs=0 -c core.commitGraph=false \
 			-c core.useGVFSHelper=$helper \
 			-c core.virtualizeObjects=true \
