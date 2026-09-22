@@ -906,6 +906,7 @@ retry:
 			continue;
 		}
 
+not_found:
 		if (flags & OBJECT_INFO_DIE_IF_CORRUPT) {
 			if ((flags & OBJECT_INFO_LOOKUP_REPLACE) && !oideq(real, oid))
 				die(_("replacement %s not found for %s"),
@@ -917,7 +918,6 @@ retry:
 			}
 		}
 
-not_found:
 		ret = corrupt ? ODB_READ_ERROR : ODB_READ_NOT_FOUND;
 		goto out;
 	}
