@@ -53,8 +53,9 @@ test_expect_success 'no-fetch commit lookups skip object acquisition' '
 	test_write_lines "$tip" "?$parent" >expect &&
 	for helper in false true
 	do
-		GIT_TRACE2_EVENT="$PWD/no-fetch-$helper.trace" \
-		git -C no-fetch -c core.gvfs=0 -c core.commitGraph=false \
+		env GIT_TEST_COMMIT_GRAPH=0 \
+			GIT_TRACE2_EVENT="$PWD/no-fetch-$helper.trace" \
+			git -C no-fetch -c core.gvfs=0 -c core.commitGraph=false \
 			-c core.useGVFSHelper=$helper \
 			-c core.virtualizeObjects=true \
 			rev-list --missing=print HEAD >actual &&
@@ -70,7 +71,8 @@ test_expect_success 'no-fetch commit lookups still report corruption' '
 	for helper in false true
 	do
 		test_must_fail \
-			env GIT_TRACE2_EVENT="$PWD/corrupt-$helper.trace" \
+			env GIT_TEST_COMMIT_GRAPH=0 \
+			GIT_TRACE2_EVENT="$PWD/corrupt-$helper.trace" \
 			git -C no-fetch \
 			-c core.gvfs=0 -c core.commitGraph=false \
 			-c core.useGVFSHelper=$helper \
