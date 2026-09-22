@@ -732,7 +732,18 @@ extends:
                       rev=7a133dcc74051ee4efc79467ed215dfedf45aea2
                       arch -x86_64 /bin/bash -c \
                         "$(curl -fsSL "$url/$rev/install.sh")"
-                      arch -x86_64 /usr/local/bin/brew install gettext
+                      # Pin a formula with an Intel macOS bottle.
+                      x86_brew () {
+                        arch -x86_64 /usr/local/bin/brew "$@"
+                      }
+                      x86_brew tap-new --no-git microsoft/git-ci
+                      tap="$(x86_brew --repository microsoft/git-ci)"
+                      url=https://raw.githubusercontent.com
+                      url=$url/Homebrew/homebrew-core
+                      rev=87b79807b37427774de3b55f9d89eb9f6286f1fa
+                      curl -fsSL "$url/$rev/Formula/g/gettext.rb" \
+                        -o "$tap/Formula/gettext.rb"
+                      x86_brew install --force-bottle microsoft/git-ci/gettext
 
                       # Ensure native Homebrew (arm64) is up-to-date beforehand.
                       HOMEBREW_NO_AUTO_UPDATE='' brew update
