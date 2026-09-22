@@ -674,6 +674,7 @@ extends:
           - ${{ each dim in parameters.macos_matrix }}:
             - job: ${{ dim.id }}
               displayName: ${{ dim.jobName }}
+              timeoutInMinutes: 360
               pool:
                 name: ${{ dim.pool }}
                 image: ${{ dim.image }}
