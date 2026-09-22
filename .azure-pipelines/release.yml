@@ -716,6 +716,8 @@ extends:
                       sudo mdutil -i off / || true
                 - task: Bash@3
                   displayName: 'Install build dependencies'
+                  env:
+                    HOMEBREW_MAKE_JOBS: '8'
                   inputs:
                     targetType: inline
                     script: |
