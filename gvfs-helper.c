@@ -157,6 +157,7 @@
 #include "abspath.h"
 #include "progress.h"
 #include "trace2.h"
+#include "gvfs.h"
 
 static const char * const main_usage[] = {
 	N_("git gvfs-helper [<main_options>] config      [<options>]"),
@@ -690,7 +691,7 @@ static int option_parse_shared_cache_directory(const struct option *opt,
 		 */
 		strbuf_addbuf(&gvfs_shared_cache_pathname, &buf_arg);
 
-		odb_add_to_alternates_memory(the_repository->objects, buf_arg.buf);
+		add_gvfs_shared_cache_to_alternates(the_repository->objects, buf_arg.buf);
 
 		strbuf_release(&buf_arg);
 		return 0;
@@ -709,7 +710,7 @@ static int option_parse_shared_cache_directory(const struct option *opt,
 		strbuf_setlen(&gvfs_shared_cache_pathname, 0);
 		strbuf_addbuf(&gvfs_shared_cache_pathname, &buf_arg);
 
-		odb_add_to_alternates_memory(the_repository->objects, buf_arg.buf);
+		add_gvfs_shared_cache_to_alternates(the_repository->objects, buf_arg.buf);
 
 		/*
 		 * alt_odb_usable() releases gvfs_shared_cache_pathname
