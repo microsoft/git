@@ -839,11 +839,9 @@ retry:
 		if (ret != ODB_READ_NOT_FOUND)
 			corrupt = true;
 
-		if (core_use_gvfs_helper && !tried_gvfs_helper) {
+		if (core_use_gvfs_helper && !tried_gvfs_helper &&
+		    !(flags & OBJECT_INFO_SKIP_FETCH_OBJECT)) {
 			enum gh_client__created ghc;
-
-			if (flags & OBJECT_INFO_SKIP_FETCH_OBJECT)
-				goto not_found;
 
 			gh_client__get_immediate(real, &ghc);
 			tried_gvfs_helper = 1;
@@ -876,7 +874,8 @@ retry:
 				goto out;
 			if (ret != ODB_READ_NOT_FOUND)
 				corrupt = true;
-			if (gvfs_virtualize_objects(odb->repo) && !tried_hook) {
+			if (gvfs_virtualize_objects(odb->repo) && !tried_hook &&
+			    !(flags & OBJECT_INFO_SKIP_FETCH_OBJECT)) {
 				// TODO Assert or at least trace2 if gvfs-helper
 				// TODO was tried and failed and then read-object-hook
 				// TODO is successful at getting this object.
@@ -906,7 +905,6 @@ retry:
 			continue;
 		}
 
-not_found:
 		if (flags & OBJECT_INFO_DIE_IF_CORRUPT) {
 			if ((flags & OBJECT_INFO_LOOKUP_REPLACE) && !oideq(real, oid))
 				die(_("replacement %s not found for %s"),
