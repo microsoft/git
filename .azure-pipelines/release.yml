@@ -66,8 +66,9 @@ parameters:
     default:
       - id: macos_arm64
         jobName: 'macOS (ARM64)'
-        pool: 'Azure Pipelines'
-        image: macOS-15-arm64
+        pool: AcesShared
+        # Use the image override to issue a demand as this is a self-hosted pool
+        imageOverride: ACES_VM_SharedPool_GoldenGate
         os: macos
 
   - name: linux_matrix
@@ -672,8 +673,11 @@ extends:
               displayName: ${{ dim.jobName }}
               pool:
                 name: ${{ dim.pool }}
-                image: ${{ dim.image }}
                 os: ${{ dim.os }}
+                ${{ if ne(dim.imageOverride, '') }}:
+                  demands: ImageOverride -equals ${{ dim.imageOverride }}
+                ${{ else }}:
+                  image: ${{ dim.image }}
               variables:
                 tag_name: $[stageDependencies.prereqs.prebuild.outputs['info.tag_name']]
                 tag_sha: $[stageDependencies.prereqs.prebuild.outputs['info.tag_sha']]
