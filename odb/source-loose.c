@@ -1010,7 +1010,7 @@ void odb_source_loose_cache_add_new_oid(struct odb_source *source,
 
 	switch (source->type) {
 	case ODB_SOURCE_FILES:
-		loose = odb_source_files_downcast(source)->loose;
+		loose = odb_source_files_downcast(source)->dirs->loose;
 		break;
 	case ODB_SOURCE_LOOSE:
 		loose = odb_source_loose_downcast(source);
