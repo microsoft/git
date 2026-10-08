@@ -817,6 +817,11 @@ extends:
                       VERSION="$(git_version)"
                       BUILD_VERSION="$VERSION"
 
+                      # Set Git user.name and user.email as we make temporary
+                      # commits during the build.
+                      git config --global user.name "1ES Git Client Team"
+                      git config --global user.email "gitclient@microsoft.com"
+
                       # The asciidoc/xmlto build steps need the catalogs
                       # from Homebrew docbook.
                       export XML_CATALOG_FILES="$(brew --prefix)/etc/xml/catalog"
