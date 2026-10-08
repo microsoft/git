@@ -996,12 +996,6 @@ static int odb_source_loose_begin_transaction(struct odb_source *source UNUSED,
 	return error("loose source does not support transactions");
 }
 
-static int odb_source_loose_read_alternates(struct odb_source *source UNUSED,
-					    struct strvec *out UNUSED)
-{
-	return 0;
-}
-
 void odb_source_loose_cache_add_new_oid(struct odb_source *source,
 					const struct object_id *oid)
 {
@@ -1177,7 +1171,6 @@ struct odb_source_loose *odb_source_loose_new(struct object_database *odb,
 	loose->base.write_object = odb_source_loose_write_object;
 	loose->base.write_object_stream = odb_source_loose_write_object_stream;
 	loose->base.begin_transaction = odb_source_loose_begin_transaction;
-	loose->base.read_alternates = odb_source_loose_read_alternates;
 
 	if (!is_absolute_path(loose->base.path))
 		chdir_notify_register(odb_source_loose_reparent, loose);
