@@ -746,7 +746,7 @@ int cmd_gc(int argc,
 
 	if (the_repository->settings.gc_write_commit_graph == 1)
 		write_commit_graph_reachable(the_repository,
-					     the_repository->objects->sources->path,
+					     the_repository->objects->source->path,
 					     !opts.quiet && !daemonized ? COMMIT_GRAPH_WRITE_PROGRESS : 0,
 					     NULL);
 
@@ -1010,7 +1010,7 @@ static int loose_object_auto_condition(struct gc_config *cfg UNUSED)
 	if (loose_object_auto_limit < 0)
 		return 1;
 
-	return for_each_loose_file_in_source(the_repository->objects->sources,
+	return for_each_loose_file_in_source(the_repository->objects->source,
 					     loose_object_count,
 					     NULL, NULL, &count);
 }
@@ -1608,7 +1608,7 @@ static int maintenance_run_tasks(struct maintenance_run_opts *opts,
 	int result = 0;
 	struct lock_file lk;
 	struct repository *r = the_repository;
-	char *lock_path = xstrfmt("%s/maintenance", r->objects->sources->path);
+	char *lock_path = xstrfmt("%s/maintenance", r->objects->source->path);
 	enum auto_gc_hook_result auto_gc_hook_result = AUTO_GC_HOOK_UNDECIDED;
 
 	if (repo_hold_lock_file_for_update(r, &lk, lock_path, LOCK_NO_DEREF) < 0) {
@@ -3200,7 +3200,7 @@ static int update_background_schedule(const struct maintenance_start_opts *opts,
 	unsigned int i;
 	int result = 0;
 	struct lock_file lk;
-	char *lock_path = xstrfmt("%s/schedule", the_repository->objects->sources->path);
+	char *lock_path = xstrfmt("%s/schedule", the_repository->objects->source->path);
 
 	if (hold_lock_file_for_update(&lk, lock_path, LOCK_NO_DEREF) < 0) {
 		if (errno == EEXIST)
