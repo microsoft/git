@@ -70,6 +70,9 @@ parameters:
         # Use the image override to issue a demand as this is a self-hosted pool
         imageOverride: ACES_VM_SharedPool_GoldenGate
         os: macos
+        cpu_arch: arm64
+        rustc_target: aarch64-apple-darwin
+        cc_arch: arm64
 
   - name: linux_matrix
     type: object
@@ -694,6 +697,9 @@ extends:
                 tag_name: $[stageDependencies.prereqs.prebuild.outputs['info.tag_name']]
                 tag_sha: $[stageDependencies.prereqs.prebuild.outputs['info.tag_sha']]
                 git_version: $[stageDependencies.prereqs.prebuild.outputs['info.git_version']]
+                cpu_arch: ${{ dim.cpu_arch }}
+                cc_arch: ${{ dim.cc_arch }}
+                rustc_target: ${{ dim.rustc_target }}
               templateContext:
                 outputs:
                   - output: pipelineArtifact
@@ -701,11 +707,11 @@ extends:
                     artifactName: '${{ dim.id }}'
               # macOS build flow:
               #
-              #   1. Configure for an ARM64 build and produce
+              #   1. Configure for an $(cc_arch) build and produce
               #      Git's own dist tarballs (`make dist dist-doc`).
               #   2. Extract the source tarball into payload/, copy
               #      config.mak in, run `make payload` to compile and
-              #      install into stage/git-arm64-<ver>/.
+              #      install into stage/git-$(cc_arch)-<ver>/.
               #   3. Mirror stage/ into build-artifacts/ (which is
               #      what the macos-installer Makefile's `pkg` target
               #      consumes - see note in the build step).
@@ -732,11 +738,11 @@ extends:
                     script: |
                       set -euo pipefail
 
-                      # Ensure native Homebrew (arm64) is up-to-date beforehand.
+                      # Ensure native Homebrew is up-to-date beforehand.
                       HOMEBREW_NO_AUTO_UPDATE='' brew update
 
-                      # Native (arm64) build dependencies.
-                      brew install automake asciidoc xmlto docbook gettext
+                      # Native build dependencies.
+                      brew install automake asciidoc xmlto docbook gettext rust
                       brew link --force gettext
 
                       # Use the native static libintl.a. It depends on
@@ -744,7 +750,7 @@ extends:
                       # Homebrew's incompatible _libiconv* symbols.
                       cp "$(brew --prefix gettext)/lib/libintl.a" libintl.a
                 - task: Bash@3
-                  displayName: 'Configure ARM64 build'
+                  displayName: 'Configure $(cc_arch) build'
                   inputs:
                     targetType: inline
                     script: |
@@ -756,8 +762,8 @@ extends:
                       echo "$BUILD_VERSION" >version
 
                       cat >config.mak <<EOF
-                      HOST_CPU = arm64
-                      BASIC_CFLAGS += -arch arm64
+                      HOST_CPU = $(cc_arch)
+                      BASIC_CFLAGS += -arch $(cc_arch)
 
                       # macOS uses Apple Common Crypto instead of OpenSSL.
                       # The main Makefile sets NO_OPENSSL and adds
@@ -811,6 +817,11 @@ extends:
                       VERSION="$(git_version)"
                       BUILD_VERSION="$VERSION"
 
+                      # Set Git user.name and user.email as we make temporary
+                      # commits during the build.
+                      git config --global user.name "1ES Git Client Team"
+                      git config --global user.email "gitclient@microsoft.com"
+
                       # The asciidoc/xmlto build steps need the catalogs
                       # from Homebrew docbook.
                       export XML_CATALOG_FILES="$(brew --prefix)/etc/xml/catalog"
@@ -824,8 +835,13 @@ extends:
                       # this build.
                       export GIT_CONFIG_PARAMETERS="'maintenance.auto=false'"
 
-                      rustup target add aarch64-apple-darwin
-                      export RUST_TARGETS=aarch64-apple-darwin
+                      # Ensure that our rustc supports our target.
+                      # Note that we don't have rustup installed as part of
+                      # Homebrew's installation. Homebrew will install the target
+                      # for the native host however.
+                      [ -d "$(rustc --print sysroot)/lib/rustlib/$(rustc_target)/lib" ] \
+                        || (echo "rust target '$(rustc_target)' not installed"; exit 1)
+                      export RUST_TARGETS=$(rustc_target)
 
                       make -j"$(sysctl -n hw.physicalcpu)" GIT-VERSION-FILE dist dist-doc
 
@@ -855,10 +871,10 @@ extends:
                       cp config.mak "payload/git-$BUILD_VERSION/config.mak"
 
                       make -C .github/macos-installer V=1 \
-                        ARCH_UNIV=arm64 ARCH_FLAGS="-arch arm64" payload
+                        ARCH_UNIV=$(cc_arch) ARCH_FLAGS="-arch $(cc_arch)" payload
 
                       # NOTE: the macos-installer Makefile produces
-                      # the install tree at stage/git-arm64-<ver>/
+                      # the install tree at stage/git-$(cc_arch)-<ver>/
                       # but its `pkg` target packages from
                       # build-artifacts/. Copy the tree across so the
                       # pipeline (signing, pkg) finds it where the
@@ -874,9 +890,9 @@ extends:
                       # installer Makefiles out of .github/ (they are
                       # build infrastructure, not GitHub-specific).
                       mkdir -p .github/macos-installer/build-artifacts
-                      cp -R "stage/git-arm64-$BUILD_VERSION/." \
+                      cp -R "stage/git-$(cc_arch)-$BUILD_VERSION/." \
                         .github/macos-installer/build-artifacts/
-                # ESRP-sign the ARM64 Mach-O binaries inside the
+                # ESRP-sign the Mach-O binaries inside the
                 # payload tree. The existing esrp/sign.yml template's
                 # CopyFiles@2 step uses minimatch globs and the only
                 # reliable way to detect Mach-O is by file content
@@ -962,7 +978,7 @@ extends:
                       # (the `ifdef APPLE_INSTALLER_IDENTITY` branch in
                       # pkg_cmd is skipped). ESRP signs it in the next
                       # step.
-                      make -C .github/macos-installer V=1 ARCH_UNIV=arm64 pkg
+                      make -C .github/macos-installer V=1 ARCH_UNIV=${{ dim.cc_arch }} pkg
                 - ${{ if eq(parameters.esrp, true) }}:
                   - template: .azure-pipelines/esrp/sign.yml@self
                     parameters:
@@ -1012,9 +1028,9 @@ extends:
                       VERSION="$(git_version)"
                       export VERSION
 
-                      # Builds git-<version>-arm64.dmg from disk-image/,
+                      # Builds git-<version>-$(cc_arch).dmg from disk-image/,
                       # which contains the signed and notarized .pkg.
-                      make -C .github/macos-installer V=1 ARCH_UNIV=arm64 image
+                      make -C .github/macos-installer V=1 ARCH_UNIV=$(cc_arch) image
                 - task: Bash@3
                   displayName: 'Stage installer artifacts for upload'
                   inputs:
@@ -1029,25 +1045,25 @@ extends:
                       # or, after ESRP MacAppNotarize re-packs it, inside
                       # disk-image/<uuid>.zip.unzipped/. Find it.
                       pkg=$(find .github/macos-installer/disk-image \
-                              -name 'git-*-arm64.pkg' -type f \
+                              -name "git-*-$(cc_arch).pkg" -type f \
                               | head -1)
-                      mv .github/macos-installer/git-*-arm64.dmg \
+                      mv .github/macos-installer/git-*-$(cc_arch).dmg \
                          "$pkg" \
                          "$(Build.ArtifactStagingDirectory)/_final/"
                 # Validate the freshly built pkg in-place: install it,
                 # assert `git --version`, and confirm the binary contains
-                # only the ARM64 architecture. Folded into the build job
+                # only the specific architecture. Folded into the build job
                 # so it runs on the same agent without the 1ES job-startup
                 # overhead a separate validate job carries.
                 - bash: |
                     set -e
-                    if [ "$(uname -m)" = arm64 ] && command -v brew >/dev/null; then
+                    if [ "$(uname -m)" = $(cpu_arch) ] && command -v brew >/dev/null; then
                       brew uninstall git || true
                     fi
                     pkg=$(find "$(Build.ArtifactStagingDirectory)/_final" \
-                      -name 'git-*-arm64.pkg' -type f | head -1)
+                      -name "git-*-$(cc_arch).pkg" -type f | head -1)
                     if [ -z "$pkg" ]; then
-                      echo "No git-*-arm64.pkg found in _final" >&2
+                      echo "No git-*-$(cc_arch).pkg found in _final" >&2
                       exit 1
                     fi
                     echo "Installing $pkg"
@@ -1065,10 +1081,10 @@ extends:
                     set -ex
                     git version --build-options >actual
                     cat actual
-                    grep '^cpu: arm64$' actual
+                    grep "^cpu: $(cc_arch)$" actual
                     git_path="$(command -v git)"
-                    test "$(lipo -archs "$git_path")" = arm64
-                  displayName: 'Validate ARM64 binary CPU architecture'
+                    test "$(lipo -archs "$git_path")" = $(cc_arch)
+                  displayName: 'Validate binary CPU architecture'
 
           #
           # Linux build jobs
