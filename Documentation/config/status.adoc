@@ -75,11 +75,11 @@ status.showUntrackedFiles::
 	systems. So, this variable controls how the commands display
 	the untracked files. Possible values are:
 +
---
+----
 * `no` - Show no untracked files.
 * `normal` - Show untracked files and directories.
 * `all` - Show also individual files in untracked directories.
---
+----
 +
 If this variable is not specified, it defaults to 'normal'.
 All usual spellings for Boolean value `true` are taken as `normal`
