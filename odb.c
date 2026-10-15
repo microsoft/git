@@ -395,7 +395,6 @@ static enum odb_read_status do_oid_object_info_extended(struct object_database *
 	struct strbuf corrupt_err = STRBUF_INIT;
 	const struct object_id *real = oid;
 	enum odb_read_status ret;
-	int already_retried = 0;
 	bool corrupt = false;
 	int tried_hook = 0;
 	int tried_gvfs_helper = 0;
@@ -410,15 +409,14 @@ retry:
 	if (!odb_source_read_object_info(odb->inmemory_objects, oid, oi, flags, NULL))
 		return 0;
 
-	while (1) {
 		extern int core_use_gvfs_helper;
 
-		ret = odb_source_read_object_info(odb->source, real, oi, flags,
-						  corrupt_err.len ? NULL : &corrupt_err);
-		if (!ret)
-			goto out;
-		if (ret != ODB_READ_NOT_FOUND)
-			corrupt = true;
+	ret = odb_source_read_object_info(odb->source, real, oi, flags,
+					  &corrupt_err);
+	if (!ret)
+		goto out;
+	if (ret != ODB_READ_NOT_FOUND)
+		corrupt = true;
 
 		if (core_use_gvfs_helper && !tried_gvfs_helper &&
 		    !(flags & OBJECT_INFO_SKIP_FETCH_OBJECT)) {
@@ -454,29 +452,31 @@ retry:
 				goto retry;
 		}
 
-		/* Check if it is a missing object */
-		if (odb->repo->fetch_if_missing && repo_has_promisor_remote(odb->repo) &&
-		    !already_retried &&
-		    !(flags & OBJECT_INFO_SKIP_FETCH_OBJECT)) {
-			promisor_remote_get_direct(odb->repo, real, 1);
-			already_retried = 1;
-			continue;
-		}
+	/* Try to fetch the missing object from a promisor remote. */
+	if (odb->repo->fetch_if_missing && repo_has_promisor_remote(odb->repo) &&
+	    !(flags & OBJECT_INFO_SKIP_FETCH_OBJECT)) {
+		promisor_remote_get_direct(odb->repo, real, 1);
 
-		if (flags & OBJECT_INFO_DIE_IF_CORRUPT) {
-			if ((flags & OBJECT_INFO_LOOKUP_REPLACE) && !oideq(real, oid))
-				die(_("replacement %s not found for %s"),
-				    oid_to_hex(real), oid_to_hex(oid));
-			if (corrupt) {
-				if (corrupt_err.len)
-					die("%s", corrupt_err.buf);
-				die(_("object %s is corrupt"), oid_to_hex(real));
-			}
-		}
-
-		ret = corrupt ? ODB_READ_ERROR : ODB_READ_NOT_FOUND;
-		goto out;
+		ret = odb_source_read_object_info(odb->source, real, oi, flags,
+						  corrupt_err.len ? NULL : &corrupt_err);
+		if (!ret)
+			goto out;
+		if (ret != ODB_READ_NOT_FOUND)
+			corrupt = true;
 	}
+
+	if (flags & OBJECT_INFO_DIE_IF_CORRUPT) {
+		if ((flags & OBJECT_INFO_LOOKUP_REPLACE) && !oideq(real, oid))
+			die(_("replacement %s not found for %s"),
+			    oid_to_hex(real), oid_to_hex(oid));
+		if (corrupt) {
+			if (corrupt_err.len)
+				die("%s", corrupt_err.buf);
+			die(_("object %s is corrupt"), oid_to_hex(real));
+		}
+	}
+
+	ret = corrupt ? ODB_READ_ERROR : ODB_READ_NOT_FOUND;
 
 out:
 	strbuf_release(&corrupt_err);
