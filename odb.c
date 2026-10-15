@@ -442,29 +442,16 @@ retry:
 			 */
 		}
 
-		/*
-		 * When the object hasn't been found we try a second read and
-		 * tell the sources so. This may cause them to invalidate
-		 * caches or reload on-disk state.
-		 */
-		if (!(flags & OBJECT_INFO_QUICK)) {
-			ret = odb_source_read_object_info(odb->source, real, oi,
-							  flags | OBJECT_INFO_SECOND_READ,
-							  corrupt_err.len ? NULL : &corrupt_err);
-			if (!ret)
-				goto out;
-			if (ret != ODB_READ_NOT_FOUND)
-				corrupt = true;
-			if (gvfs_virtualize_objects(odb->repo) && !tried_hook &&
-			    !(flags & OBJECT_INFO_SKIP_FETCH_OBJECT)) {
-				// TODO Assert or at least trace2 if gvfs-helper
-				// TODO was tried and failed and then read-object-hook
-				// TODO is successful at getting this object.
-				tried_hook = 1;
-				// TODO BUG? Should 'oid' be 'real' ?
-				if (!read_object_process(odb->repo, oid))
-					goto retry;
-			}
+		if (!(flags & OBJECT_INFO_QUICK) &&
+		    gvfs_virtualize_objects(odb->repo) && !tried_hook &&
+		    !(flags & OBJECT_INFO_SKIP_FETCH_OBJECT)) {
+			// TODO Assert or at least trace2 if gvfs-helper
+			// TODO was tried and failed and then read-object-hook
+			// TODO is successful at getting this object.
+			tried_hook = 1;
+			// TODO BUG? Should 'oid' be 'real' ?
+			if (!read_object_process(odb->repo, oid))
+				goto retry;
 		}
 
 		/* Check if it is a missing object */
