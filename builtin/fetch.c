@@ -1409,7 +1409,6 @@ static int check_exist_and_connected(struct ref *ref_map)
 	if (refetch)
 		return -1;
 
-
 	/*
 	 * check_connected() allows objects to merely be promised, but
 	 * we need all direct targets to exist.
