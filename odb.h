@@ -12,6 +12,7 @@
 struct cached_object_entry;
 struct list_objects_filter_options;
 struct odb_source_inmemory;
+struct odb_files_dir;
 struct packed_git;
 struct repository;
 struct strbuf;
@@ -27,12 +28,15 @@ char *compute_alternate_path(const char *path, struct strbuf *err);
 
 /*
  * The object database encapsulates access to objects in a repository. It
- * manages one or more sources that store the actual objects which are
- * configured via alternates.
+ * manages the object source as well as auxiliary data structures required to
+ * manage objects.
  */
 struct object_database {
 	/* Repository that owns this database. */
 	struct repository *repo;
+
+	/* The source backing this object database. */
+	struct odb_source *source;
 
 	/*
 	 * State of current object database transaction. Only one
@@ -40,27 +44,6 @@ struct object_database {
 	 * configured.
 	 */
 	struct odb_transaction *transaction;
-
-	/*
-	 * Set of all object directories; the main directory is first (and
-	 * cannot be NULL after initialization). Subsequent directories are
-	 * alternates.
-	 */
-	struct odb_source *sources;
-	struct odb_source **sources_tail;
-
-	/*
-	 * Map of object database sources, keyed by their respective paths.
-	 * This map is used to detect the case where the same source is
-	 * registered multiple times.
-	 */
-	struct hashmap source_by_path;
-
-	/*
-	 * Whether source paths shall be compared case-insensitively, as
-	 * determined by "core.ignoreCase".
-	 */
-	int source_paths_icase;
 
 	/*
 	 * Objects that should be substituted by other objects
@@ -226,38 +209,12 @@ struct odb_fsck_options {
 int odb_fsck(struct object_database *odb, struct odb_fsck_options *opts);
 
 /*
- * Find source by its object directory path. Returns a `NULL` pointer in case
- * the source could not be found.
- */
-struct odb_source *odb_find_source(struct object_database *odb, const char *obj_dir);
-
-/* Same as `odb_find_source()`, but dies in case the source doesn't exist. */
-struct odb_source *odb_find_source_or_die(struct object_database *odb, const char *obj_dir);
-
-/*
- * Replace the current writable object directory with the specified temporary
- * object directory and return the newly installed primary source. The former
- * primary source is reported via `prev_source` when non-NULL.
- */
-struct odb_source *odb_set_temporary_primary_source(struct object_database *odb,
-						    const char *dir, int will_destroy,
-						    struct odb_source **prev_source);
-
-/*
- * Restore the primary source that was previously replaced by
- * `odb_set_temporary_primary_source()`.
- */
-void odb_restore_primary_source(struct object_database *odb,
-				struct odb_source *restore_source,
-				const char *old_path);
-
-/*
  * Iterate through all alternates of the database and execute the provided
  * callback function for each of them. Stop iterating once the callback
  * function returns a non-zero value, in which case the value is bubbled up
  * from the callback.
  */
-typedef int odb_for_each_alternate_fn(struct odb_source *, void *);
+typedef int odb_for_each_alternate_fn(struct odb_files_dir *, void *);
 int odb_for_each_alternate(struct object_database *odb,
 			   odb_for_each_alternate_fn cb, void *payload);
 
@@ -285,11 +242,11 @@ int odb_mkstemp(struct object_database *odb,
 int odb_has_alternates(struct object_database *odb);
 
 /*
- * Add the directory to the on-disk alternates file; the new entry will also
- * take effect in the current process.
+ * Add the directory to the in-memory list of alternate sources (along with any
+ * recursive alternates it points to), but do not modify the on-disk alternates
+ * file.
  */
-void odb_add_to_alternates_file(struct object_database *odb,
-				const char *dir);
+void odb_add_to_alternates_memory(struct object_database *odb, const char *dir);
 
 /*
  * Read an object from the database. Returns the object data and assigns object
@@ -432,30 +389,6 @@ enum object_info_flags {
 
 	/* Die if object corruption (not just an object being missing) was detected. */
 	OBJECT_INFO_DIE_IF_CORRUPT = (1 << 3),
-
-	/*
-	 * We have already tried reading the object, but it couldn't be found
-	 * via any of the attached sources, and are now doing a second read.
-	 * This second read asks the individual sources to also evaluate
-	 * whether any on-disk state may have changed that may have caused the
-	 * object to appear.
-	 *
-	 * This flag is for internal use, only. The second read only occurs
-	 * when `OBJECT_INFO_QUICK` was not passed.
-	 */
-	OBJECT_INFO_SECOND_READ = (1 << 4),
-
-	/*
-	 * Only consult the packed object store of a source, skipping its loose
-	 * object store (OBJECT_INFO_SKIP_LOOSE), or vice versa
-	 * (OBJECT_INFO_SKIP_PACKED). These are used by
-	 * odb_read_object_info_extended() to scan the packfiles of all sources
-	 * before consulting any source's loose object store, so that an object
-	 * that resides in an alternate's packfile is not preceded by a spurious
-	 * loose-object lookup on an earlier source.
-	 */
-	OBJECT_INFO_SKIP_LOOSE = (1 << 5),
-	OBJECT_INFO_SKIP_PACKED = (1 << 6),
 
 	/*
 	 * This is meant for bulk prefetching of missing blobs in a partial
@@ -869,11 +802,6 @@ int odb_generate_pack(struct object_database *odb,
  * Returns 0 on success, a negative error code otherwise.
  */
 int odb_pack_generator_finish(struct odb_pack_generator *generator);
-
-void parse_alternates(const char *string,
-		      int sep,
-		      const char *relative_base,
-		      struct strvec *out);
 
 int read_object_process(struct repository *r, const struct object_id *oid);
 
