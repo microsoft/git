@@ -285,11 +285,12 @@ int odb_mkstemp(struct object_database *odb,
 int odb_has_alternates(struct object_database *odb);
 
 /*
- * Add the directory to the on-disk alternates file; the new entry will also
- * take effect in the current process.
+ * Add the directory to the in-memory list of alternate sources (along with any
+ * recursive alternates it points to), but do not modify the on-disk alternates
+ * file.
  */
-void odb_add_to_alternates_file(struct object_database *odb,
-				const char *dir);
+struct odb_source *odb_add_to_alternates_memory(struct object_database *odb,
+						const char *dir);
 
 /*
  * Read an object from the database. Returns the object data and assigns object
