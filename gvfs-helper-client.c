@@ -26,7 +26,7 @@ struct gh_server__process {
 
 static int gh_server__subprocess_map_initialized;
 static struct hashmap gh_server__subprocess_map;
-static struct odb_source *gh_client__chosen_odb;
+static struct odb_files_dir *gh_client__chosen_odb;
 
 /*
  * The "objects" capability has verbs: "get" and "post" and "prefetch".
@@ -188,7 +188,8 @@ static void gh_client__update_loose_cache(const char *line)
 	if (get_oid_hex(v1_oid, &oid))
 		BUG("update_loose_cache: invalid line '%s'", line);
 
-	odb_source_loose_cache_add_new_oid(gh_client__chosen_odb, &oid);
+	odb_source_loose_cache_add_new_oid(&gh_client__chosen_odb->loose->base,
+					   &oid);
 }
 
 /*
@@ -271,8 +272,8 @@ static int gh_client__objects__receive_response(
 	}
 
 	if (ghc & GHC__CREATED__PACKFILE) {
-		struct odb_source_files *files = odb_source_files_downcast(gh_client__chosen_odb);
-		odb_source_prepare(&files->packed->base, ODB_PREPARE_FLUSH_CACHES);
+		odb_source_prepare(&gh_client__chosen_odb->packed->base,
+				    ODB_PREPARE_FLUSH_CACHES);
 	}
 
 	*p_ghc = ghc;
@@ -291,19 +292,20 @@ static int gh_client__objects__receive_response(
  */
 static void gh_client__choose_odb(void)
 {
-	struct odb_source *odb;
+	struct odb_files_dir *odb;
 
 	if (gh_client__chosen_odb)
 		return;
 
 	odb_prepare(the_repository->objects, ODB_PREPARE_FLUSH_CACHES);
-	gh_client__chosen_odb = the_repository->objects->sources;
+	gh_client__chosen_odb =
+		odb_source_files_downcast(the_repository->objects->source)->dirs;
 
 	if (!gvfs_shared_cache_pathname.len)
 		return;
 
-	for (odb = the_repository->objects->sources->next; odb; odb = odb->next) {
-		if (!fspathcmp(odb->path, gvfs_shared_cache_pathname.buf)) {
+	for (odb = gh_client__chosen_odb->next; odb; odb = odb->next) {
+		if (!fspathcmp(odb->abspath, gvfs_shared_cache_pathname.buf)) {
 			gh_client__chosen_odb = odb;
 			return;
 		}
@@ -356,7 +358,7 @@ static struct gh_server__process *gh_client__find_long_running_process(
 	strvec_push(&argv, "gvfs-helper");
 	strvec_push(&argv, "--cache-server=trust");
 	strvec_pushf(&argv, "--shared-cache=%s",
-			 gh_client__chosen_odb->path);
+			 gh_client__chosen_odb->abspath);
 
 	/* If gvfs.fallback=false, then don't add --fallback. */
 	if (!repo_config_get_bool(the_repository, "gvfs.fallback", &fallback) &&
