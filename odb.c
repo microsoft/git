@@ -392,11 +392,10 @@ static enum odb_read_status do_oid_object_info_extended(struct object_database *
 							const struct object_id *oid,
 							struct object_info *oi, unsigned flags)
 {
+	extern int core_use_gvfs_helper;
 	struct strbuf corrupt_err = STRBUF_INIT;
 	const struct object_id *real = oid;
 	enum odb_read_status ret;
-	int already_retried = 0;
-	bool corrupt = false;
 	int tried_hook = 0;
 	int tried_gvfs_helper = 0;
 
@@ -410,85 +409,64 @@ retry:
 	if (!odb_source_read_object_info(odb->inmemory_objects, oid, oi, flags, NULL))
 		return 0;
 
-	while (1) {
-		extern int core_use_gvfs_helper;
+	ret = odb_source_read_object_info(odb->source, real, oi, flags,
+					  corrupt_err.len ? NULL : &corrupt_err);
+	if (!ret)
+		goto out;
 
-		ret = odb_source_read_object_info(odb->source, real, oi, flags,
-						  corrupt_err.len ? NULL : &corrupt_err);
-		if (!ret)
-			goto out;
-		if (ret != ODB_READ_NOT_FOUND)
-			corrupt = true;
+	if (core_use_gvfs_helper && !tried_gvfs_helper &&
+	    !(flags & OBJECT_INFO_SKIP_FETCH_OBJECT)) {
+		enum gh_client__created ghc;
 
-		if (core_use_gvfs_helper && !tried_gvfs_helper &&
-		    !(flags & OBJECT_INFO_SKIP_FETCH_OBJECT)) {
-			enum gh_client__created ghc;
-
-			gh_client__get_immediate(real, &ghc);
-			tried_gvfs_helper = 1;
-
-			/*
-			 * Retry the lookup IIF `gvfs-helper` created one
-			 * or more new packfiles or loose objects.
-			 */
-			if (ghc != GHC__CREATED__NOTHING)
-				continue;
-
-			/*
-			 * If `gvfs-helper` fails, we just want to return -1.
-			 * But allow the other providers to have a shot at it.
-			 * (At least until we have a chance to consolidate
-			 * them.)
-			 */
-		}
+		gh_client__get_immediate(real, &ghc);
+		tried_gvfs_helper = 1;
 
 		/*
-		 * When the object hasn't been found we try a second read and
-		 * tell the sources so. This may cause them to invalidate
-		 * caches or reload on-disk state.
+		 * Retry the lookup IIF `gvfs-helper` created one
+		 * or more new packfiles or loose objects.
 		 */
-		if (!(flags & OBJECT_INFO_QUICK)) {
-			ret = odb_source_read_object_info(odb->source, real, oi,
-							  flags | OBJECT_INFO_SECOND_READ,
-							  corrupt_err.len ? NULL : &corrupt_err);
-			if (!ret)
-				goto out;
-			if (ret != ODB_READ_NOT_FOUND)
-				corrupt = true;
-			if (gvfs_virtualize_objects(odb->repo) && !tried_hook &&
-			    !(flags & OBJECT_INFO_SKIP_FETCH_OBJECT)) {
-				// TODO Assert or at least trace2 if gvfs-helper
-				// TODO was tried and failed and then read-object-hook
-				// TODO is successful at getting this object.
-				tried_hook = 1;
-				// TODO BUG? Should 'oid' be 'real' ?
-				if (!read_object_process(odb->repo, oid))
-					goto retry;
-			}
-		}
+		if (ghc != GHC__CREATED__NOTHING)
+			goto retry;
 
-		/* Check if it is a missing object */
-		if (odb->repo->fetch_if_missing && repo_has_promisor_remote(odb->repo) &&
-		    !already_retried &&
-		    !(flags & OBJECT_INFO_SKIP_FETCH_OBJECT)) {
-			promisor_remote_get_direct(odb->repo, real, 1);
-			already_retried = 1;
-			continue;
-		}
+		/*
+		 * If `gvfs-helper` fails, we just want to return -1.
+		 * But allow the other providers to have a shot at it.
+		 * (At least until we have a chance to consolidate
+		 * them.)
+		 */
+	}
 
-		if (flags & OBJECT_INFO_DIE_IF_CORRUPT) {
-			if ((flags & OBJECT_INFO_LOOKUP_REPLACE) && !oideq(real, oid))
-				die(_("replacement %s not found for %s"),
-				    oid_to_hex(real), oid_to_hex(oid));
-			if (corrupt) {
-				if (corrupt_err.len)
-					die("%s", corrupt_err.buf);
-				die(_("object %s is corrupt"), oid_to_hex(real));
-			}
-		}
+	if (!(flags & OBJECT_INFO_QUICK) &&
+	    gvfs_virtualize_objects(odb->repo) && !tried_hook &&
+	    !(flags & OBJECT_INFO_SKIP_FETCH_OBJECT)) {
+		// TODO Assert or at least trace2 if gvfs-helper
+		// TODO was tried and failed and then read-object-hook
+		// TODO is successful at getting this object.
+		tried_hook = 1;
+		// TODO BUG? Should 'oid' be 'real' ?
+		if (!read_object_process(odb->repo, oid))
+			goto retry;
+	}
 
-		ret = corrupt ? ODB_READ_ERROR : ODB_READ_NOT_FOUND;
-		goto out;
+	if (ret == ODB_READ_NOT_FOUND &&
+	    odb->repo->fetch_if_missing &&
+	    !(flags & OBJECT_INFO_SKIP_FETCH_OBJECT) &&
+	    repo_has_promisor_remote(odb->repo)) {
+		/* Try to fetch the missing object from a promisor remote. */
+		promisor_remote_get_direct(odb->repo, real, 1);
+		ret = odb_source_read_object_info(odb->source, real, oi, flags,
+						  corrupt_err.len ? NULL : &corrupt_err);
+	}
+
+	if (ret < 0 && (flags & OBJECT_INFO_DIE_IF_CORRUPT)) {
+		if ((flags & OBJECT_INFO_LOOKUP_REPLACE) && !oideq(real, oid))
+			die(_("replacement %s not found for %s"),
+			    oid_to_hex(real), oid_to_hex(oid));
+		if (ret != ODB_READ_NOT_FOUND) {
+			if (corrupt_err.len)
+				die("%s", corrupt_err.buf);
+			die(_("object %s is corrupt"), oid_to_hex(real));
+		}
 	}
 
 out:
