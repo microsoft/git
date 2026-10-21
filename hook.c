@@ -81,6 +81,7 @@ const char *find_hook(struct repository *r, const char *name)
 
 	int found_hook;
 
+	strbuf_reset(&path);
 	if (!r || !r->gitdir) {
 		if (!hook_path_early(name, &path))
 			return NULL;
