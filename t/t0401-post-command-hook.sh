@@ -46,6 +46,67 @@ test_expect_success 'with failing pre-command hook' '
 	test_path_is_missing "$(cat .git/post-command.out)"
 '
 
+write_order_hooks () {
+	write_script .git/hooks/pre-command <<-EOF &&
+	echo "pre \$1" >>"$PWD/order.log"
+	if test "\$1" = git-vanish
+	then
+		rm -f "$PWD/bin/git-vanish"
+	fi
+	EOF
+	write_script .git/hooks/post-command <<-EOF
+	echo "post \$1" >>"$PWD/order.log"
+	EOF
+}
+
+test_expect_success 'post-command runs for a dashed external command' '
+	test_when_finished "rm -rf bin order.log .git/hooks/pre-command .git/hooks/post-command" &&
+	test_config postCommand.strategy always &&
+	write_order_hooks &&
+	mkdir bin &&
+	write_script bin/git-hello <<-\EOF &&
+	echo hello
+	EOF
+	PATH="$PWD/bin:$PATH" git hello &&
+	cat >expect <<-\EOF &&
+	pre git-hello
+	post git-hello
+	EOF
+	test_cmp expect order.log
+'
+
+test_expect_success 'post-command runs for a builtin that does not set up the repository' '
+	test_when_finished "rm -f order.log .git/hooks/pre-command .git/hooks/post-command" &&
+	test_config postCommand.strategy always &&
+	write_order_hooks &&
+	git version &&
+	cat >expect <<-\EOF &&
+	pre version
+	post version
+	EOF
+	test_cmp expect order.log
+'
+
+test_expect_success 'post-command runs when a dashed external vanishes before alias fallback' '
+	test_when_finished "rm -rf bin order.log .git/hooks/pre-command .git/hooks/post-command" &&
+	test_config postCommand.strategy always &&
+	test_config alias.vanish "rev-parse --git-dir" &&
+	write_order_hooks &&
+	mkdir bin &&
+	write_script bin/git-vanish <<-\EOF &&
+	echo vanish-script-ran
+	EOF
+	PATH="$PWD/bin:$PATH" git vanish >out &&
+	test_grep ! vanish-script-ran out &&
+	cat >expect <<-\EOF &&
+	pre git-vanish
+	post git-vanish
+	pre rev-parse
+	post rev-parse
+	EOF
+	test_cmp expect order.log
+'
+
 test_expect_success 'with post-index-change config' '
 	mkdir -p internal-hooks &&
 	write_script internal-hooks/post-command <<-EOF &&
