@@ -122,7 +122,7 @@ test_expect_success 'packs across sources are checked before loose objects' '
 	# Main repo: write B as a loose object, before any alternate is active.
 	git init main &&
 	git -C main hash-object -w --stdin <b-content >/dev/null &&
-	test -e "main/.git/objects/$(test_oid_to_path "$B")" &&
+	test_path_is_file "main/.git/objects/$(test_oid_to_path "$B")" &&
 
 	# With the alternate active, B must resolve to the alternate packfile
 	# (deltabase O), not to the main store loose copy (deltabase zero oid).

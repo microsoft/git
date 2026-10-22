@@ -161,8 +161,12 @@ static int odb_source_inmemory_for_each_object(struct odb_source *source,
 	};
 	struct object_id null_oid = { 0 };
 
-	if ((opts->flags & ODB_FOR_EACH_OBJECT_PROMISOR_ONLY) ||
-	    (opts->flags & ODB_FOR_EACH_OBJECT_LOCAL_ONLY && !source->local))
+	/*
+	 * In-memory objects are neither promisor objects nor do they live in
+	 * the local object directory, so there is nothing to iterate over.
+	 */
+	if (opts->flags & (ODB_FOR_EACH_OBJECT_PROMISOR_ONLY |
+			   ODB_FOR_EACH_OBJECT_LOCAL_ONLY))
 		return 0;
 	if (!inmemory->objects)
 		return 0;
@@ -323,18 +327,6 @@ static int odb_source_inmemory_begin_transaction(struct odb_source *source UNUSE
 	return error("in-memory source does not support transactions");
 }
 
-static int odb_source_inmemory_read_alternates(struct odb_source *source UNUSED,
-					       struct strvec *out UNUSED)
-{
-	return 0;
-}
-
-static int odb_source_inmemory_write_alternate(struct odb_source *source UNUSED,
-					       const char *alternate UNUSED)
-{
-	return error("in-memory source does not support alternates");
-}
-
 static void odb_source_inmemory_close(struct odb_source *source UNUSED)
 {
 }
@@ -382,7 +374,7 @@ struct odb_source_inmemory *odb_source_inmemory_new(struct object_database *odb)
 	struct odb_source_inmemory *source;
 
 	CALLOC_ARRAY(source, 1);
-	odb_source_init(&source->base, odb, ODB_SOURCE_INMEMORY, "source", false);
+	odb_source_init(&source->base, odb, ODB_SOURCE_INMEMORY, "source");
 
 	source->base.free = odb_source_inmemory_free;
 	source->base.close = odb_source_inmemory_close;
@@ -397,8 +389,6 @@ struct odb_source_inmemory *odb_source_inmemory_new(struct object_database *odb)
 	source->base.write_object_stream = odb_source_inmemory_write_object_stream;
 	source->base.freshen_object = odb_source_inmemory_freshen_object;
 	source->base.begin_transaction = odb_source_inmemory_begin_transaction;
-	source->base.read_alternates = odb_source_inmemory_read_alternates;
-	source->base.write_alternate = odb_source_inmemory_write_alternate;
 
 	return source;
 }

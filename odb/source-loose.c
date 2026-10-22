@@ -223,16 +223,6 @@ static enum odb_read_status odb_source_loose_read_object_info(struct odb_source 
 {
 	struct odb_source_loose *loose = odb_source_loose_downcast(source);
 	static struct strbuf buf = STRBUF_INIT;
-
-	/*
-	 * The second read shouldn't cause new loose objects to show up, unless
-	 * there was a race condition with a secondary process. We don't care
-	 * about this case though, so we simply skip reading loose objects a
-	 * second time.
-	 */
-	if (flags & OBJECT_INFO_SECOND_READ)
-		return ODB_READ_NOT_FOUND;
-
 	odb_loose_path(loose, &buf, oid);
 	return read_object_info_from_path(loose, buf.buf, oid, oi, flags, errmsg);
 }
@@ -475,8 +465,6 @@ static int odb_source_loose_for_each_object(struct odb_source *source,
 	/* There are no loose promisor objects, so we can return immediately. */
 	if ((opts->flags & ODB_FOR_EACH_OBJECT_PROMISOR_ONLY))
 		return 0;
-	if ((opts->flags & ODB_FOR_EACH_OBJECT_LOCAL_ONLY) && !source->local)
-		return 0;
 
 	if (opts->prefix)
 		return oidtree_each(odb_source_loose_cache(loose, opts->prefix),
@@ -610,7 +598,7 @@ retry:
 static void close_loose_object(struct odb_source_loose *loose,
 			       int fd, const char *filename)
 {
-	if (loose->base.will_destroy)
+	if (loose->will_destroy)
 		goto out;
 
 	if (batch_fsync_enabled(FSYNC_COMPONENT_LOOSE_OBJECT))
@@ -996,18 +984,6 @@ static int odb_source_loose_begin_transaction(struct odb_source *source UNUSED,
 	return error("loose source does not support transactions");
 }
 
-static int odb_source_loose_read_alternates(struct odb_source *source UNUSED,
-					    struct strvec *out UNUSED)
-{
-	return 0;
-}
-
-static int odb_source_loose_write_alternate(struct odb_source *source UNUSED,
-					    const char *alternate UNUSED)
-{
-	return error("loose source does not support alternates");
-}
-
 void odb_source_loose_cache_add_new_oid(struct odb_source *source,
 					const struct object_id *oid)
 {
@@ -1016,7 +992,7 @@ void odb_source_loose_cache_add_new_oid(struct odb_source *source,
 
 	switch (source->type) {
 	case ODB_SOURCE_FILES:
-		loose = odb_source_files_downcast(source)->loose;
+		loose = odb_source_files_downcast(source)->dirs->loose;
 		break;
 	case ODB_SOURCE_LOOSE:
 		loose = odb_source_loose_downcast(source);
@@ -1162,13 +1138,12 @@ static int odb_source_loose_fsck(struct odb_source *source,
 }
 
 struct odb_source_loose *odb_source_loose_new(struct object_database *odb,
-					      const char *path,
-					      bool local)
+					      const char *path)
 {
 	struct odb_source_loose *loose;
 
 	CALLOC_ARRAY(loose, 1);
-	odb_source_init(&loose->base, odb, ODB_SOURCE_LOOSE, path, local);
+	odb_source_init(&loose->base, odb, ODB_SOURCE_LOOSE, path);
 
 	loose->base.free = odb_source_loose_free;
 	loose->base.close = odb_source_loose_close;
@@ -1183,8 +1158,6 @@ struct odb_source_loose *odb_source_loose_new(struct object_database *odb,
 	loose->base.write_object = odb_source_loose_write_object;
 	loose->base.write_object_stream = odb_source_loose_write_object_stream;
 	loose->base.begin_transaction = odb_source_loose_begin_transaction;
-	loose->base.read_alternates = odb_source_loose_read_alternates;
-	loose->base.write_alternate = odb_source_loose_write_alternate;
 
 	if (!is_absolute_path(loose->base.path))
 		chdir_notify_register(odb_source_loose_reparent, loose);
