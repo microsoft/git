@@ -392,6 +392,7 @@ static enum odb_read_status do_oid_object_info_extended(struct object_database *
 							const struct object_id *oid,
 							struct object_info *oi, unsigned flags)
 {
+	extern int core_use_gvfs_helper;
 	struct strbuf corrupt_err = STRBUF_INIT;
 	const struct object_id *real = oid;
 	enum odb_read_status ret;
@@ -409,48 +410,46 @@ retry:
 	if (!odb_source_read_object_info(odb->inmemory_objects, oid, oi, flags, NULL))
 		return 0;
 
-		extern int core_use_gvfs_helper;
-
 	ret = odb_source_read_object_info(odb->source, real, oi, flags,
-					  &corrupt_err);
+					  corrupt_err.len ? NULL : &corrupt_err);
 	if (!ret)
 		goto out;
 	if (ret != ODB_READ_NOT_FOUND)
 		corrupt = true;
 
-		if (core_use_gvfs_helper && !tried_gvfs_helper &&
-		    !(flags & OBJECT_INFO_SKIP_FETCH_OBJECT)) {
-			enum gh_client__created ghc;
+	if (core_use_gvfs_helper && !tried_gvfs_helper &&
+	    !(flags & OBJECT_INFO_SKIP_FETCH_OBJECT)) {
+		enum gh_client__created ghc;
 
-			gh_client__get_immediate(real, &ghc);
-			tried_gvfs_helper = 1;
+		gh_client__get_immediate(real, &ghc);
+		tried_gvfs_helper = 1;
 
-			/*
-			 * Retry the lookup IIF `gvfs-helper` created one
-			 * or more new packfiles or loose objects.
-			 */
-			if (ghc != GHC__CREATED__NOTHING)
-				continue;
+		/*
+		 * Retry the lookup IIF `gvfs-helper` created one
+		 * or more new packfiles or loose objects.
+		 */
+		if (ghc != GHC__CREATED__NOTHING)
+			goto retry;
 
-			/*
-			 * If `gvfs-helper` fails, we just want to return -1.
-			 * But allow the other providers to have a shot at it.
-			 * (At least until we have a chance to consolidate
-			 * them.)
-			 */
-		}
+		/*
+		 * If `gvfs-helper` fails, we just want to return -1.
+		 * But allow the other providers to have a shot at it.
+		 * (At least until we have a chance to consolidate
+		 * them.)
+		 */
+	}
 
-		if (!(flags & OBJECT_INFO_QUICK) &&
-		    gvfs_virtualize_objects(odb->repo) && !tried_hook &&
-		    !(flags & OBJECT_INFO_SKIP_FETCH_OBJECT)) {
-			// TODO Assert or at least trace2 if gvfs-helper
-			// TODO was tried and failed and then read-object-hook
-			// TODO is successful at getting this object.
-			tried_hook = 1;
-			// TODO BUG? Should 'oid' be 'real' ?
-			if (!read_object_process(odb->repo, oid))
-				goto retry;
-		}
+	if (!(flags & OBJECT_INFO_QUICK) &&
+	    gvfs_virtualize_objects(odb->repo) && !tried_hook &&
+	    !(flags & OBJECT_INFO_SKIP_FETCH_OBJECT)) {
+		// TODO Assert or at least trace2 if gvfs-helper
+		// TODO was tried and failed and then read-object-hook
+		// TODO is successful at getting this object.
+		tried_hook = 1;
+		// TODO BUG? Should 'oid' be 'real' ?
+		if (!read_object_process(odb->repo, oid))
+			goto retry;
+	}
 
 	/* Try to fetch the missing object from a promisor remote. */
 	if (odb->repo->fetch_if_missing && repo_has_promisor_remote(odb->repo) &&
