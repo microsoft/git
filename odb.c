@@ -411,6 +411,8 @@ retry:
 
 	ret = odb_source_read_object_info(odb->source, real, oi, flags,
 					  corrupt_err.len ? NULL : &corrupt_err);
+	if (!ret)
+		goto out;
 
 	if (core_use_gvfs_helper && !tried_gvfs_helper &&
 	    !(flags & OBJECT_INFO_SKIP_FETCH_OBJECT)) {
@@ -453,7 +455,7 @@ retry:
 		/* Try to fetch the missing object from a promisor remote. */
 		promisor_remote_get_direct(odb->repo, real, 1);
 		ret = odb_source_read_object_info(odb->source, real, oi, flags,
-						  &corrupt_err);
+						  corrupt_err.len ? NULL : &corrupt_err);
 	}
 
 	if (ret < 0 && (flags & OBJECT_INFO_DIE_IF_CORRUPT)) {
@@ -467,6 +469,7 @@ retry:
 		}
 	}
 
+out:
 	strbuf_release(&corrupt_err);
 	return ret;
 }
