@@ -295,8 +295,8 @@ static struct odb_source *odb_add_alternate_recursively(struct object_database *
 	return alternate;
 }
 
-struct odb_source *add_gvfs_shared_cache_to_alternates(struct object_database *odb,
-						       const char *dir)
+struct odb_source *odb_add_to_alternates_memory(struct object_database *odb,
+						const char *dir)
 {
 	return odb_add_alternate_recursively(odb, dir, 0);
 }
