@@ -1416,7 +1416,8 @@ static int option_parse_shared_cache_directory(const struct option *opt,
 						gvfs_shared_cache_pathname.buf);
 		mkdir(gvfs_shared_cache_pathname.buf, 0777);
 
-		add_gvfs_shared_cache_to_alternates(the_repository->objects, buf_arg.buf);
+		odb_add_to_alternates_memory(the_repository->objects,
+					     buf_arg.buf);
 
 		strbuf_release(&buf_arg);
 		return 0;
@@ -1438,7 +1439,8 @@ static int option_parse_shared_cache_directory(const struct option *opt,
 						gvfs_shared_cache_pathname.buf);
 		mkdir(gvfs_shared_cache_pathname.buf, 0777);
 
-		add_gvfs_shared_cache_to_alternates(the_repository->objects, buf_arg.buf);
+		odb_add_to_alternates_memory(the_repository->objects,
+					     buf_arg.buf);
 
 		/*
 		 * alt_odb_usable() releases gvfs_shared_cache_pathname
