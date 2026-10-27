@@ -272,7 +272,8 @@ static int gh_client__objects__receive_response(
 
 	if (ghc & GHC__CREATED__PACKFILE) {
 		struct odb_source_files *files = odb_source_files_downcast(gh_client__chosen_odb);
-		odb_source_prepare(&files->packed->base, ODB_PREPARE_FLUSH_CACHES);
+		odb_source_prepare(&files->dirs->packed->base,
+				    ODB_PREPARE_FLUSH_CACHES);
 	}
 
 	*p_ghc = ghc;
