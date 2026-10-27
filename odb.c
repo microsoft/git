@@ -56,14 +56,6 @@ int odb_mkstemp(struct object_database *odb,
 	return xmkstemp_mode(temp_filename->buf, mode);
 }
 
-static int gvfs_matched_shared_cache_to_alternate;
-
-struct odb_source *odb_add_to_alternates_memory(struct object_database *odb,
-						const char *dir)
-{
-	return odb_add_alternate_recursively(odb, dir, 0);
-}
-
 char *compute_alternate_path(const char *path, struct strbuf *err)
 {
 	char *ref_git = NULL;

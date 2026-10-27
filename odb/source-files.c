@@ -218,23 +218,56 @@ static int odb_files_dir_by_path_cmp(const void *cb_data,
 	return odb_files_dir_paths_cmp(files, dir->abspath, path);
 }
 
+static int gvfs_matched_shared_cache_to_alternate;
+
 /*
  * Return non-zero iff the path is usable as an alternate object directory.
  */
 static bool odb_files_dir_is_usable(struct odb_source_files *files,
 				    const char *path)
 {
+	extern struct strbuf gvfs_shared_cache_pathname;
 	struct strbuf normalized_objdir = STRBUF_INIT;
 	struct hashmap_entry key;
 	bool usable = false;
 
 	strbuf_realpath(&normalized_objdir, files->dirs->abspath, 1);
 
+	if (!strcmp(path, gvfs_shared_cache_pathname.buf)) {
+		/*
+		 * `gvfs.sharedCache` is the preferred alternate that we
+		 * will use with `gvfs-helper.exe` to dynamically fetch
+		 * missing objects. It is set during git_default_config().
+		 *
+		 * Make sure the directory exists on disk before we let the
+		 * stock code discredit it.
+		 */
+		struct strbuf buf_pack_foo = STRBUF_INIT;
+		enum scld_error scld;
+
+		/*
+		 * Append a bogus directory so that the leading-directory
+		 * helper creates both the object directory and its pack/.
+		 */
+		strbuf_addf(&buf_pack_foo, "%s/pack/foo", path);
+		scld = safe_create_leading_directories(files->base.odb->repo,
+						     buf_pack_foo.buf);
+		strbuf_release(&buf_pack_foo);
+		if (scld != SCLD_OK && scld != SCLD_EXISTS) {
+			error_errno(_("could not create shared-cache ODB '%s'"),
+				    gvfs_shared_cache_pathname.buf);
+			strbuf_release(&gvfs_shared_cache_pathname);
+			goto out;
+		}
+
+		gvfs_matched_shared_cache_to_alternate++;
+	}
+
 	/* Detect cases where alternate disappeared */
 	if (!is_directory(path)) {
-		error(_("object directory %s does not exist; "
-			"check .git/objects/info/alternates"),
-		      path);
+		warning(_("object directory %s does not exist; "
+			  "check .git/objects/info/alternates"),
+			path);
 		goto out;
 	}
 
@@ -311,8 +344,8 @@ static void parse_alternates(const char *string,
 
 		strbuf_reset(&buf);
 		if (!strbuf_realpath(&buf, pathbuf.buf, 0)) {
-			error(_("unable to normalize alternate object path: %s"),
-			      pathbuf.buf);
+			warning(_("unable to normalize alternate object "
+				  "path: %s"), pathbuf.buf);
 			continue;
 		}
 
@@ -384,9 +417,16 @@ static void odb_add_alternate_recursively(struct odb_source_files *files,
 	strvec_clear(&alternates);
 }
 
+void odb_add_to_alternates_memory(struct object_database *odb, const char *dir)
+{
+	odb_add_alternate_recursively(odb_source_files_downcast(odb->source),
+				      dir, 0);
+}
+
 static void odb_prepare_alternates(struct odb_source_files *files,
 				   const char *alternate_db)
 {
+	extern struct strbuf gvfs_shared_cache_pathname;
 	struct strvec alternates = STRVEC_INIT;
 
 	parse_alternates(alternate_db, PATH_SEP, NULL, &alternates);
@@ -394,6 +434,18 @@ static void odb_prepare_alternates(struct odb_source_files *files,
 
 	for (size_t i = 0; i < alternates.nr; i++)
 		odb_add_alternate_recursively(files, alternates.v[i], 0);
+
+	if (gvfs_shared_cache_pathname.len &&
+	    !gvfs_matched_shared_cache_to_alternate) {
+		/*
+		 * Keep gvfs.sharedCache available as an in-memory alternate
+		 * when the on-disk alternates file does not list it.
+		 */
+		parse_alternates(gvfs_shared_cache_pathname.buf, '\n', NULL,
+				 &alternates);
+		for (size_t i = 0; i < alternates.nr; i++)
+			odb_add_alternate_recursively(files, alternates.v[i], 0);
+	}
 
 	strvec_clear(&alternates);
 }
