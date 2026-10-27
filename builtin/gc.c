@@ -1042,28 +1042,24 @@ static int pack_loose(struct maintenance_run_opts *opts)
 	int result = 0;
 	struct write_loose_object_data data;
 	struct child_process pack_proc = CHILD_PROCESS_INIT;
-	struct odb_source *prev_source = NULL;
-	const char *object_dir = r->objects->sources->path;
+	struct odb_source *source = r->objects->sources;
+	struct odb_files_dir *shared = NULL;
 
 	/* If set, use the shared object directory. */
 	if (shared_object_dir) {
-		odb_set_temporary_primary_source(r->objects, shared_object_dir,
-						 0, &prev_source);
-		object_dir = shared_object_dir;
+		shared = odb_files_dir_new(r->objects, shared_object_dir,
+					   false);
+		source = &shared->loose->base;
 	}
 
 	/*
 	 * Do not start pack-objects process
 	 * if there are no loose objects.
 	 */
-	if (!for_each_loose_file_in_source(r->objects->sources,
+	if (!for_each_loose_file_in_source(source,
 					   bail_on_loose,
-					   NULL, NULL, NULL)) {
-		if (shared_object_dir)
-			odb_restore_primary_source(r->objects, prev_source,
-						   shared_object_dir);
-		return 0;
-	}
+					   NULL, NULL, NULL))
+		goto out;
 
 	pack_proc.git_cmd = 1;
 
@@ -1072,7 +1068,7 @@ static int pack_loose(struct maintenance_run_opts *opts)
 		strvec_push(&pack_proc.args, "--quiet");
 	else
 		strvec_push(&pack_proc.args, "--no-quiet");
-	strvec_pushf(&pack_proc.args, "%s/pack/loose", object_dir);
+	strvec_pushf(&pack_proc.args, "%s/pack/loose", source->path);
 
 	pack_proc.in = -1;
 
@@ -1084,10 +1080,8 @@ static int pack_loose(struct maintenance_run_opts *opts)
 
 	if (start_command(&pack_proc)) {
 		error(_("failed to start 'git pack-objects' process"));
-		if (shared_object_dir)
-			odb_restore_primary_source(r->objects, prev_source,
-						   shared_object_dir);
-		return 1;
+		result = 1;
+		goto out;
 	}
 
 	data.in = xfdopen(pack_proc.in, "w");
@@ -1103,7 +1097,7 @@ static int pack_loose(struct maintenance_run_opts *opts)
 	else if (data.batch_size > 0)
 		data.batch_size--; /* Decrease for equality on limit. */
 
-	for_each_loose_file_in_source(r->objects->sources,
+	for_each_loose_file_in_source(source,
 				      write_loose_object_to_stdin,
 				      NULL, NULL, &data);
 
@@ -1114,10 +1108,8 @@ static int pack_loose(struct maintenance_run_opts *opts)
 		result = 1;
 	}
 
-	if (shared_object_dir)
-		odb_restore_primary_source(r->objects, prev_source,
-					   shared_object_dir);
-
+out:
+	odb_files_dir_free(shared);
 	return result;
 }
 
