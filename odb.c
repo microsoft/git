@@ -442,16 +442,17 @@ retry:
 			 */
 		}
 
-			if (gvfs_virtualize_objects(odb->repo) && !tried_hook &&
-			    !(flags & OBJECT_INFO_SKIP_FETCH_OBJECT)) {
-				// TODO Assert or at least trace2 if gvfs-helper
-				// TODO was tried and failed and then read-object-hook
-				// TODO is successful at getting this object.
-				tried_hook = 1;
-				// TODO BUG? Should 'oid' be 'real' ?
-				if (!read_object_process(odb->repo, oid))
-					goto retry;
-			}
+		if (!(flags & OBJECT_INFO_QUICK) &&
+		    gvfs_virtualize_objects(odb->repo) && !tried_hook &&
+		    !(flags & OBJECT_INFO_SKIP_FETCH_OBJECT)) {
+			// TODO Assert or at least trace2 if gvfs-helper
+			// TODO was tried and failed and then read-object-hook
+			// TODO is successful at getting this object.
+			tried_hook = 1;
+			// TODO BUG? Should 'oid' be 'real' ?
+			if (!read_object_process(odb->repo, oid))
+				goto retry;
+		}
 
 		/* Check if it is a missing object */
 		if (odb->repo->fetch_if_missing && repo_has_promisor_remote(odb->repo) &&
