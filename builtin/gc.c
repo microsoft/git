@@ -1042,7 +1042,7 @@ static int pack_loose(struct maintenance_run_opts *opts)
 	int result = 0;
 	struct write_loose_object_data data;
 	struct child_process pack_proc = CHILD_PROCESS_INIT;
-	struct odb_source *source = r->objects->sources;
+	struct odb_source *source = r->objects->source;
 	struct odb_files_dir *shared = NULL;
 
 	/* If set, use the shared object directory. */
@@ -1452,15 +1452,15 @@ static int maintenance_task_cache_local_objs(UNUSED struct maintenance_run_opts 
 		return 0;
 
 	/* If the dest is the same as the local odb path then we do nothing. */
-	if (!fspathcmp(r->objects->sources->path, shared_object_dir))
+	if (!fspathcmp(r->objects->source->path, shared_object_dir))
 		goto cleanup;
 
 	strbuf_addf(&dstdir, "%s/pack", shared_object_dir);
 
-	for_each_file_in_pack_dir(r->objects->sources->path, move_pack_to_shared_cache,
+	for_each_file_in_pack_dir(r->objects->source->path, move_pack_to_shared_cache,
 				  dstdir.buf);
 
-	ret = for_each_loose_file_in_source(r->objects->sources,
+	ret = for_each_loose_file_in_source(r->objects->source,
 				      move_loose_object_to_shared_cache,
 				      NULL, NULL, NULL);
 
