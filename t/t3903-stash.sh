@@ -640,6 +640,82 @@ test_expect_success 'stash create - no changes' '
 	test_must_be_empty actual
 '
 
+test_expect_success 'stash create - clean after index refresh' '
+	test_create_repo create-refresh-race &&
+	(
+		cd create-refresh-race &&
+		test_commit A file &&
+		write_script .git/hooks/post-index-change <<-\EOF &&
+		if test ! -e .git/hook-fired
+		then
+			>.git/hook-fired
+			test-tool chmtime -3600 file
+		fi
+		EOF
+
+		# The first check sees a stat change. The hook changes only
+		# the mtime after refresh, so the stash tree remains clean.
+		test-tool chmtime +3600 file &&
+		git stash create >actual &&
+		test_file_not_empty actual &&
+		test_cmp_rev "$(cat actual)^{tree}" HEAD^{tree} &&
+		test_path_is_file .git/hook-fired
+	)
+'
+
+test_expect_success 'stash create - captures worktree changes during refresh' '
+	test_create_repo create-content-race &&
+	(
+		cd create-content-race &&
+		test_commit A file &&
+		write_script .git/hooks/post-index-change <<-\EOF &&
+		if test ! -e .git/hook-fired
+		then
+			>.git/hook-fired
+			echo changed >file
+		fi
+		EOF
+
+		# A content change after refresh must be included in the stash.
+		test-tool chmtime +3600 file &&
+		git stash create >actual &&
+		git show "$(cat actual):file" >stashed &&
+		test_cmp file stashed &&
+		git diff --exit-code --cached &&
+		test "changed" = "$(cat file)"
+	)
+'
+
+test_expect_success 'stash create - reloads virtual filesystem paths' '
+	test_create_repo create-vfs-race &&
+	(
+		cd create-vfs-race &&
+		echo visible >visible &&
+		echo original >hidden &&
+		git add visible hidden &&
+		git commit -m initial &&
+		printf "visible\0" >.git/vfs-paths &&
+		write_script .git/hooks/virtualfilesystem <<-\EOF &&
+		cat .git/vfs-paths
+		EOF
+		git config core.virtualfilesystem \
+			.git/hooks/virtualfilesystem &&
+		write_script .git/hooks/post-index-change <<-\EOF &&
+		if test ! -e .git/hook-fired
+		then
+			>.git/hook-fired
+			echo changed >hidden
+			printf "visible\0hidden\0" >.git/vfs-paths
+		fi
+		EOF
+
+		test-tool chmtime +3600 visible &&
+		git stash create >actual &&
+		git show "$(cat actual):hidden" >stashed &&
+		test_cmp hidden stashed
+	)
+'
+
 test_expect_success 'stash branch - no stashes on stack, stash-like argument' '
 	git stash clear &&
 	test_when_finished "git reset --hard HEAD" &&

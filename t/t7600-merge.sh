@@ -1179,4 +1179,83 @@ test_expect_success 'merge with no argument defaults to upstream' '
 	)
 '
 
+test_expect_success 'merge accepts a stash created after index refresh' '
+	test_create_repo merge-refresh &&
+	(
+		cd merge-refresh &&
+		echo unchanged >victim &&
+		echo base >base &&
+		git add base victim &&
+		git commit -m base &&
+		git branch -M main &&
+
+		git checkout -b side &&
+		echo side >side &&
+		git add side &&
+		git commit -m side &&
+
+		git checkout main &&
+		echo main >main &&
+		git add main &&
+		git commit -m main &&
+
+		write_script .git/hooks/post-index-change <<-\EOF &&
+		if test ! -e .git/hook-fired
+		then
+			>.git/hook-fired
+			test-tool chmtime -3600 victim
+		fi
+		EOF
+
+		test-tool chmtime +3600 victim &&
+		git merge side &&
+		test_path_is_file side &&
+		test_path_is_file .git/hook-fired
+	)
+'
+
+test_expect_success 'merge autostash creates a stash after refresh' '
+	test_create_repo merge-autostash-refresh &&
+	(
+		cd merge-autostash-refresh &&
+		echo original >victim &&
+		echo trigger >trigger &&
+		echo base >base &&
+		git add base trigger victim &&
+		git commit -m base &&
+		git branch -M main &&
+
+		git checkout -b side &&
+		echo side >side &&
+		git add side &&
+		git commit -m side &&
+
+		git checkout main &&
+		echo main >main &&
+		git add main &&
+		git commit -m main &&
+		cp victim .git/victim-clean &&
+		echo changed >victim &&
+
+		write_script .git/hooks/post-index-change <<-\EOF &&
+		count=$(cat .git/hook-count 2>/dev/null || echo 0)
+		count=$((count + 1))
+		echo $count >.git/hook-count
+		if test $count -eq 1
+		then
+			test-tool chmtime -3600 trigger
+		elif test $count -eq 2
+		then
+			cp .git/victim-clean victim
+		fi
+		EOF
+
+		test-tool chmtime +3600 trigger &&
+		git merge --autostash side &&
+		test_path_is_file side &&
+		test_cmp .git/victim-clean victim &&
+		test "$(cat .git/hook-count)" -ge 2
+	)
+'
+
 test_done
