@@ -8,7 +8,7 @@
     "default": {
       "name": "default",
       "createdDate": "2026-05-27 10:14:26Z",
-      "lastUpdatedDate": "2026-05-27 10:14:26Z"
+      "lastUpdatedDate": "2026-11-10 21:24:40Z"
     }
   },
   "results": {
@@ -683,6 +683,23 @@
       "tool": "binskim",
       "ruleId": "BA2012",
       "createdDate": "2026-05-27 10:14:26Z"
+    },
+    "365fb150cc5423218caf9ff071e3552ff070d74f40ef9e2744801edec2e83b3e": {
+      "signature":
+        "365fb150cc5423218caf9ff071e3552ff070d74f40ef9e2744801edec2e83b3e",
+      "alternativeSignatures": [
+        "136cbd12387c9278a9389857bc0c883bf4783d0997cec60a5e94aba8457e8f60",
+        "d31ee3e0e66f36048aef0d500db3959a1ac1ef936fc459194f82c7ce69037019",
+        "22857a23b78773510af80230e4d5660b929d8d30d8a23ce5a32e56c86d08caea"
+      ],
+      "target": "_bin/clangarm64/libexec/git-core/headless-git.exe",
+      "uriBaseId": "file:///C:/a/_work/1/a/",
+      "memberOf": [
+        "default"
+      ],
+      "tool": "binskim",
+      "ruleId": "BA2014",
+      "createdDate": "2026-11-10 21:24:40Z"
     },
     "18ea9aeec2f6a54008bed03c5390a832fc1ae1d7abd398698160a956f375ddf1": {
       "signature": "18ea9aeec2f6a54008bed03c5390a832fc1ae1d7abd398698160a956f375ddf1",
