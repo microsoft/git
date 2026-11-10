@@ -210,7 +210,7 @@ jobs:
   functional_tests:
     name: Functional Tests
     needs: package
-    uses: microsoft/VFSForGit/.github/workflows/functional-tests.yaml@c5ea3d5dc5e44f51ffa7876f46409dfe650de851 # master
+    uses: microsoft/VFSForGit/.github/workflows/functional-tests.yaml@f5daeadbc2d92eb3d3c2e4f53785715edbb3de68 # coverage collection
     with:
       vfs_repository: microsoft/VFSForGit
       vfs_run_id: ${{ needs.package.outputs.vfs_run_id }}
