@@ -11,6 +11,8 @@
 extern int give_advice_on_expansion;
 
 struct index_state;
+struct cache_entry;
+struct object_id;
 #define SPARSE_INDEX_MEMORY_ONLY (1 << 0)
 int is_sparse_index_allowed(struct index_state *istate, int flags);
 int convert_to_sparse(struct index_state *istate, int flags);
@@ -29,6 +31,34 @@ void clear_skip_worktree_from_present_files(struct index_state *istate);
  */
 void expand_to_path(struct index_state *istate,
 		    const char *path, size_t pathlen, int icase);
+
+/*
+ * Under core.virtualFileSystem, the working tree can contain paths inside
+ * directories that a sparse index collapses into sparse-directory entries.
+ * A lookup of such a path with index_name_pos() expands the whole index.
+ *
+ * If core.virtualFileSystem is set, the index is sparse, and a
+ * sparse-directory entry contains 'path', return that entry. Otherwise
+ * return NULL. If 'icase' is set, the name of the sparse-directory entry
+ * can differ in case from the start of 'path'. This function never expands
+ * the index. If core.virtualFileSystem is set and this function returns
+ * NULL, then index_name_pos() for 'path' does not expand the index either.
+ */
+struct cache_entry *vfs_sparse_dir_containing(struct index_state *istate,
+					      const char *path, int pathlen,
+					      int icase);
+
+/*
+ * Find the part of 'path' below the sparse-directory entry 'sparse_dir'
+ * in the tree of that entry. 'sparse_dir' must contain 'path'. If 'icase'
+ * is set, compare names without case. Return 0 and set 'oid' and 'mode'
+ * if the tree contains the path. Return -1 if it does not. Die if a tree
+ * cannot be read.
+ */
+int sparse_dir_get_tree_entry(struct index_state *istate,
+			      const struct cache_entry *sparse_dir,
+			      const char *path, int pathlen, int icase,
+			      struct object_id *oid, unsigned short *mode);
 
 struct repository;
 int set_sparse_index_config(struct repository *repo, int enable);
