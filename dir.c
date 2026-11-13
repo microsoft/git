@@ -1004,8 +1004,26 @@ static int read_skip_worktree_file_from_index(struct index_state *istate,
 					      struct oid_stat *oid_stat)
 {
 	int pos, len;
+	struct cache_entry *sparse_dir;
 
 	len = strlen(path);
+
+	/*
+	 * Everything inside a sparse-directory entry has the skip-worktree
+	 * bit, so read the blob from the tree of that entry. Compare with
+	 * case, as index_name_pos() does.
+	 */
+	sparse_dir = vfs_sparse_dir_containing(istate, path, len, 0);
+	if (sparse_dir) {
+		struct object_id oid;
+		unsigned short mode;
+
+		if (sparse_dir_get_tree_entry(istate, sparse_dir, path, len, 0,
+					      &oid, &mode))
+			return -1;
+		return do_read_blob(&oid, oid_stat, size_out, data_out);
+	}
+
 	pos = index_name_pos(istate, path, len);
 	if (pos < 0)
 		return -1;
@@ -1252,6 +1270,8 @@ static int add_patterns(const char *fname, const char *base, int baselen,
 			    !match_stat_data_racy(istate, &oid_stat->stat, &st))
 				; /* no content change, oid_stat->oid still good */
 			else if (istate &&
+				 !vfs_sparse_dir_containing(istate, fname,
+							    strlen(fname), 0) &&
 				 (pos = index_name_pos(istate, fname, strlen(fname))) >= 0 &&
 				 !ce_stage(istate->cache[pos]) &&
 				 ce_uptodate(istate->cache[pos]) &&
@@ -2004,6 +2024,29 @@ static enum exist_status directory_exists_in_index(struct index_state *istate,
 						   const char *dirname, int len)
 {
 	int pos;
+	struct cache_entry *sparse_dir;
+
+	/*
+	 * The name hash does not contain the directories inside a
+	 * sparse-directory entry, so look in its tree before the
+	 * case-insensitive lookup below.
+	 */
+	sparse_dir = vfs_sparse_dir_containing(
+		istate, dirname, len, repo_ignore_case(the_repository));
+	if (sparse_dir) {
+		struct object_id oid;
+		unsigned short mode;
+
+		if (sparse_dir_get_tree_entry(istate, sparse_dir, dirname, len,
+					      repo_ignore_case(the_repository),
+					      &oid, &mode))
+			return index_nonexistent;
+		if (S_ISDIR(mode))
+			return index_directory;
+		if (S_ISGITLINK(mode))
+			return index_gitdir;
+		return index_nonexistent;
+	}
 
 	if (repo_ignore_case(the_repository))
 		return directory_exists_in_index_icase(istate, dirname, len);
@@ -2409,6 +2452,14 @@ static int get_index_dtype(struct index_state *istate,
 		 */
 		return DT_REG;
 	}
+
+	/*
+	 * A sparse-directory entry contains this path, so the index has no
+	 * entries below it to scan. Return DT_UNKNOWN and let the caller
+	 * use lstat(), instead of an expansion of the whole index.
+	 */
+	if (vfs_sparse_dir_containing(istate, path, len, 0))
+		return DT_UNKNOWN;
 
 	/* Try to look it up as a directory */
 	pos = index_name_pos(istate, path, len);
