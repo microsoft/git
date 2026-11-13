@@ -1327,11 +1327,15 @@ extends:
           #
           - job: winget
             displayName: 'Publish WinGet release'
-            condition: and(succeeded(), eq('${{ parameters.winget }}', true), or(eq('${{ parameters.versionOverride }}', ''), eq('${{ parameters.versionOverride }}', '-')))
+            # Release candidates are never published to WinGet
+            condition: and(succeeded(), eq('${{ parameters.winget }}', true), or(eq('${{ parameters.versionOverride }}', ''), eq('${{ parameters.versionOverride }}', '-')), not(contains(stageDependencies.prereqs.prebuild.outputs['info.tag_name'], '-rc')))
             pool:
               name: GitClientPME-1ESHostedPool-intel-pc
               image: win-x86_64-ado1es # Windows is required to publish WinGet manifests
               os: windows
+            variables:
+              tag_name: $[stageDependencies.prereqs.prebuild.outputs['info.tag_name']]
+              git_version: $[stageDependencies.prereqs.prebuild.outputs['info.git_version']]
             templateContext:
               inputs:
                 - ${{ each dim in parameters.windows_matrix }}:
@@ -1339,8 +1343,8 @@ extends:
                     artifactName: '${{ dim.id }}'
                     targetPath: $(Pipeline.Workspace)/installers # Send all artifacts to the same folder
                     listFiles: true # List the files that get downloaded
-                    itemPattern: | # Download only the Inno Setup installer (.exe) files
-                      **/*.exe
+                    itemPattern: | # Download only the Inno Setup installers, not PortableGit
+                      **/Git-*.exe
               outputs:
                 - output: pipelineArtifact
                   artifactName: winget_manifest
@@ -1367,26 +1371,36 @@ extends:
 
               - task: PowerShell@2
                 displayName: 'Download wingetcreate.exe'
-                targetType: 'inline'
-                script: |
-                  $ErrorActionPreference = 'Stop'
-                  $toolVersion = '$(WingetCreateVersion)'
-                  $expectedHash = '$(WingetCreateSha256)'
-                  $toolUrl = "https://github.com/microsoft/winget-create/releases/download/$toolVersion/wingetcreate.exe"
-                  Invoke-WebRequest $toolUrl -OutFile '$(Pipeline.Workspace)/tools/wingetcreate.exe'
-                  $actualHash = (Get-FileHash '$(Pipeline.Workspace)/tools/wingetcreate.exe' -Algorithm SHA256).Hash.ToLowerInvariant()
-                  if ($actualHash -ne $expectedHash) {
-                    throw "WingetCreate checksum verification failed. Got '$actualHash', expected '$expectedHash'"
-                  }
-                  & '$(Pipeline.Workspace)/tools/wingetcreate.exe' --version
-
-              - task: PowerShell@2
-                displayName: 'Create updated WinGet manifests'
                 inputs:
                   targetType: 'inline'
                   script: |
                     $ErrorActionPreference = 'Stop'
-                    if ([string]::IsNullOrWhiteSpace($env:ESRP_RELEASE_DETAILS)) {
+                    $ProgressPreference = 'SilentlyContinue'
+                    $toolVersion = '$(wingetcreateToolVersion)'
+                    $expectedHash = '$(wingetcreateToolSha256)'
+                    $toolDir = '$(Pipeline.Workspace)/tools'
+                    $toolPath = Join-Path $toolDir 'wingetcreate.exe'
+                    $toolUrl = "https://github.com/microsoft/winget-create/releases/download/$toolVersion/wingetcreate.exe"
+                    New-Item -ItemType Directory -Force -Path $toolDir | Out-Null
+                    Invoke-WebRequest -UseBasicParsing -Uri $toolUrl -OutFile $toolPath
+                    $actualHash = (Get-FileHash -LiteralPath $toolPath -Algorithm SHA256).Hash.ToLowerInvariant()
+                    if ($actualHash -ne $expectedHash) {
+                      throw "WingetCreate checksum verification failed. Got '$actualHash', expected '$expectedHash'"
+                    }
+                    # Not `wingetcreate --version`: it exits 1, failing the task
+                    $productVersion = (Get-Item -LiteralPath $toolPath).VersionInfo.ProductVersion
+                    Write-Host "Using wingetcreate $productVersion"
+
+              - task: PowerShell@2
+                displayName: 'Create updated WinGet manifests'
+                env:
+                  ESRP_RELEASE_DETAILS: $(ESRP_RELEASE_DETAILS)
+                inputs:
+                  targetType: 'inline'
+                  script: |
+                    $ErrorActionPreference = 'Stop'
+                    if ([string]::IsNullOrWhiteSpace($env:ESRP_RELEASE_DETAILS) -or
+                        $env:ESRP_RELEASE_DETAILS -match '^\$\(.+\)$') {
                       throw 'ESRP_RELEASE_DETAILS is not set or empty.'
                     }
 
@@ -1399,7 +1413,135 @@ extends:
                     }
                     Write-Host "ESRP CDN link generation succeeded."
 
-                    # TODO
+                    $gitVersion = '$(git_version)'
+                    $releaseNotesUrl = 'https://github.com/microsoft/git/releases/tag/$(tag_name)'
+
+                    # WinGet needs a numeric version, so drop the 'vfs' segment
+                    # (2.56.1.vfs.0.1 -> 2.56.1.0.1) as release-winget.sh does.
+                    $wingetVersion = $gitVersion -replace '\.vfs\.', '.'
+                    if ($wingetVersion -notmatch '^\d+(\.\d+)+$') {
+                      throw "Cannot derive a numeric WinGet version from '$gitVersion'."
+                    }
+                    Write-Host "WinGet version: $wingetVersion"
+
+                    # ESRP keeps the original file name as the last segment
+                    # of each generated download URL.
+                    $cdnUrls = @(
+                      foreach ($file in $releaseDetails.files) {
+                        foreach ($detail in $file.fileDownloadDetails) {
+                          if ($detail.downloadUrl) { [Uri]$detail.downloadUrl }
+                        }
+                      }
+                    )
+
+                    $installers = @{}
+                    foreach ($arch in 'x64', 'arm64') {
+                      $suffix = @{ x64 = '64-bit'; arm64 = 'arm64' }[$arch]
+                      $name = "Git-$gitVersion-$suffix.exe"
+                      $path = Join-Path '$(Pipeline.Workspace)/installers' $name
+                      if (-not (Test-Path -LiteralPath $path -PathType Leaf)) {
+                        throw "Installer not found: $path"
+                      }
+                      $found = @($cdnUrls | Where-Object { [IO.Path]::GetFileName($_.AbsolutePath) -eq $name })
+                      if ($found.Count -ne 1) {
+                        throw "Expected one CDN URL for $name, found $($found.Count)."
+                      }
+                      $url = $found[0]
+                      if ($url.Scheme -ne 'https' -or
+                          -not $url.Host.EndsWith('.microsoft.com') -or
+                          $url.UserInfo -or $url.Query -or $url.Fragment) {
+                        throw "Unexpected CDN URL for ${name}: $url"
+                      }
+                      $installers[$arch] = @{
+                        Url = $url.AbsoluteUri
+                        Sha256 = (Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash
+                      }
+                      Write-Host "$arch installer: $($url.AbsoluteUri)"
+                    }
+
+                    $x64Url = $installers['x64'].Url
+                    $arm64Url = $installers['arm64'].Url
+                    $releaseDate = (Get-Date).ToUniversalTime().ToString('yyyy-MM-dd')
+                    $outDir = '$(Agent.TempDirectory)/winget'
+
+                    # Generate the manifest only; ESRP submits it below.
+                    # `update` clears the release notes URL and date, and only
+                    # re-infers them from GitHub release URLs, so pass them.
+                    & '$(Pipeline.Workspace)/tools/wingetcreate.exe' update Microsoft.Git `
+                      --version $wingetVersion `
+                      --release-notes-url $releaseNotesUrl `
+                      --release-date $releaseDate `
+                      --out $outDir `
+                      --urls "$x64Url|x64|machine" "$x64Url|x64|user" "$arm64Url|arm64|machine" "$arm64Url|arm64|user"
+                    if ($LASTEXITCODE -ne 0) {
+                      throw "wingetcreate update failed with exit code $LASTEXITCODE."
+                    }
+
+                    #
+                    # Validate the generated manifest. wingetcreate has
+                    # already schema-validated it; check its content here.
+                    #
+                    $manifestDir = Join-Path $outDir "manifests/m/Microsoft/Git/$wingetVersion"
+                    foreach ($name in 'Microsoft.Git.yaml', 'Microsoft.Git.installer.yaml', 'Microsoft.Git.locale.en-US.yaml') {
+                      if (-not (Test-Path -LiteralPath (Join-Path $manifestDir $name) -PathType Leaf)) {
+                        throw "Manifest file was not generated: $name"
+                      }
+                    }
+
+                    $versionPattern = '(?m)^PackageVersion:\s*' + [regex]::Escape($wingetVersion) + '\s*$'
+                    foreach ($file in Get-ChildItem -LiteralPath $manifestDir -Filter '*.yaml' -File) {
+                      $content = Get-Content -LiteralPath $file.FullName -Raw -Encoding UTF8
+                      if ($content -notmatch '(?m)^PackageIdentifier:\s*Microsoft\.Git\s*$' -or
+                          $content -notmatch $versionPattern) {
+                        throw "Unexpected PackageIdentifier or PackageVersion in $($file.Name)."
+                      }
+                    }
+
+                    $locale = Get-Content -LiteralPath (Join-Path $manifestDir 'Microsoft.Git.locale.en-US.yaml') -Raw -Encoding UTF8
+                    if ($locale -notmatch ('(?m)^ReleaseNotesUrl:\s*' + [regex]::Escape($releaseNotesUrl) + '\s*$')) {
+                      throw "ReleaseNotesUrl is not '$releaseNotesUrl' in the default locale manifest."
+                    }
+
+                    # Every installer entry must point at the CDN copy of the
+                    # matching installer, and the hash wingetcreate computed
+                    # from that download must match our signed build output.
+                    $installerYaml = Get-Content -LiteralPath (Join-Path $manifestDir 'Microsoft.Git.installer.yaml') -Raw -Encoding UTF8
+                    $entries = @(
+                      $installerYaml -split '(?m)^- ' |
+                        Where-Object { $_ -match '(?m)^\s*InstallerUrl:' } |
+                        ForEach-Object {
+                          $entry = @{}
+                          foreach ($key in 'Architecture', 'Scope', 'InstallerUrl', 'InstallerSha256') {
+                            if ($_ -match "(?m)^\s*${key}:\s*(\S+)") { $entry[$key] = $Matches[1] }
+                          }
+                          $entry
+                        }
+                    )
+
+                    $expected = 'arm64/machine', 'arm64/user', 'x64/machine', 'x64/user'
+                    $actual = @($entries | ForEach-Object { "$($_.Architecture)/$($_.Scope)" } | Sort-Object)
+                    if (($actual -join ',') -ne ($expected -join ',')) {
+                      throw "Unexpected installer entries: $($actual -join ', ')"
+                    }
+                    foreach ($entry in $entries) {
+                      $want = $installers[$entry.Architecture]
+                      if ($entry.InstallerUrl -ne $want.Url) {
+                        throw "$($entry.Architecture) InstallerUrl is '$($entry.InstallerUrl)', expected '$($want.Url)'."
+                      }
+                      if ($entry.InstallerSha256 -ne $want.Sha256) {
+                        throw "$($entry.Architecture) InstallerSha256 '$($entry.InstallerSha256)' does not match build artifact '$($want.Sha256)'."
+                      }
+                    }
+                    Write-Host "WinGet manifest validation succeeded."
+
+                    $publishDir = '$(Pipeline.Workspace)/manifest'
+                    New-Item -ItemType Directory -Force -Path $publishDir | Out-Null
+                    Copy-Item -Path (Join-Path $manifestDir '*.yaml') -Destination $publishDir
+                    foreach ($file in Get-ChildItem -LiteralPath $publishDir -File) {
+                      Write-Host "##[group]$($file.Name)"
+                      Get-Content -LiteralPath $file.FullName -Encoding UTF8 | Write-Host
+                      Write-Host '##[endgroup]'
+                    }
 
               - task: EsrpRelease@14
                 displayName: 'Publish WinGet manifest'
