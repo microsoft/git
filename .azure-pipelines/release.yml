@@ -24,6 +24,10 @@ parameters:
     type: boolean
     default: true
     displayName: 'Enable GitHub release publishing'
+  - name: 'winget'
+    type: boolean
+    default: true
+    displayName: 'Enable WinGet publishing'
   - name: 'versionOverride'
     type: string
     default: '-'
@@ -100,13 +104,19 @@ variables:
     value: '1ESGitClient-ESRP-App'
   - name: 'githubConnectionName'
     value: 'GitHub-MicrosoftGit'
-  # ESRP signing variables set in the pipeline settings:
+  # ESRP variables set in the pipeline settings:
   # - esrpEndpointUrl
   # - esrpMI
   # - esrpClientId
   # - esrpTenantId
   # - esrpKeyVaultName
   # - esrpSignReqCertName
+  # - esrpReleaseOwners
+  # - esrpReleaseApprovers
+  - name: 'wingetcreateToolVersion'
+    value: 'v1.28.1.0'
+  - name: 'wingetcreateToolSha256'
+    value: '63d980ba79e97042395bd6eb5992c2db9e01e9e7a8a22958a95c288f27310413'
 
 extends:
   template: v1/1ES.Official.PipelineTemplate.yml@1ESPipelines
@@ -1312,3 +1322,100 @@ extends:
                     $(Pipeline.Workspace)/assets/linux_x64/*.tar.gz
                     $(Pipeline.Workspace)/assets/linux_arm64/*.deb
                     $(Pipeline.Workspace)/assets/linux_arm64/*.tar.gz
+          #
+          # WinGet release publishing
+          #
+          - job: winget
+            displayName: 'Publish WinGet release'
+            condition: and(succeeded(), eq('${{ parameters.winget }}', true), or(eq('${{ parameters.versionOverride }}', ''), eq('${{ parameters.versionOverride }}', '-')))
+            pool:
+              name: GitClientPME-1ESHostedPool-intel-pc
+              image: win-x86_64-ado1es # Windows is required to publish WinGet manifests
+              os: windows
+            templateContext:
+              inputs:
+                - ${{ each dim in parameters.windows_matrix }}:
+                  - input: pipelineArtifact
+                    artifactName: '${{ dim.id }}'
+                    targetPath: $(Pipeline.Workspace)/installers # Send all artifacts to the same folder
+                    listFiles: true # List the files that get downloaded
+                    itemPattern: | # Download only the Inno Setup installer (.exe) files
+                      **/*.exe
+              outputs:
+                - output: pipelineArtifact
+                  artifactName: winget_manifest
+                  targetPath: $(Pipeline.Workspace)/manifest
+            steps:
+              - task: EsrpRelease@14
+                displayName: 'Generate CDN download links'
+                inputs:
+                  connectedservicename: $(esrpAppConnectionName)
+                  usemanagedidentity: true
+                  keyvaultname: $(esrpKeyVaultName)
+                  signcertname: $(esrpSignReqCertName)
+                  clientid: $(esrpClientId)
+                  intent: 'filedownloadlinkgeneration'
+                  contenttype: 'binaries'
+                  contentsource: 'Folder'
+                  folderlocation: '$(Pipeline.Workspace)/installers'
+                  waitforreleasecompletion: true
+                  owners: $(esrpReleaseOwners)
+                  approvers: $(esrpReleaseApprovers)
+                  serviceendpointurl: $(esrpEndpointUrl)
+                  mainpublisher: 'ESRPRELPACMAN'
+                  domaintenantid: $(esrpTenantId)
+
+              - task: PowerShell@2
+                displayName: 'Download wingetcreate.exe'
+                targetType: 'inline'
+                script: |
+                  $ErrorActionPreference = 'Stop'
+                  $toolVersion = '$(WingetCreateVersion)'
+                  $expectedHash = '$(WingetCreateSha256)'
+                  $toolUrl = "https://github.com/microsoft/winget-create/releases/download/$toolVersion/wingetcreate.exe"
+                  Invoke-WebRequest $toolUrl -OutFile '$(Pipeline.Workspace)/tools/wingetcreate.exe'
+                  $actualHash = (Get-FileHash '$(Pipeline.Workspace)/tools/wingetcreate.exe' -Algorithm SHA256).Hash.ToLowerInvariant()
+                  if ($actualHash -ne $expectedHash) {
+                    throw "WingetCreate checksum verification failed. Got '$actualHash', expected '$expectedHash'"
+                  }
+                  & '$(Pipeline.Workspace)/tools/wingetcreate.exe' --version
+
+              - task: PowerShell@2
+                displayName: 'Create updated WinGet manifests'
+                inputs:
+                  targetType: 'inline'
+                  script: |
+                    $ErrorActionPreference = 'Stop'
+                    if ([string]::IsNullOrWhiteSpace($env:ESRP_RELEASE_DETAILS)) {
+                      throw 'ESRP_RELEASE_DETAILS is not set or empty.'
+                    }
+
+                    Write-Host "ESRP release details:"
+                    Write-Host $env:ESRP_RELEASE_DETAILS
+
+                    $releaseDetails = $env:ESRP_RELEASE_DETAILS | ConvertFrom-Json
+                    if ($releaseDetails.status -ne 'pass') {
+                      throw "ESRP CDN link generation did not succeed. Status: '$($releaseDetails.status)'."
+                    }
+                    Write-Host "ESRP CDN link generation succeeded."
+
+                    # TODO
+
+              - task: EsrpRelease@14
+                displayName: 'Publish WinGet manifest'
+                inputs:
+                  connectedservicename: $(esrpAppConnectionName)
+                  usemanagedidentity: true
+                  keyvaultname: $(esrpKeyVaultName)
+                  signcertname: $(esrpSignReqCertName)
+                  clientid: $(esrpClientId)
+                  intent: 'Winget'
+                  contenttype: 'manifest'
+                  contentsource: 'Folder'
+                  folderlocation: '$(Pipeline.Workspace)/manifest'
+                  waitforreleasecompletion: true
+                  owners: $(esrpReleaseOwners)
+                  approvers: $(esrpReleaseApprovers)
+                  serviceendpointurl: $(esrpEndpointUrl)
+                  mainpublisher: 'ESRPRELPACMAN'
+                  domaintenantid: $(esrpTenantId)
