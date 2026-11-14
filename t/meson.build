@@ -189,6 +189,7 @@ integration_tests = [
   't1092-sparse-checkout-compatibility.sh',
   't1093-virtualfilesystem.sh',
   't1095-virtualfilesystem-sparse-index.sh',
+  't1096-virtualfilesystem-sparse-cone.sh',
   't1100-commit-tree-options.sh',
   't1300-config.sh',
   't1301-shared-repo.sh',

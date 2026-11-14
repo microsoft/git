@@ -11,6 +11,7 @@
 #include "name-hash.h"
 #include "object.h"
 #include "read-cache-ll.h"
+#include "sparse-index.h"
 #include "virtualfilesystem.h"
 
 #define HOOK_INTERFACE_VERSION	(1)
@@ -251,6 +252,30 @@ int is_excluded_from_virtualfilesystem(const char *pathname, int pathlen, int dt
 	}
 
 	return -1;
+}
+
+int vfs_sparse_index_configured(void)
+{
+	struct repo_config_values *cfg = repo_config_values(the_repository);
+	int sparse_index;
+
+	if (!cfg->apply_sparse_checkout || !cfg->core_sparse_checkout_cone)
+		return 0;
+	return !repo_config_get_bool(the_repository, "index.sparse",
+				     &sparse_index) && sparse_index;
+}
+
+int vfs_uses_cone_patterns(struct index_state *istate)
+{
+	if (!istate || istate->split_index || !vfs_sparse_index_configured())
+		return 0;
+
+	/*
+	 * This runs for each path, so do not use
+	 * is_sparse_index_allowed(istate, 0): it reads the environment
+	 * and can write the configuration.
+	 */
+	return is_sparse_index_allowed(istate, SPARSE_INDEX_MEMORY_ONLY);
 }
 
 struct apply_virtual_filesystem_stats {
