@@ -411,6 +411,13 @@ void expand_index(struct index_state *istate, struct pattern_list *pl)
 		struct pathspec ps;
 		int dtype = DT_UNKNOWN;
 
+		/*
+		 * The name-hash of 'istate' is discarded below, but 'full'
+		 * reuses this entry. Clear CE_HASHED so that the next
+		 * lazy_init_name_hash() adds the entry to the new name-hash.
+		 */
+		ce->ce_flags &= ~CE_HASHED;
+
 		if (!S_ISSPARSEDIR(ce->ce_mode)) {
 			set_index_entry(full, full->cache_nr++, ce);
 			continue;
@@ -448,10 +455,7 @@ void expand_index(struct index_state *istate, struct pattern_list *pl)
 	}
 
 	/* Copy back into original index. */
-	if (istate->name_hash_initialized) {
-		hashmap_clear(&istate->name_hash);
-		hashmap_clear(&istate->dir_hash);
-	}
+	free_name_hash(istate);
 
 	istate->name_hash_initialized = full->name_hash_initialized;
 	memcpy(&istate->name_hash, &full->name_hash, sizeof(full->name_hash));
