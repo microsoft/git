@@ -116,7 +116,15 @@ core.virtualFilesystem::
 	will identify all files and directories that are present in
 	the working directory.  Git will only track and update files
 	listed in the virtual file system.  Using the virtual file system
-	will supersede the sparse-checkout settings which will be ignored.
+	will supersede the sparse-checkout settings which will be ignored,
+	unless the repository uses cone-mode sparse-checkout and sets
+	`index.sparse` to `true` (the default value does not count). Then
+	the cone patterns decide which directories collapse into
+	sparse-directory entries in the index. Git does not check the
+	working tree for a path inside such a directory, even when the
+	virtual file system lists the path. A build of Git that supports
+	a sparse index under a virtual file system prints
+	`feature: vfs-sparse-index` in `git version --build-options`.
 	See the "virtual file system" section of linkgit:githooks[5].
 
 core.trustctime::
