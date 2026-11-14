@@ -126,7 +126,9 @@ core.virtualFilesystem::
 	`git sparse-checkout set`, `add`, `reapply`, or `disable` applies
 	the patterns, Git changes only the index. It does not check out or
 	remove files in the working tree. `git sparse-checkout clean` still
-	removes directories outside of the cone.
+	removes directories outside of the cone. A build of Git that
+	supports a sparse index under a virtual file system prints
+	`feature: vfs-sparse-index` in `git version --build-options`.
 	See the "virtual file system" section of linkgit:githooks[5].
 
 core.trustctime::
