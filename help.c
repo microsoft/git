@@ -820,6 +820,20 @@ void get_version_info(struct strbuf *buf, int show_build_options)
 
 		if (fsmonitor_ipc__is_supported())
 			strbuf_addstr(buf, "feature: fsmonitor--daemon\n");
+		/*
+		 * A virtual file system reads this line before it enables
+		 * a sparse index. Under core.virtualFilesystem, the line
+		 * promises all of this: the working-tree walk and
+		 * apply_virtualfilesystem() do not expand a sparse index;
+		 * expand_index() keeps the name-hash correct; with cone
+		 * mode and an explicit index.sparse=true, the cone
+		 * patterns decide which directories collapse; a full
+		 * index collapses when it is written, not when it is read;
+		 * and the automatic cleanup after "git sparse-checkout
+		 * set", "add", and "reapply" does not delete out-of-cone
+		 * directories. If any part goes away, remove the line.
+		 */
+		strbuf_addstr(buf, "feature: vfs-sparse-index\n");
 #if !defined NO_GETTEXT
 		strbuf_addstr(buf, "gettext: enabled\n");
 #endif

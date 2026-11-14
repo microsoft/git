@@ -122,7 +122,9 @@ core.virtualFilesystem::
 	the cone patterns decide which directories collapse into
 	sparse-directory entries in the index. Git does not check the
 	working tree for a path inside such a directory, even when the
-	virtual file system lists the path.
+	virtual file system lists the path. A build of Git that supports
+	a sparse index under a virtual file system prints
+	`feature: vfs-sparse-index` in `git version --build-options`.
 	See the "virtual file system" section of linkgit:githooks[5].
 
 core.trustctime::

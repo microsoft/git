@@ -191,6 +191,7 @@ integration_tests = [
   't1094-virtualfilesystem-sparse-walk.sh',
   't1095-virtualfilesystem-sparse-index.sh',
   't1096-virtualfilesystem-sparse-cone.sh',
+  't1097-vfs-sparse-index-capability.sh',
   't1100-commit-tree-options.sh',
   't1300-config.sh',
   't1301-shared-repo.sh',
