@@ -1,0 +1,349 @@
+#
+# Publish a microsoft/git GitHub release to WinGet (Microsoft.Git).
+#
+# Run this manually once a GitHub release created by release.yml has
+# been published. Drafts, prereleases and release candidates are
+# rejected, as only full releases are published to WinGet.
+#
+# The Windows installers are taken from the GitHub release and verified
+# against GitHub's SHA-256 digests and their Microsoft Authenticode
+# signatures. ESRP then hosts them on the Microsoft CDN, wingetcreate
+# updates the Microsoft.Git manifest to point at those CDN links, and
+# ESRP submits the validated manifest to WinGet.
+#
+name: $(Date:yyyyMMdd)$(Rev:.r)
+trigger: none
+pr: none
+
+resources:
+  repositories:
+    - repository: 1ESPipelines
+      type: git
+      name: 1ESPipelineTemplates/1ESPipelineTemplates
+      ref: refs/tags/release
+
+parameters:
+  - name: 'tag'
+    type: string
+    displayName: 'GitHub release tag (e.g. v2.56.1.vfs.0.1)'
+
+variables:
+  - name: 'esrpAppConnectionName'
+    value: '1ESGitClient-ESRP-App'
+  # ESRP variables set in the pipeline settings:
+  # - esrpEndpointUrl
+  # - esrpClientId
+  # - esrpTenantId
+  # - esrpKeyVaultName
+  # - esrpSignReqCertName
+  # - esrpReleaseOwners
+  # - esrpReleaseApprovers
+  - name: 'wingetcreateToolVersion'
+    value: 'v1.28.1.0'
+  - name: 'wingetcreateToolSha256'
+    value: '63d980ba79e97042395bd6eb5992c2db9e01e9e7a8a22958a95c288f27310413'
+
+extends:
+  template: v1/1ES.Official.PipelineTemplate.yml@1ESPipelines
+  parameters:
+    sdl:
+      # SDL source analysis tasks only run on Windows images
+      sourceAnalysisPool:
+        name: GitClientPME-1ESHostedPool-intel-pc
+        image: win-x86_64-ado1es
+        os: windows
+    stages:
+      - stage: winget
+        displayName: 'WinGet'
+        jobs:
+          - job: winget
+            displayName: 'Publish WinGet release'
+            # ESRP steps can take a long time: they wait for release
+            # approvals and for ESRP to finish processing each release.
+            timeoutInMinutes: 1440
+            pool:
+              name: GitClientPME-1ESHostedPool-intel-pc
+              image: win-x86_64-ado1es # wingetcreate and Authenticode checks require Windows
+              os: windows
+            templateContext:
+              type: releaseJob
+              isProduction: true
+            steps:
+              - checkout: none
+
+              - task: PowerShell@2
+                displayName: 'Download wingetcreate.exe'
+                inputs:
+                  targetType: 'inline'
+                  pwsh: true
+                  script: |
+                    $ErrorActionPreference = 'Stop'
+                    $ProgressPreference = 'SilentlyContinue'
+                    $toolVersion = '$(wingetcreateToolVersion)'
+                    $expectedHash = '$(wingetcreateToolSha256)'
+                    $toolDir = '$(Pipeline.Workspace)/tools'
+                    $toolPath = Join-Path $toolDir 'wingetcreate.exe'
+                    $toolUrl = "https://github.com/microsoft/winget-create/releases/download/$toolVersion/wingetcreate.exe"
+                    New-Item -ItemType Directory -Force -Path $toolDir | Out-Null
+
+                    Write-Host "Downloading wingetcreate $toolVersion from $toolUrl"
+                    Invoke-WebRequest -UseBasicParsing -Uri $toolUrl -OutFile $toolPath
+
+                    Write-Host "Verifying SHA-256 of wingetcreate.exe"
+                    $actualHash = (Get-FileHash -LiteralPath $toolPath -Algorithm SHA256).Hash.ToLowerInvariant()
+                    if ($actualHash -ne $expectedHash) {
+                      throw "WingetCreate checksum verification failed. Got '$actualHash', expected '$expectedHash'"
+                    }
+
+                    # Don't use `wingetcreate --version` as it exits 1
+                    $productVersion = (Get-Item -LiteralPath $toolPath).VersionInfo.ProductVersion
+                    Write-Host "Using wingetcreate $productVersion"
+
+              - task: PowerShell@2
+                displayName: 'Download and verify release installers'
+                env:
+                  RELEASE_TAG: ${{ parameters.tag }}
+                inputs:
+                  targetType: 'inline'
+                  pwsh: true
+                  script: |
+                    $ErrorActionPreference = 'Stop'
+                    $ProgressPreference = 'SilentlyContinue'
+
+                    # This also rejects release candidates (v2.56.0-rc1.vfs.0.0).
+                    $tag = "$env:RELEASE_TAG".Trim()
+                    Write-Host "Tag: $tag"
+                    if ($tag -notmatch '^v(\d+\.\d+\.\d+\.vfs\.\d+\.\d+)$') {
+                      throw "'$tag' is not a microsoft/git release tag such as v2.56.1.vfs.0.1."
+                    }
+                    $gitVersion = $Matches[1]
+                    Write-Host "Git version: $gitVersion"
+
+                    # WinGet needs a numeric version, so drop the 'vfs' segment
+                    # (2.56.1.vfs.0.1 -> 2.56.1.0.1).
+                    $manifestVersion = $gitVersion -replace '\.vfs\.', '.'
+                    Write-Host "Manifest version: $manifestVersion"
+
+                    # Drafts are invisible to anonymous requests, so they fail here too.
+                    Write-Host "Looking up GitHub release '$tag'"
+                    try {
+                      $release = Invoke-RestMethod -UseBasicParsing `
+                        -Uri "https://api.github.com/repos/microsoft/git/releases/tags/$tag"
+                    } catch {
+                      throw "Could not find a published GitHub release for '$tag': $_"
+                    }
+                    if ($release.draft -or $release.prerelease) {
+                      throw "GitHub release '$tag' is a draft or prerelease; only full releases are published to WinGet."
+                    }
+
+                    $releaseDate = ([DateTimeOffset]$release.published_at).UtcDateTime.ToString('yyyy-MM-dd')
+                    $releaseNotesUrl = $release.html_url
+
+                    $installerDir = '$(Pipeline.Workspace)/installers'
+                    New-Item -ItemType Directory -Force -Path $installerDir | Out-Null
+                    foreach ($suffix in '64-bit', 'arm64') {
+                      $name = "Git-$gitVersion-$suffix.exe"
+                      $asset = @($release.assets | Where-Object { $_.name -ceq $name })
+                      if ($asset.Count -ne 1) {
+                        throw "Expected one '$name' asset on GitHub release '$tag', found $($asset.Count)."
+                      }
+                      if ($asset[0].digest -notmatch '^sha256:([0-9a-fA-F]{64})$') {
+                        throw "GitHub did not report a SHA-256 digest for '$name'."
+                      }
+                      $expectedHash = $Matches[1]
+
+                      $path = Join-Path $installerDir $name
+                      Write-Host "Downloading $name"
+                      Invoke-WebRequest -UseBasicParsing -Uri $asset[0].browser_download_url -OutFile $path
+
+                      Write-Host "Verifying SHA-256 of $name"
+                      $actualHash = (Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash
+                      if ($actualHash -ne $expectedHash) {
+                        throw "SHA-256 of '$name' is $actualHash, but GitHub reports $expectedHash."
+                      }
+
+                      # release.yml has the installers Authenticode-signed via ESRP.
+                      Write-Host "Verifying Authenticode signature of $name"
+                      $signature = Get-AuthenticodeSignature -LiteralPath $path
+                      $signer = "$($signature.SignerCertificate.Subject)"
+                      if ($signature.Status -ne 'Valid' -or
+                          $signer -notmatch '(^|, )O=Microsoft Corporation(,|$)') {
+                        throw "'$name' is not validly signed by Microsoft (status: $($signature.Status), signer: '$signer')."
+                      }
+
+                      Write-Host "Verified $name"
+                      Write-Host "  SHA-256: $actualHash"
+                      Write-Host "  Signer:  $signer"
+                    }
+
+                    Write-Host "##vso[task.setvariable variable=git_version;isReadOnly=true]$gitVersion"
+                    Write-Host "##vso[task.setvariable variable=manifest_version;isReadOnly=true]$manifestVersion"
+                    Write-Host "##vso[task.setvariable variable=release_notes_url;isReadOnly=true]$releaseNotesUrl"
+                    Write-Host "##vso[task.setvariable variable=release_date;isReadOnly=true]$releaseDate"
+                    Write-Host "##vso[build.updatebuildnumber]$tag ($env:BUILD_BUILDNUMBER)"
+
+              - task: EsrpRelease@14
+                displayName: 'Generate CDN download links'
+                inputs:
+                  connectedservicename: $(esrpAppConnectionName)
+                  usemanagedidentity: true
+                  keyvaultname: $(esrpKeyVaultName)
+                  signcertname: $(esrpSignReqCertName)
+                  clientid: $(esrpClientId)
+                  intent: 'filedownloadlinkgeneration'
+                  contenttype: 'binaries'
+                  contentsource: 'Folder'
+                  folderlocation: '$(Pipeline.Workspace)/installers'
+                  waitforreleasecompletion: true
+                  owners: $(esrpReleaseOwners)
+                  approvers: $(esrpReleaseApprovers)
+                  serviceendpointurl: $(esrpEndpointUrl)
+                  mainpublisher: 'ESRPRELPACMAN'
+                  domaintenantid: $(esrpTenantId)
+
+              - task: PowerShell@2
+                displayName: 'Create updated WinGet manifests'
+                env:
+                  ESRP_RELEASE_DETAILS: $(ESRP_RELEASE_DETAILS)
+                inputs:
+                  targetType: 'inline'
+                  pwsh: true
+                  script: |
+                    $ErrorActionPreference = 'Stop'
+                    if ([string]::IsNullOrWhiteSpace($env:ESRP_RELEASE_DETAILS) -or
+                        $env:ESRP_RELEASE_DETAILS -match '^\$\(.+\)$') {
+                      throw 'ESRP_RELEASE_DETAILS is not set or empty.'
+                    }
+
+                    Write-Host "ESRP release details:"
+                    Write-Host $env:ESRP_RELEASE_DETAILS
+
+                    $releaseDetails = $env:ESRP_RELEASE_DETAILS | ConvertFrom-Json
+                    if ($releaseDetails.status -ne 'pass') {
+                      throw "ESRP CDN link generation did not succeed. Status: '$($releaseDetails.status)'."
+                    }
+                    Write-Host "ESRP CDN link generation succeeded."
+
+                    $gitVersion = '$(git_version)'
+                    $manifestVersion = '$(manifest_version)'
+                    $releaseNotesUrl = '$(release_notes_url)'
+                    Write-Host "Manifest version: $manifestVersion"
+
+                    # ESRP keeps the original file name as the last segment
+                    # of each generated download URL.
+                    Write-Host "Finding CDN download links for the installers"
+                    $cdnUrls = @(
+                      foreach ($file in $releaseDetails.files) {
+                        foreach ($detail in $file.fileDownloadDetails) {
+                          if ($detail.downloadUrl) { [Uri]$detail.downloadUrl }
+                        }
+                      }
+                    )
+
+                    $installerUrls = @{}
+                    foreach ($arch in 'x64', 'arm64') {
+                      $suffix = @{ x64 = '64-bit'; arm64 = 'arm64' }[$arch]
+                      $name = "Git-$gitVersion-$suffix.exe"
+                      $found = @($cdnUrls | Where-Object { [IO.Path]::GetFileName($_.AbsolutePath) -eq $name })
+                      if ($found.Count -ne 1) {
+                        throw "Expected one CDN URL for $name, found $($found.Count)."
+                      }
+                      $url = $found[0]
+                      if ($url.Scheme -ne 'https' -or
+                          -not $url.Host.EndsWith('.microsoft.com') -or
+                          $url.UserInfo -or $url.Query -or $url.Fragment) {
+                        throw "Unexpected CDN URL for ${name}: $url"
+                      }
+                      $installerUrls[$arch] = $url.AbsoluteUri
+                      Write-Host "$arch installer: $($url.AbsoluteUri)"
+                    }
+
+                    $x64Url = $installerUrls['x64']
+                    $arm64Url = $installerUrls['arm64']
+                    $releaseDate = '$(release_date)'
+                    $outDir = '$(Pipeline.Workspace)/winget'
+
+                    # Generate the manifest only; ESRP submits it below.
+                    # `update` clears the release notes URL and date, and only
+                    # re-infers them from GitHub release URLs, so pass them.
+                    Write-Host "Updating the Microsoft.Git manifest to $manifestVersion with wingetcreate"
+                    & '$(Pipeline.Workspace)/tools/wingetcreate.exe' `
+                      update `
+                      Microsoft.Git `
+                      --version $manifestVersion `
+                      --release-notes-url $releaseNotesUrl `
+                      --release-date $releaseDate `
+                      --out $outDir `
+                      --format yaml `
+                      --urls "$x64Url|x64|machine" `
+                             "$x64Url|x64|user" `
+                             "$arm64Url|arm64|machine" `
+                             "$arm64Url|arm64|user"
+                    if ($LASTEXITCODE -ne 0) {
+                      throw "wingetcreate update failed with exit code $LASTEXITCODE."
+                    }
+
+                    $manifestDir = Join-Path $outDir "manifests/m/Microsoft/Git/$manifestVersion"
+                    Write-Host "Generated manifest files in ${manifestDir}:"
+                    foreach ($file in Get-ChildItem -LiteralPath $manifestDir -File) {
+                      Write-Host "##[group]$($file.Name)"
+                      Get-Content -LiteralPath $file.FullName -Encoding UTF8 | Write-Host
+                      Write-Host '##[endgroup]'
+                    }
+
+              - task: PowerShell@2
+                displayName: 'Validate WinGet manifest'
+                inputs:
+                  targetType: 'inline'
+                  pwsh: true
+                  script: |
+                    $ErrorActionPreference = 'Stop'
+
+                    # winget is not always installed on, or runnable by the
+                    # build account of, Windows Server images.
+                    Write-Host "Checking whether winget is available"
+                    $wingetToolVersion = $null
+                    if (Get-Command winget -ErrorAction SilentlyContinue) {
+                      try {
+                        $wingetToolVersion = & winget --version
+                        if ($LASTEXITCODE -ne 0) { $wingetToolVersion = $null }
+                      } catch {
+                        Write-Host "Failed to run winget: $_"
+                      }
+                    }
+                    if (-not $wingetToolVersion) {
+                      Write-Host "##vso[task.logissue type=warning]winget is not available on this agent; skipping WinGet manifest validation."
+                      exit 0
+                    }
+                    Write-Host "Using winget $wingetToolVersion"
+
+                    $manifestDir = '$(Pipeline.Workspace)/winget/manifests/m/Microsoft/Git/$(manifest_version)'
+                    Write-Host "Validating WinGet manifest in $manifestDir"
+                    & winget validate --manifest $manifestDir --disable-interactivity
+                    $exitCode = $LASTEXITCODE
+                    if ($exitCode -eq 0) {
+                      Write-Host "WinGet manifest validation succeeded."
+                    } elseif ($exitCode -eq -1978335192) {
+                      throw 'WinGet manifest validation reported warnings (0x8A150028).'
+                    } else {
+                      throw ('WinGet manifest validation failed (exit code 0x{0:X8}).' -f $exitCode)
+                    }
+
+              - task: EsrpRelease@14
+                displayName: 'Publish WinGet manifest'
+                inputs:
+                  connectedservicename: $(esrpAppConnectionName)
+                  usemanagedidentity: true
+                  keyvaultname: $(esrpKeyVaultName)
+                  signcertname: $(esrpSignReqCertName)
+                  clientid: $(esrpClientId)
+                  intent: 'Winget'
+                  contenttype: 'manifest'
+                  contentsource: 'Folder'
+                  folderlocation: '$(Pipeline.Workspace)/winget'
+                  waitforreleasecompletion: true
+                  owners: $(esrpReleaseOwners)
+                  approvers: $(esrpReleaseApprovers)
+                  serviceendpointurl: $(esrpEndpointUrl)
+                  mainpublisher: 'ESRPRELPACMAN'
+                  domaintenantid: $(esrpTenantId)
