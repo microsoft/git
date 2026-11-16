@@ -182,24 +182,49 @@ extends:
                     Write-Host "##vso[task.setvariable variable=release_date;isReadOnly=true]$releaseDate"
                     Write-Host "##vso[build.updatebuildnumber]$tag ($env:BUILD_BUILDNUMBER)"
 
-              - task: EsrpRelease@14
-                displayName: 'Generate CDN download links'
+              # - task: EsrpRelease@14
+              #   displayName: 'Generate CDN download links'
+              #   inputs:
+              #     connectedservicename: $(esrpAppConnectionName)
+              #     usemanagedidentity: true
+              #     keyvaultname: $(esrpKeyVaultName)
+              #     signcertname: $(esrpSignReqCertName)
+              #     clientid: $(esrpClientId)
+              #     intent: 'filedownloadlinkgeneration'
+              #     contenttype: 'binaries'
+              #     contentsource: 'Folder'
+              #     folderlocation: '$(Pipeline.Workspace)/installers'
+              #     waitforreleasecompletion: true
+              #     owners: $(esrpReleaseOwners)
+              #     approvers: $(esrpReleaseApprovers)
+              #     serviceendpointurl: $(esrpEndpointUrl)
+              #     mainpublisher: 'ESRPRELPACMAN'
+              #     domaintenantid: $(esrpTenantId)
+
+              # DEBUG: stand in for the ESRP step above until ESRP is set
+              # up. GitHub release URLs are used because wingetcreate must
+              # be able to download each installer.
+              - task: PowerShell@2
+                displayName: 'Generate CDN download links (fake)'
                 inputs:
-                  connectedservicename: $(esrpAppConnectionName)
-                  usemanagedidentity: true
-                  keyvaultname: $(esrpKeyVaultName)
-                  signcertname: $(esrpSignReqCertName)
-                  clientid: $(esrpClientId)
-                  intent: 'filedownloadlinkgeneration'
-                  contenttype: 'binaries'
-                  contentsource: 'Folder'
-                  folderlocation: '$(Pipeline.Workspace)/installers'
-                  waitforreleasecompletion: true
-                  owners: $(esrpReleaseOwners)
-                  approvers: $(esrpReleaseApprovers)
-                  serviceendpointurl: $(esrpEndpointUrl)
-                  mainpublisher: 'ESRPRELPACMAN'
-                  domaintenantid: $(esrpTenantId)
+                  targetType: 'inline'
+                  pwsh: true
+                  script: |
+                    $ErrorActionPreference = 'Stop'
+                    $gitVersion = '$(git_version)'
+                    $baseUrl = "https://github.com/microsoft/git/releases/download/v$gitVersion"
+                    $details = @{
+                      status = 'pass'
+                      files = @(
+                        foreach ($suffix in '64-bit', 'arm64') {
+                          @{ fileDownloadDetails = @(@{ downloadUrl = "$baseUrl/Git-$gitVersion-$suffix.exe" }) }
+                        }
+                      )
+                    }
+                    $json = ConvertTo-Json -InputObject $details -Depth 5 -Compress
+                    Write-Host "##vso[task.logissue type=warning]Using fake ESRP CDN link generation results."
+                    Write-Host "Fake ESRP release details: $json"
+                    Write-Host "##vso[task.setvariable variable=ESRP_RELEASE_DETAILS]$json"
 
               - task: PowerShell@2
                 displayName: 'Create updated WinGet manifests'
@@ -249,8 +274,9 @@ extends:
                         throw "Expected one CDN URL for $name, found $($found.Count)."
                       }
                       $url = $found[0]
+                      # DEBUG: also accept the fake ESRP step's GitHub URLs.
                       if ($url.Scheme -ne 'https' -or
-                          -not $url.Host.EndsWith('.microsoft.com') -or
+                          -not ($url.Host.EndsWith('.microsoft.com') -or $url.Host -eq 'github.com') -or
                           $url.UserInfo -or $url.Query -or $url.Fragment) {
                         throw "Unexpected CDN URL for ${name}: $url"
                       }
