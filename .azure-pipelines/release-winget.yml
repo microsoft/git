@@ -329,21 +329,21 @@ extends:
                       throw ('WinGet manifest validation failed (exit code 0x{0:X8}).' -f $exitCode)
                     }
 
-              - task: EsrpRelease@14
-                displayName: 'Publish WinGet manifest'
-                inputs:
-                  connectedservicename: $(esrpAppConnectionName)
-                  usemanagedidentity: true
-                  keyvaultname: $(esrpKeyVaultName)
-                  signcertname: $(esrpSignReqCertName)
-                  clientid: $(esrpClientId)
-                  intent: 'Winget'
-                  contenttype: 'manifest'
-                  contentsource: 'Folder'
-                  folderlocation: '$(Pipeline.Workspace)/winget'
-                  waitforreleasecompletion: true
-                  owners: $(esrpReleaseOwners)
-                  approvers: $(esrpReleaseApprovers)
-                  serviceendpointurl: $(esrpEndpointUrl)
-                  mainpublisher: 'ESRPRELPACMAN'
-                  domaintenantid: $(esrpTenantId)
+              # - task: EsrpRelease@14
+              #   displayName: 'Publish WinGet manifest'
+              #   inputs:
+              #     connectedservicename: $(esrpAppConnectionName)
+              #     usemanagedidentity: true
+              #     keyvaultname: $(esrpKeyVaultName)
+              #     signcertname: $(esrpSignReqCertName)
+              #     clientid: $(esrpClientId)
+              #     intent: 'Winget'
+              #     contenttype: 'manifest'
+              #     contentsource: 'Folder'
+              #     folderlocation: '$(Pipeline.Workspace)/winget'
+              #     waitforreleasecompletion: true
+              #     owners: $(esrpReleaseOwners)
+              #     approvers: $(esrpReleaseApprovers)
+              #     serviceendpointurl: $(esrpEndpointUrl)
+              #     mainpublisher: 'ESRPRELPACMAN'
+              #     domaintenantid: $(esrpTenantId)
