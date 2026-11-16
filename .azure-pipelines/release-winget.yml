@@ -44,6 +44,8 @@ variables:
     value: '63d980ba79e97042395bd6eb5992c2db9e01e9e7a8a22958a95c288f27310413'
   - name: 'dotnetRuntimeVersion'
     value: '9.0.x'
+  - name: 'vcRedistUrl'
+    value: 'https://aka.ms/vs/17/release/vc_redist.x64.exe'
 
 extends:
   template: v1/1ES.Official.PipelineTemplate.yml@1ESPipelines
@@ -72,6 +74,41 @@ extends:
               isProduction: true
             steps:
               - checkout: none
+
+              # wingetcreate.exe needs the Visual C++ runtime
+              - task: PowerShell@2
+                displayName: 'Install Visual C++ Redistributable'
+                inputs:
+                  targetType: 'inline'
+                  pwsh: true
+                  script: |
+                    $ErrorActionPreference = 'Stop'
+                    $ProgressPreference = 'SilentlyContinue'
+                    $url = '$(vcRedistUrl)'
+                    $path = Join-Path '$(Agent.TempDirectory)' 'vc_redist.x64.exe'
+                    $log = Join-Path '$(Agent.TempDirectory)' 'vc_redist.log'
+
+                    Write-Host "Downloading Visual C++ Redistributable from $url"
+                    Invoke-WebRequest -UseBasicParsing -Uri $url -OutFile $path
+
+                    Write-Host "Verifying Authenticode signature of vc_redist.x64.exe"
+                    $signature = Get-AuthenticodeSignature -LiteralPath $path
+                    $signer = "$($signature.SignerCertificate.Subject)"
+                    if ($signature.Status -ne 'Valid' -or
+                        $signer -notmatch '(^|, )O=Microsoft Corporation(,|$)') {
+                      throw "vc_redist.x64.exe is not validly signed by Microsoft (status: $($signature.Status), signer: '$signer')."
+                    }
+
+                    Write-Host "Installing Visual C++ Redistributable"
+                    $process = Start-Process -FilePath $path -Wait -PassThru `
+                      -ArgumentList '/install', '/quiet', '/norestart', '/log', "`"$log`""
+                    # 1638: a newer version is already installed
+                    # 3010: installed, but a restart is required
+                    if ($process.ExitCode -notin 0, 1638, 3010) {
+                      if (Test-Path -LiteralPath $log) { Get-Content -LiteralPath $log | Write-Host }
+                      throw "vc_redist.x64.exe failed with exit code $($process.ExitCode)."
+                    }
+                    Write-Host "vc_redist.x64.exe exited with code $($process.ExitCode)"
 
               # wingetcreate.exe needs the .NET runtime
               - task: UseDotNet@2
