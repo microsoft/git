@@ -42,6 +42,8 @@ variables:
     value: 'v1.28.1.0'
   - name: 'wingetcreateToolSha256'
     value: '63d980ba79e97042395bd6eb5992c2db9e01e9e7a8a22958a95c288f27310413'
+  - name: 'dotnetRuntimeVersion'
+    value: '9.0.x'
 
 extends:
   template: v1/1ES.Official.PipelineTemplate.yml@1ESPipelines
@@ -70,6 +72,13 @@ extends:
               isProduction: true
             steps:
               - checkout: none
+
+              # wingetcreate.exe needs the .NET runtime
+              - task: UseDotNet@2
+                displayName: 'Install .NET 9 runtime'
+                inputs:
+                  packageType: runtime
+                  version: '$(dotnetRuntimeVersion)'
 
               - task: PowerShell@2
                 displayName: 'Download wingetcreate.exe'
