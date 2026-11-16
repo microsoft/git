@@ -28,8 +28,8 @@ parameters:
     displayName: 'GitHub release tag (e.g. v2.56.1.vfs.0.1)'
 
 variables:
-  - name: 'esrpAppConnectionName'
-    value: '1ESGitClient-ESRP-App'
+  # - name: 'esrpAppConnectionName'
+  #   value: '1ESGitClient-ESRP-App'
   # ESRP variables set in the pipeline settings:
   # - esrpEndpointUrl
   # - esrpClientId
