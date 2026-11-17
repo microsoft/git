@@ -122,7 +122,11 @@ core.virtualFilesystem::
 	the cone patterns decide which directories collapse into
 	sparse-directory entries in the index. Git does not check the
 	working tree for a path inside such a directory, even when the
-	virtual file system lists the path.
+	virtual file system lists the path. In this mode, when
+	`git sparse-checkout set`, `add`, `reapply`, or `disable` applies
+	the patterns, Git changes only the index. It does not check out or
+	remove files in the working tree. `git sparse-checkout clean` still
+	removes directories outside of the cone.
 	See the "virtual file system" section of linkgit:githooks[5].
 
 core.trustctime::

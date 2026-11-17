@@ -190,6 +190,7 @@ integration_tests = [
   't1093-virtualfilesystem.sh',
   't1095-virtualfilesystem-sparse-index.sh',
   't1096-virtualfilesystem-sparse-cone.sh',
+  't1097-virtualfilesystem-sparsity-index-only.sh',
   't1100-commit-tree-options.sh',
   't1300-config.sh',
   't1301-shared-repo.sh',
