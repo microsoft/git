@@ -99,12 +99,16 @@ jobs:
 
           make -j5 DESTDIR="$GITHUB_WORKSPACE/MicrosoftGit/payload/${{ matrix.architecture }}" install
 
-          # The test runners still ship the MINGW64 runtime.
-          if test "$MSYSTEM" = UCRT64
-          then
-            cp /ucrt64/bin/*.dll \
-              "$GITHUB_WORKSPACE/MicrosoftGit/payload/x86_64/ucrt64/bin/"
-          fi
+          # The payload is copied over the test runners' preinstalled Git,
+          # which can be older than the SDK and lack DLLs that the payload
+          # imports. Ship the SDK's runtime DLLs with the payload.
+          case "$MSYSTEM" in
+          UCRT64|CLANGARM64)
+            prefix=/$(echo "$MSYSTEM" | tr A-Z a-z)
+            cp $prefix/bin/*.dll \
+              "$GITHUB_WORKSPACE/MicrosoftGit/payload/${{ matrix.architecture }}$prefix/bin/"
+            ;;
+          esac
 
       - name: Upload Git artifact
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
@@ -158,6 +162,7 @@ jobs:
           echo Installing Git from %GIT_PAYLOAD% to "C:\Program Files\Git"...
           robocopy "%GIT_PAYLOAD%" "C:\Program Files\Git" /E /NFL /NDL /NJH /NJS /NS /NC
           if %ERRORLEVEL% GEQ 8 exit /b %ERRORLEVEL%
+          "C:\Program Files\Git\cmd\git.exe" version || exit /b 1
           echo C:\Program Files\Git\cmd>>"%GITHUB_PATH%"
           exit /b 0
           BATCH
