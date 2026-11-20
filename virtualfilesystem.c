@@ -9,7 +9,9 @@
 #include "hashmap.h"
 #include "run-command.h"
 #include "name-hash.h"
+#include "object.h"
 #include "read-cache-ll.h"
+#include "sparse-index.h"
 #include "virtualfilesystem.h"
 
 #define HOOK_INTERFACE_VERSION	(1)
@@ -252,6 +254,30 @@ int is_excluded_from_virtualfilesystem(const char *pathname, int pathlen, int dt
 	return -1;
 }
 
+int vfs_sparse_index_configured(void)
+{
+	struct repo_config_values *cfg = repo_config_values(the_repository);
+	int sparse_index;
+
+	if (!cfg->apply_sparse_checkout || !cfg->core_sparse_checkout_cone)
+		return 0;
+	return !repo_config_get_bool(the_repository, "index.sparse",
+				     &sparse_index) && sparse_index;
+}
+
+int vfs_uses_cone_patterns(struct index_state *istate)
+{
+	if (!istate || istate->split_index || !vfs_sparse_index_configured())
+		return 0;
+
+	/*
+	 * This runs for each path, so do not use
+	 * is_sparse_index_allowed(istate, 0): it reads the environment
+	 * and can write the configuration.
+	 */
+	return is_sparse_index_allowed(istate, SPARSE_INDEX_MEMORY_ONLY);
+}
+
 struct apply_virtual_filesystem_stats {
 	int nr_unknown;
 	int nr_vfs_dirs;
@@ -269,6 +295,17 @@ static void clear_ce_flags_virtualfilesystem_1(struct index_state *istate, int s
 	if (!virtual_filesystem_data.len)
 		get_virtual_filesystem_data(istate->repo, &virtual_filesystem_data);
 
+	/*
+	 * The lookups below use index_name_pos_sparse(), not
+	 * index_name_pos(). In a sparse index, a path inside a
+	 * sparse-directory entry has no entry of its own, and
+	 * index_name_pos() expands the whole index to find it. Here, such
+	 * a path is not found, so the sparse-directory entry keeps its
+	 * CE_SKIP_WORKTREE bit. With a full index, the two functions are
+	 * the same. The name-hash does not contain sparse-directory
+	 * entries, so the core.ignoreCase lookups do not expand the index.
+	 */
+
 	/* clear specified flag bits for everything in the virtual file system */
 	entry = buf = virtual_filesystem_data.buf;
 	for (i = 0; i < virtual_filesystem_data.len; i++) {
@@ -285,12 +322,20 @@ static void clear_ce_flags_virtualfilesystem_1(struct index_state *istate, int s
 				stats->nr_vfs_dirs++;
 				if (repo_ignore_case(the_repository))
 					adjust_dirname_case(istate, entry);
-				pos = index_name_pos(istate, entry, len);
+				pos = index_name_pos_sparse(istate, entry, len);
 				if (pos < 0) {
 					for (pos = -pos - 1; (size_t)pos < istate->cache_nr; pos++) {
 						ce = istate->cache[pos];
 						if (fspathncmp(ce->name, entry, len))
 							break;
+
+						/*
+						 * Keep CE_SKIP_WORKTREE on
+						 * a sparse directory below
+						 * this directory.
+						 */
+						if (S_ISSPARSEDIR(ce->ce_mode))
+							continue;
 
 						if (select_mask && !(ce->ce_flags & select_mask))
 							continue;
@@ -304,7 +349,7 @@ static void clear_ce_flags_virtualfilesystem_1(struct index_state *istate, int s
 				if (repo_ignore_case(the_repository)) {
 					ce = index_file_exists(istate, entry, len, repo_ignore_case(the_repository));
 				} else {
-					int pos = index_name_pos(istate, entry, len);
+					int pos = index_name_pos_sparse(istate, entry, len);
 
 					ce = NULL;
 					if (pos >= 0)

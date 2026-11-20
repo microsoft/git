@@ -538,9 +538,12 @@ static int verify_absent_sparse(const struct cache_entry *ce,
 				enum unpack_trees_error_types,
 				struct unpack_trees_options *o);
 
-static int apply_sparse_checkout(struct index_state *istate,
-				 struct cache_entry *ce,
-				 struct unpack_trees_options *o)
+/*
+ * Copy CE_NEW_SKIP_WORKTREE to CE_SKIP_WORKTREE. Return the old value of
+ * the skip-worktree bit.
+ */
+static int update_skip_worktree_bit(struct index_state *istate,
+				    struct cache_entry *ce)
 {
 	int was_skip_worktree = ce_skip_worktree(ce);
 
@@ -553,6 +556,14 @@ static int apply_sparse_checkout(struct index_state *istate,
 		mark_fsmonitor_invalid(istate, ce);
 		istate->cache_changed |= CE_ENTRY_CHANGED;
 	}
+	return was_skip_worktree;
+}
+
+static int apply_sparse_checkout(struct index_state *istate,
+				 struct cache_entry *ce,
+				 struct unpack_trees_options *o)
+{
+	int was_skip_worktree = update_skip_worktree_bit(istate, ce);
 
 	/*
 	 * if (!was_skip_worktree && !ce_skip_worktree()) {
@@ -2164,7 +2175,8 @@ return_failed:
 
 /*
  * Update SKIP_WORKTREE bits according to sparsity patterns, and update
- * working directory to match.
+ * working directory to match. Under a virtual file system with a sparse
+ * index, update only the index (see vfs_sparse_index_configured()).
  *
  * CE_NEW_SKIP_WORKTREE is used internally.
  */
@@ -2175,6 +2187,7 @@ enum update_sparsity_result update_sparsity(struct unpack_trees_options *o,
 	int i;
 	unsigned old_show_all_errors;
 	int free_pattern_list = 0;
+	int vfs_index_only;
 
 	old_show_all_errors = o->internal.show_all_errors;
 	o->internal.show_all_errors = 1;
@@ -2195,6 +2208,17 @@ enum update_sparsity_result update_sparsity(struct unpack_trees_options *o,
 		populate_from_existing_patterns(o, pl);
 	}
 	o->internal.pl = pl;
+
+	/*
+	 * A virtual file system owns the working tree, and its hook sets
+	 * the skip-worktree bits. When the repository uses cone mode and
+	 * turns on a sparse index under a virtual file system, change
+	 * only the index. An expanded sparse directory can contain a path
+	 * that the hook reports as modified or deleted. Do not check it
+	 * out or remove it, so that the change in the working tree stays.
+	 */
+	vfs_index_only = core_virtualfilesystem &&
+			 vfs_sparse_index_configured();
 
 	/* Expand sparse directories as needed */
 	expand_index(o->src_index, o->internal.pl);
@@ -2217,11 +2241,13 @@ enum update_sparsity_result update_sparsity(struct unpack_trees_options *o,
 			continue;
 		}
 
-		if (apply_sparse_checkout(o->src_index, ce, o))
+		if (vfs_index_only)
+			update_skip_worktree_bit(o->src_index, ce);
+		else if (apply_sparse_checkout(o->src_index, ce, o))
 			ret = UPDATE_SPARSITY_WARNINGS;
 	}
 
-	if (check_updates(o, o->src_index))
+	if (!vfs_index_only && check_updates(o, o->src_index))
 		ret = UPDATE_SPARSITY_WORKTREE_UPDATE_FAILURES;
 
 	display_warning_msgs(o);

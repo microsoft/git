@@ -2371,11 +2371,17 @@ int do_read_index(struct index_state *istate, const char *path, int must_exist)
 	 * If the command explicitly requires a full index, force it
 	 * to be full. Otherwise, correct the sparsity based on repository
 	 * settings and other properties of the index (if necessary).
+	 *
+	 * With a virtual file system, do not collapse a full index here.
+	 * The skip-worktree bits that convert_to_sparse() checks are not
+	 * correct until apply_virtualfilesystem() sets them, after this
+	 * function. The index collapses when it is written.
 	 */
 	prepare_repo_settings(istate->repo);
 	if (istate->repo->settings.command_requires_full_index)
 		ensure_full_index_with_reason(istate, "incompatible builtin");
-	else
+	else if (!repo_config_get_virtualfilesystem(the_repository) ||
+		 !vfs_uses_cone_patterns(istate))
 		ensure_correct_sparsity(istate);
 
 	return istate->cache_nr;
@@ -3501,8 +3507,31 @@ int index_name_is_other(struct index_state *istate, const char *name,
 			int namelen)
 {
 	int pos;
+	struct cache_entry *sparse_dir;
+
 	if (namelen && name[namelen - 1] == '/')
 		namelen--;
+
+	/*
+	 * An index has entries for files only, so a directory in the tree
+	 * of a sparse-directory entry is still "other". Compare without
+	 * case if core.ignoreCase is set: with a full index, the walk
+	 * already drops such tracked paths with index_file_exists().
+	 */
+	sparse_dir = vfs_sparse_dir_containing(
+		istate, name, namelen, repo_ignore_case(the_repository));
+	if (sparse_dir) {
+		struct object_id oid;
+		unsigned short mode;
+
+		if (sparse_dir_get_tree_entry(istate, sparse_dir, name, namelen,
+					      repo_ignore_case(the_repository),
+					      &oid, &mode) ||
+		    S_ISDIR(mode))
+			return 1;
+		return 0;
+	}
+
 	pos = index_name_pos(istate, name, namelen);
 	if (0 <= pos)
 		return 0;	/* exact match */
