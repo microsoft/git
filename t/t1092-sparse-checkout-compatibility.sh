@@ -2863,4 +2863,39 @@ test_expect_success 'ensure_full_index_with_reason' '
 		"failed to clear skip-worktree while sparse" <status-trace
 '
 
+test_expect_success 'name-hash finds reused entries after expansion' '
+	init_repos &&
+
+	test-tool -C sparse-index read-cache --expand-and-find=deep/a >actual &&
+	echo "deep/a: found, found" >expect &&
+	test_cmp expect actual
+'
+
+test_expect_success 'status with core.ignoreCase after the index expands' '
+	git init icase &&
+	(
+		cd icase &&
+		mkdir out zin &&
+		for f in out/f zin/a zin/b
+		do
+			echo "$f" >$f || return 1
+		done &&
+		git add . &&
+		git commit -m init &&
+		git config core.ignoreCase true &&
+		git config index.sparse true &&
+		git config sparse.expectFilesOutsideOfPatterns true &&
+		git sparse-checkout set zin &&
+
+		# If readdir() returns "out/" before "zin/" (as on NTFS),
+		# the lookup in "out/" expands the index before the walk
+		# looks up "zin/". The test above does not depend on this.
+		mkdir out &&
+		echo new >out/new &&
+		git status --porcelain >../icase-actual
+	) &&
+	echo "?? out/new" >expect &&
+	test_cmp expect icase-actual
+'
+
 test_done
