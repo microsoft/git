@@ -2371,11 +2371,17 @@ int do_read_index(struct index_state *istate, const char *path, int must_exist)
 	 * If the command explicitly requires a full index, force it
 	 * to be full. Otherwise, correct the sparsity based on repository
 	 * settings and other properties of the index (if necessary).
+	 *
+	 * With a virtual file system, do not collapse a full index here.
+	 * The skip-worktree bits that convert_to_sparse() checks are not
+	 * correct until apply_virtualfilesystem() sets them, after this
+	 * function. The index collapses when it is written.
 	 */
 	prepare_repo_settings(istate->repo);
 	if (istate->repo->settings.command_requires_full_index)
 		ensure_full_index_with_reason(istate, "incompatible builtin");
-	else
+	else if (!repo_config_get_virtualfilesystem(the_repository) ||
+		 !vfs_uses_cone_patterns(istate))
 		ensure_correct_sparsity(istate);
 
 	return istate->cache_nr;
