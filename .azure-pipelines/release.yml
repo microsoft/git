@@ -190,6 +190,7 @@ extends:
                 mingwprefix: ${{ dim.mingwprefix }}
                 sdk_repo: ${{ dim.sdk_repo }}
                 cpu_arch: ${{ dim.cpu_arch }}
+                CARGO_HOME: $(Build.SourcesDirectory)\.azure-pipelines\cargo
               templateContext:
                 sdl:
                   suppression:
@@ -229,6 +230,10 @@ extends:
                   displayName: 'Add Git Bash to PATH'
                   inputs:
                     filename: ./.azure-pipelines/scripts/windows/setup-git-bash.cmd
+                - task: CargoAuthenticate@0
+                  displayName: 'Authenticate to Cargo registries'
+                  inputs: 
+                    configFile: '$(Build.SourcesDirectory)/.azure-pipelines/cargo/config.toml'
                 # Install VS 2022 Build Tools on x64 so cv2pdb-strip can locate
                 # mspdb140.dll. We do not need to do this on ARM64 since we use
                 # clang's llvm-strip there instead.
@@ -701,6 +706,7 @@ extends:
                 cpu_arch: ${{ dim.cpu_arch }}
                 cc_arch: ${{ dim.cc_arch }}
                 rustc_target: ${{ dim.rustc_target }}
+                CARGO_HOME: $(Build.SourcesDirectory)/.azure-pipelines/cargo
               templateContext:
                 outputs:
                   - output: pipelineArtifact
@@ -733,6 +739,10 @@ extends:
                       # locking issues.
                       set -euo pipefail
                       sudo mdutil -i off / || true
+                - task: CargoAuthenticate@0
+                  displayName: 'Authenticate to Cargo registries'
+                  inputs: 
+                    configFile: '$(Build.SourcesDirectory)/.azure-pipelines/cargo/config.toml'
                 - task: Bash@3
                   displayName: 'Install build dependencies'
                   inputs:
@@ -1109,6 +1119,7 @@ extends:
                 git_version: $[stageDependencies.prereqs.prebuild.outputs['info.git_version']]
                 cc_arch: ${{ dim.cc_arch }}
                 deb_arch: ${{ dim.deb_arch }}
+                CARGO_HOME: $(Build.SourcesDirectory)/.azure-pipelines/cargo
               templateContext:
                 outputs:
                   - output: pipelineArtifact
@@ -1124,6 +1135,10 @@ extends:
                       lsb_release -a || true
                       uname -a
                       id
+                - task: CargoAuthenticate@0
+                  displayName: 'Authenticate to Cargo registries'
+                  inputs: 
+                    configFile: '$(Build.SourcesDirectory)/.azure-pipelines/cargo/config.toml'
                 - task: Bash@3
                   displayName: 'Install build dependencies'
                   inputs:
