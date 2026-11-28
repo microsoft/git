@@ -3501,8 +3501,31 @@ int index_name_is_other(struct index_state *istate, const char *name,
 			int namelen)
 {
 	int pos;
+	struct cache_entry *sparse_dir;
+
 	if (namelen && name[namelen - 1] == '/')
 		namelen--;
+
+	/*
+	 * An index has entries for files only, so a directory in the tree
+	 * of a sparse-directory entry is still "other". Compare without
+	 * case if core.ignoreCase is set: with a full index, the walk
+	 * already drops such tracked paths with index_file_exists().
+	 */
+	sparse_dir = vfs_sparse_dir_containing(
+		istate, name, namelen, repo_ignore_case(the_repository));
+	if (sparse_dir) {
+		struct object_id oid;
+		unsigned short mode;
+
+		if (sparse_dir_get_tree_entry(istate, sparse_dir, name, namelen,
+					      repo_ignore_case(the_repository),
+					      &oid, &mode) ||
+		    S_ISDIR(mode))
+			return 1;
+		return 0;
+	}
+
 	pos = index_name_pos(istate, name, namelen);
 	if (0 <= pos)
 		return 0;	/* exact match */
