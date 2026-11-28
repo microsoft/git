@@ -126,6 +126,15 @@ static void clean_tracked_sparse_directories(struct repository *r)
 	 */
 	if (!r || !r->index || !r->worktree)
 		return;
+
+	/*
+	 * A virtual file system owns the working tree, including the
+	 * directories outside of the sparse-checkout cone. Do not delete
+	 * them.
+	 */
+	if (repo_config_get_virtualfilesystem(the_repository))
+		return;
+
 	if (init_sparse_checkout_patterns(r->index) ||
 	    !r->index->sparse_checkout_patterns->use_cone_patterns)
 		return;
