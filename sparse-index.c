@@ -5,11 +5,14 @@
 #include "environment.h"
 #include "ewah/ewok.h"
 #include "gettext.h"
+#include "hex.h"
 #include "name-hash.h"
+#include "odb.h"
 #include "read-cache-ll.h"
 #include "repository.h"
 #include "sparse-index.h"
 #include "tree.h"
+#include "tree-walk.h"
 #include "pathspec.h"
 #include "trace2.h"
 #include "cache-tree.h"
@@ -411,6 +414,13 @@ void expand_index(struct index_state *istate, struct pattern_list *pl)
 		struct pathspec ps;
 		int dtype = DT_UNKNOWN;
 
+		/*
+		 * The name-hash of 'istate' is discarded below, but 'full'
+		 * reuses this entry. Clear CE_HASHED so that the next
+		 * lazy_init_name_hash() adds the entry to the new name-hash.
+		 */
+		ce->ce_flags &= ~CE_HASHED;
+
 		if (!S_ISSPARSEDIR(ce->ce_mode)) {
 			set_index_entry(full, full->cache_nr++, ce);
 			continue;
@@ -448,10 +458,7 @@ void expand_index(struct index_state *istate, struct pattern_list *pl)
 	}
 
 	/* Copy back into original index. */
-	if (istate->name_hash_initialized) {
-		hashmap_clear(&istate->name_hash);
-		hashmap_clear(&istate->dir_hash);
-	}
+	free_name_hash(istate);
 
 	istate->name_hash_initialized = full->name_hash_initialized;
 	memcpy(&istate->name_hash, &full->name_hash, sizeof(full->name_hash));
@@ -722,6 +729,130 @@ void clear_skip_worktree_from_present_files(struct index_state *istate)
 		ensure_full_index_with_reason(istate,
 			"failed to clear skip-worktree while sparse");
 		clear_skip_worktree_from_present_files_full(istate);
+	}
+}
+
+/*
+ * The index sorts names with case, so a name with a different case does
+ * not sort next to its sparse-directory entry. The dir_hash of the name
+ * hash compares without case, and it contains the directory of each
+ * sparse-directory entry. Look up each leading directory of 'path' there,
+ * and check if the name that the index uses for it is a sparse-directory
+ * entry. A sparse-directory entry contains no other entries, so the first
+ * match is the only one.
+ */
+static struct cache_entry *sparse_dir_containing_icase(
+	struct index_state *istate, const char *path, int pathlen)
+{
+	struct strbuf dir = STRBUF_INIT;
+	struct cache_entry *found = NULL;
+	const char *end = path + pathlen;
+	const char *slash = path;
+
+	while ((slash = memchr(slash, '/', end - slash)) &&
+	       slash + 1 < end) {
+		int pos;
+
+		if (!index_dir_find(istate, path, slash - path, &dir))
+			break;
+		strbuf_addch(&dir, '/');
+		pos = index_name_pos_sparse(istate, dir.buf, dir.len);
+		if (pos >= 0 && S_ISSPARSEDIR(istate->cache[pos]->ce_mode)) {
+			found = istate->cache[pos];
+			break;
+		}
+		slash++;
+	}
+	strbuf_release(&dir);
+	return found;
+}
+
+struct cache_entry *vfs_sparse_dir_containing(struct index_state *istate,
+					      const char *path, int pathlen,
+					      int icase)
+{
+	struct cache_entry *ce;
+	int pos;
+
+	if (!core_virtualfilesystem || !istate->sparse_index || pathlen <= 0)
+		return NULL;
+
+	pos = index_name_pos_sparse(istate, path, pathlen);
+	if (pos >= 0)
+		return NULL;
+	pos = -pos - 1;
+
+	/*
+	 * Only the entry immediately before the insertion point can be a
+	 * sparse-directory entry that contains 'path' with the same case.
+	 * This is the same test that index_name_pos() uses to decide to
+	 * expand the index.
+	 */
+	if (pos) {
+		ce = istate->cache[pos - 1];
+		if (S_ISSPARSEDIR(ce->ce_mode) &&
+		    ce_namelen(ce) < pathlen &&
+		    !strncmp(path, ce->name, ce_namelen(ce)))
+			return ce;
+	}
+
+	if (!icase)
+		return NULL;
+	return sparse_dir_containing_icase(istate, path, pathlen);
+}
+
+int sparse_dir_get_tree_entry(struct index_state *istate,
+			      const struct cache_entry *sparse_dir,
+			      const char *path, int pathlen, int icase,
+			      struct object_id *oid, unsigned short *mode)
+{
+	const char *name = path + ce_namelen(sparse_dir);
+	const char *end = path + pathlen;
+	struct object_id tree_oid;
+
+	oidcpy(&tree_oid, &sparse_dir->oid);
+	for (;;) {
+		const char *slash = memchr(name, '/', end - name);
+		size_t len = (slash ? slash : end) - name;
+		struct tree_desc desc;
+		struct name_entry entry;
+		enum object_type type;
+		size_t size;
+		void *buf;
+		int found = 0;
+
+		/*
+		 * Do not report an unreadable tree as "not in the tree". The
+		 * callers would then call tracked files untracked, and
+		 * "git clean" could delete them.
+		 */
+		buf = odb_read_object(istate->repo->objects, &tree_oid,
+				      &type, &size);
+		if (!buf || type != OBJ_TREE)
+			die(_("unable to read tree %s for '%.*s'"),
+			    oid_to_hex(&tree_oid), pathlen, path);
+
+		init_tree_desc(&desc, &tree_oid, buf, size);
+		while (tree_entry(&desc, &entry)) {
+			if (tree_entry_len(&entry) == len &&
+			    !(icase ? strncasecmp(entry.path, name, len) :
+				      strncmp(entry.path, name, len))) {
+				oidcpy(oid, &entry.oid);
+				*mode = entry.mode;
+				found = 1;
+				break;
+			}
+		}
+		free(buf);
+
+		if (!found)
+			return -1;
+		if (!slash)
+			return 0;
+		if (!S_ISDIR(*mode))
+			return -1;
+		oidcpy(&tree_oid, oid);
+		name = slash + 1;
 	}
 }
 
