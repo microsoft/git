@@ -1,0 +1,5 @@
+[registries]
+GitClient-Dependencies = { index = "sparse+https://pkgs.dev.azure.com/mseng/1ES/_packaging/GitClient-Dependencies/Cargo/index/" }
+
+[source.crates-io]
+replace-with = "GitClient-Dependencies"
