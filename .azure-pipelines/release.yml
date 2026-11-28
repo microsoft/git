@@ -232,7 +232,7 @@ extends:
                     filename: ./.azure-pipelines/scripts/windows/setup-git-bash.cmd
                 - task: CargoAuthenticate@0
                   displayName: 'Authenticate to Cargo registries'
-                  inputs: 
+                  inputs:
                     configFile: '$(Build.SourcesDirectory)/.azure-pipelines/cargo/config.toml'
                 # Install VS 2022 Build Tools on x64 so cv2pdb-strip can locate
                 # mspdb140.dll. We do not need to do this on ARM64 since we use
@@ -618,9 +618,9 @@ extends:
 
                       shopt -s nullglob
                       pkgs=(
-                        artifacts/mingw-w64-*-git-[0-9]*-1-any.pkg.tar.xz
-                        artifacts/mingw-w64-*-git-credential-wincred-[0-9]*-1-any.pkg.tar.xz
-                        artifacts/mingw-w64-*-git-pdb-[0-9]*-1-any.pkg.tar.xz
+                        artifacts/mingw-w64-*-git-[0-9]*-*-any.pkg.tar.xz
+                        artifacts/mingw-w64-*-git-credential-wincred-[0-9]*-*-any.pkg.tar.xz
+                        artifacts/mingw-w64-*-git-pdb-[0-9]*-*-any.pkg.tar.xz
                       )
                       if test "${#pkgs[@]}" -ne 3
                       then
@@ -741,7 +741,7 @@ extends:
                       sudo mdutil -i off / || true
                 - task: CargoAuthenticate@0
                   displayName: 'Authenticate to Cargo registries'
-                  inputs: 
+                  inputs:
                     configFile: '$(Build.SourcesDirectory)/.azure-pipelines/cargo/config.toml'
                 - task: Bash@3
                   displayName: 'Install build dependencies'
@@ -1137,7 +1137,7 @@ extends:
                       id
                 - task: CargoAuthenticate@0
                   displayName: 'Authenticate to Cargo registries'
-                  inputs: 
+                  inputs:
                     configFile: '$(Build.SourcesDirectory)/.azure-pipelines/cargo/config.toml'
                 - task: Bash@3
                   displayName: 'Install build dependencies'
