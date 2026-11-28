@@ -618,9 +618,9 @@ extends:
 
                       shopt -s nullglob
                       pkgs=(
-                        artifacts/mingw-w64-*-git-[0-9]*-1-any.pkg.tar.xz
-                        artifacts/mingw-w64-*-git-credential-wincred-[0-9]*-1-any.pkg.tar.xz
-                        artifacts/mingw-w64-*-git-pdb-[0-9]*-1-any.pkg.tar.xz
+                        artifacts/mingw-w64-*-git-[0-9]*-*-any.pkg.tar.xz
+                        artifacts/mingw-w64-*-git-credential-wincred-[0-9]*-*-any.pkg.tar.xz
+                        artifacts/mingw-w64-*-git-pdb-[0-9]*-*-any.pkg.tar.xz
                       )
                       if test "${#pkgs[@]}" -ne 3
                       then
